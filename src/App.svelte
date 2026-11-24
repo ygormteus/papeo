@@ -22,6 +22,7 @@
   import Settings from "./lib/Settings.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import Topbar from "./lib/Topbar.svelte";
+  import HomeStats from "./lib/HomeStats.svelte";
   import WhatsNew from "./lib/WhatsNew.svelte";
   import { bundledNotes } from "./lib/bundledNotes";
   import {
@@ -376,7 +377,11 @@
       onreload={() => active && run(api.reload(active.id))}
       onhibernate={() => active && run(api.hibernate(active.id))}
       onzoomreset={() => zoom({ zoom: 1 })}
+      extra={!active && page === "home" && snap.services.length ? homeStats : undefined}
     />
+    {#snippet homeStats()}
+      <HomeStats {snap} {run} onadd={openAdd} onopen={select} />
+    {/snippet}
     <section class="content" bind:this={content} aria-live="polite">
       {#if active}
         <div class="placeholder">
@@ -401,6 +406,7 @@
           onopen={select}
           onremove={(service) => (confirmRemove = service)}
           oncustomize={(service) => (customizing = service)}
+          onchat={(id, chat) => openChat(id, chat, true)}
         />
       {/if}
     </section>

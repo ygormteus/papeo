@@ -11,6 +11,7 @@
     Snowflake,
     Sun,
   } from "@lucide/svelte";
+  import type { Snippet } from "svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import { THEME_OPTIONS, isInsecure, modKey, type Appearance, type ServiceView } from "./api";
 
@@ -25,6 +26,7 @@
     onzoomreset,
     lockable,
     onlock,
+    extra,
   }: {
     active: ServiceView | null;
     appearance: Appearance;
@@ -36,6 +38,8 @@
     onzoomreset: () => void;
     lockable: boolean;
     onlock: () => void;
+    /** Conteúdo ao lado da busca (o resumo, no Início). */
+    extra?: Snippet;
   } = $props();
 
   const THEME_ICON = { system: Monitor, light: Sun, dark: Moon, oled: Circle };
@@ -56,6 +60,11 @@
     <span>Buscar</span>
     <kbd>{modKey} K</kbd>
   </button>
+
+  {#if extra}
+    <span class="divider" aria-hidden="true"></span>
+    {@render extra()}
+  {/if}
 
   {#if active}
     <span class="current" data-tauri-drag-region>

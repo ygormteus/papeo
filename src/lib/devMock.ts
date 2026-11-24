@@ -32,6 +32,11 @@ export function installDevMock() {
     Object.assign(services[0], { emoji: "🏠", color: "#16a34a", idleMinutes: 24 });
     Object.assign(services[1], { emoji: "💼", color: "#2563eb", idleMinutes: 3 });
     settings.updates.noticeSeen = true;
+    // `?alertas`: uma conta fora do ar e outra travada.
+    if (new URLSearchParams(location.search).has("alertas")) {
+      services[0].status = "loggedOut";
+      services[1].status = "unresponsive";
+    }
   }
   let autostart = false;
   let locked = false;
@@ -117,6 +122,11 @@ export function installDevMock() {
         s.loaded = true;
         s.status = "ok";
         return snap();
+      }
+      case "reload_service": {
+        const s = find();
+        s.status = "ok";
+        return null;
       }
       case "send_reply":
         return new Promise((resolve, reject) =>

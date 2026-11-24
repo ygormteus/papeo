@@ -1,17 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
-    Bell,
-    FileDown,
+    LogIn,
+    MessagesSquare,
+    RotateCw,
     FolderOpen,
-    Layers,
-    MemoryStick,
     Palette,
     Plus,
     Snowflake,
     Trash2,
     TriangleAlert,
   } from "@lucide/svelte";
+  import RecentChats from "./RecentChats.svelte";
+  import { HEAVY_BYTES, freeMemory as freeMemoryOf, home, watchMemory } from "./homeState.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import Switch from "./Switch.svelte";
   import {
@@ -20,7 +21,6 @@
     api,
     formatBytes,
     isMuted,
-    type MemoryReport,
     type ServiceView,
     type Snapshot,
   } from "./api";
@@ -32,6 +32,7 @@
     onopen,
     onremove,
     oncustomize,
+    onchat,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
@@ -39,22 +40,20 @@
     onopen: (id: string) => void;
     onremove: (service: ServiceView) => void;
     oncustomize: (service: ServiceView) => void;
+    /** Abre a conversa (nome exato) no serviço. */
+    onchat: (serviceId: string, chat: string) => void;
   } = $props();
 
-  /** Acima disso, um serviço parado vira sugestão de hibernação. */
-  const HEAVY_BYTES = 300 * 1024 ** 2;
+  /** Acima disso (`HEAVY_BYTES`), um serviço parado vira sugestão. */
   const IDLE_MINUTES = 10;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
 
-  let memory = $state<MemoryReport | null>(null);
+  const memory = $derived(home.memory);
+  const reloading = $derived(home.reloading);
+  const freeMemory = (ids: string[]) => freeMemoryOf(ids, run);
 
-  const loaded = $derived(snap.services.filter((s) => s.loaded).length);
-  const withUnread = $derived(snap.services.filter((s) => s.unread > 0).length);
-  const servicesBytes = $derived(
-    memory ? Object.values(memory.services).reduce((a, b) => a + b, 0) : 0,
-  );
   const heaviest = $derived.by(() => {
     if (!memory) return null;
     let best: string | null = null;
@@ -74,32 +73,60 @@
     );
   }
 
-  const stats = $derived([
-    {
-      icon: Layers,
-      label: "Serviços",
-      value: String(snap.services.length),
-      note: `${loaded} em memória · ${snap.services.length - loaded} dormindo`,
-    },
-    {
-      icon: Bell,
-      label: "Não lidas",
-      value: String(snap.totalUnread),
-      note: withUnread ? `em ${withUnread} ${withUnread === 1 ? "serviço" : "serviços"}` : "tudo em dia",
-    },
-    {
-      icon: MemoryStick,
-      label: "Memória dos serviços",
-      value: memory ? formatBytes(servicesBytes) : "—",
-      note: memory ? `+ ${formatBytes(memory.app)} do Papeo` : "medindo…",
-    },
-    {
-      icon: FileDown,
-      label: "Downloads",
-      value: String(snap.downloads.filter((d) => d.state === "done").length),
-      note: snap.downloads.some((d) => d.state === "downloading") ? "baixando agora" : "nesta sessão",
-    },
-  ]);
+  type Alert = {
+    key: string;
+    tone: "warn" | "danger" | "info";
+    service: ServiceView;
+    title: string;
+    text: string;
+    action: string;
+    icon: typeof LogIn;
+    busy?: boolean;
+    onclick: () => void;
+  };
+
+  /** Problemas que pedem uma ação, cada um com o botão que resolve. */
+  const alerts = $derived.by(() => {
+    const out: Alert[] = [];
+    for (const s of snap.services) {
+      if (s.status === "loggedOut") {
+        out.push({
+          key: `out-${s.id}`,
+          tone: "warn",
+          service: s,
+          title: `${s.name} saiu da conta`,
+          text: "as mensagens não chegam até você entrar de novo.",
+          action: "Entrar de novo",
+          icon: LogIn,
+          onclick: () => onopen(s.id),
+        });
+      } else if (s.status === "unresponsive") {
+        out.push({
+          key: `stuck-${s.id}`,
+          tone: "danger",
+          service: s,
+          title: `${s.name} não está respondendo`,
+          text: "recarregar costuma resolver (o login continua).",
+          action: reloading[s.id] ? "Recarregando…" : "Recarregar",
+          icon: RotateCw,
+          busy: reloading[s.id],
+          onclick: () => freeMemory([s.id]),
+        });
+      } else if (suggestHibernate(s) && !reloading[s.id]) {
+        out.push({
+          key: `heavy-${s.id}`,
+          tone: "info",
+          service: s,
+          title: `${s.name} está usando ${formatBytes(memory?.services[s.id] ?? 0)}`,
+          text: `parado há ${s.idleMinutes} min; recarregar libera (as notificações continuam).`,
+          action: "Liberar memória",
+          icon: RotateCw,
+          onclick: () => freeMemory([s.id]),
+        });
+      }
+    }
+    return out;
+  });
 
   function host(url: string) {
     try {
@@ -113,16 +140,7 @@
     return snap.services.find((s) => s.id === id);
   }
 
-  onMount(() => {
-    const refresh = () =>
-      api
-        .getMemory()
-        .then((m) => (memory = m))
-        .catch(() => {});
-    refresh();
-    const timer = setInterval(refresh, 10_000);
-    return () => clearInterval(timer);
-  });
+  onMount(watchMemory);
 </script>
 
 <div class="home">
@@ -134,19 +152,39 @@
     <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> Adicionar serviço</button>
   </div>
 
-  <section class="stats" aria-label="Resumo">
-    {#each stats as stat (stat.label)}
-      <div class="stat card">
-        <div class="stat-label"><stat.icon size={17} /> {stat.label}</div>
-        <div class="stat-body">
-          <span class="stat-value">{stat.value}</span>
-          <span class="stat-note">{stat.note}</span>
+  {#if alerts.length}
+    <section class="alerts" aria-label="Precisa de atenção">
+      {#each alerts as alert (alert.key)}
+        <div class="alert {alert.tone}" role="status">
+          <ServiceAvatar service={alert.service} size={20} />
+          <p class="alert-text" title="{alert.title}: {alert.text}">
+            <strong>{alert.title}</strong> — {alert.text}
+          </p>
+          <button class="btn small alert-action" disabled={alert.busy} onclick={alert.onclick}>
+            <alert.icon size={14} />
+            {alert.action}
+          </button>
         </div>
-      </div>
-    {/each}
-  </section>
+      {/each}
+    </section>
+  {/if}
 
-  <section class="card block" aria-labelledby="services-title">
+  {#if snap.recent.length}
+    <section class="card block" aria-labelledby="recent-title">
+      <div class="block-head">
+        <h2 id="recent-title"><MessagesSquare size={18} /> Conversas recentes</h2>
+        <span class="hint">Clique numa conversa para ler e responder daqui</span>
+      </div>
+      <RecentChats
+        chats={snap.recent}
+        services={snap.services}
+        onsnap={(s) => run(Promise.resolve(s))}
+        onopen={onchat}
+      />
+    </section>
+  {/if}
+
+  <section class="card block services" aria-labelledby="services-title">
     <div class="block-head">
       <h2 id="services-title">Serviços</h2>
       <span class="hint">Arraste na barra lateral para reordenar · botão direito para mais opções</span>
@@ -158,15 +196,16 @@
         <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> Adicionar o primeiro</button>
       </div>
     {:else}
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Serviço</th>
             <th>Estado</th>
             <th class="num">Memória</th>
-            <th class="num">Não lidas</th>
-            <th>Notificações</th>
-            <th>Hibernar após</th>
+            <th class="num c-unread">Não lidas</th>
+            <th class="c-notif">Notificações</th>
+            <th class="c-hib">Hibernar após</th>
             <th><span class="sr-only">Ações</span></th>
           </tr>
         </thead>
@@ -204,15 +243,15 @@
                   <span class="muted">—</span>
                 {/if}
               </td>
-              <td class="num">{service.unread || "—"}</td>
-              <td>
+              <td class="num c-unread">{service.unread || "—"}</td>
+              <td class="c-notif">
                 <Switch
                   checked={!isMuted(service)}
                   label="Notificações de {service.name}"
                   onchange={(enabled) => run(api.setNotifications(service.id, enabled))}
                 />
               </td>
-              <td>
+              <td class="c-hib">
                 <select
                   class="select"
                   aria-label="Hibernar {service.name} após"
@@ -226,7 +265,7 @@
               </td>
               <td>
                 <div class="actions">
-                  <button class="btn" onclick={() => onopen(service.id)}>Abrir</button>
+                  <button class="btn c-open" onclick={() => onopen(service.id)}>Abrir</button>
                   <button
                     class="icon-btn"
                     onclick={() => oncustomize(service)}
@@ -259,6 +298,7 @@
           {/each}
         </tbody>
       </table>
+      </div>
       {#if snap.services.some(suggestHibernate)}
         <p class="tip"><TriangleAlert size={15} /> Serviços destacados estão pesados e parados: hiberne para liberar memória.</p>
       {/if}
@@ -324,54 +364,50 @@
     font-size: 16px;
   }
 
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 16px;
-    margin-bottom: 20px;
+  .alerts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 18px;
   }
 
-  .stat {
-    padding: 6px;
-    background: var(--bg-subtle);
-  }
-
-  .stat-label {
+  .alert {
+    --tone: var(--accent);
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px 10px;
-    font-weight: 550;
-    font-size: 15px;
-  }
-
-  .stat-label :global(svg) {
-    color: var(--text-muted);
-  }
-
-  .stat-body {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 12px 14px;
+    gap: 10px;
+    padding: 6px 6px 6px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--bg);
+    border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+    background: color-mix(in srgb, var(--tone) 8%, var(--bg));
   }
 
-  .stat-value {
-    font-size: 28px;
-    font-weight: 450;
-    line-height: 1.1;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  .alert.warn {
+    --tone: var(--warn);
   }
 
-  .stat-note {
-    font-size: 12.5px;
+  .alert.danger {
+    --tone: var(--danger);
+  }
+
+  .alert-text {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 13.5px;
     color: var(--text-muted);
-    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .alert-text strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .alert-action {
+    flex: none;
   }
 
   .block {
@@ -393,6 +429,9 @@
   }
 
   h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
     font-size: 18px;
     font-weight: 550;
@@ -558,5 +597,41 @@
     height: 30px;
     padding: 0 10px;
     font-size: 13px;
+  }
+
+  /* A tabela acompanha a largura disponível: some primeiro o "hibernar após"
+     e as notificações (também no botão direito da conta); se ainda faltar
+     espaço, ela rola na horizontal em vez de cortar. */
+  .services {
+    container-type: inline-size;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  @container (max-width: 980px) {
+    .c-hib {
+      display: none;
+    }
+  }
+
+  @container (max-width: 820px) {
+    .c-notif {
+      display: none;
+    }
+  }
+
+  /* O nome da conta já abre o serviço; as não lidas aparecem na barra. */
+  @container (max-width: 700px) {
+    .c-open {
+      display: none;
+    }
+  }
+
+  @container (max-width: 560px) {
+    .c-unread {
+      display: none;
+    }
   }
 </style>
