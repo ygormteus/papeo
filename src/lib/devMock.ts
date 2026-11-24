@@ -18,6 +18,19 @@ export function installDevMock() {
   ];
   services[0].idleMinutes = 24;
   let settings: Settings = structuredClone(EMPTY_SNAPSHOT.settings);
+  // `?demo`: dados fictícios para as capturas de tela do README.
+  if (new URLSearchParams(location.search).has("demo")) {
+    services.splice(
+      0,
+      services.length,
+      mk("svc-a", "whatsapp", "Pessoal", DEFAULT_URL.whatsapp, true, 4),
+      mk("svc-c", "whatsapp", "Trabalho", DEFAULT_URL.whatsapp, true, 12),
+      mk("svc-b", "telegram", "Telegram", DEFAULT_URL.telegram, false, 0),
+    );
+    Object.assign(services[0], { emoji: "🏠", color: "#16a34a", idleMinutes: 24 });
+    Object.assign(services[1], { emoji: "💼", color: "#2563eb", idleMinutes: 3 });
+    settings.updates.noticeSeen = true;
+  }
   let autostart = false;
   let locked = false;
   let orphans = 2;
@@ -140,7 +153,7 @@ export function installDevMock() {
       case "get_memory":
         return {
           services: Object.fromEntries(
-            services.filter((s) => s.loaded).map((s, i) => [s.id, (i === 0 ? 420 : 180) * MB]),
+            services.filter((s) => s.loaded).map((s, i) => [s.id, (i === 0 ? 1150 : 920) * MB]),
           ),
           app: 48 * MB,
         };

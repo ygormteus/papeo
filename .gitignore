@@ -30,3 +30,16 @@ graphify-out/
 # Python
 __pycache__/
 *.pyc
+
+# Arquivos locais de desenvolvimento (fora do repositório público)
+/AGENTS.md
+/CLAUDE.md
+/.codex/
+/.claude/
+/.agents/
+/.mcp.json
+/.graphifyignore
+/docs/
+/scripts/graphify.sh
+/scripts/repowise*
+/scripts/test-repowise*
