@@ -4,7 +4,7 @@ use crate::state::{
     publish, AppState, Area, DownloadState, Health, Snapshot, MAIN_WINDOW, UI_WEBVIEW,
 };
 use papeo_core::{MediaPolicy, Service};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse, WebviewBuilder};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl};
 use tauri_plugin_opener::OpenerExt;
@@ -102,13 +102,16 @@ pub fn create_service_webview(
         None => {}
     }
 
-    let webview = window
-        .add_child(
-            builder,
-            LogicalPosition::new(area.x, area.y),
-            LogicalSize::new(area.width, area.height),
-        )
-        .map_err(|e| e.to_string())?;
+    let webview = match window.add_child(
+        builder,
+        LogicalPosition::new(area.x, area.y),
+        LogicalSize::new(area.width, area.height),
+    ) {
+        Ok(webview) => webview,
+        // Outra thread criou a mesma conta ao mesmo tempo (ex.: clique
+        // durante a abertura escalonada): usa a dela.
+        Err(err) => return app.get_webview(&service.id).ok_or_else(|| err.to_string()),
+    };
     #[cfg(target_os = "macos")]
     crate::webcrypto::attach(&webview);
     if (service.zoom - 1.0).abs() > f64::EPSILON {
@@ -125,28 +128,83 @@ pub fn create_service_webview(
     Ok(webview)
 }
 
+/// Intervalo entre as contas reabertas ao iniciar.
+const RESTORE_GAP: Duration = Duration::from_secs(3);
+
 /// Ao iniciar, recarrega (escondidos) os serviços que estavam carregados
 /// quando o app foi fechado, para as notificações continuarem chegando.
+/// A primeira conta da barra lateral abre na hora; as outras, uma a uma em
+/// seguida, para não disputarem a abertura do app.
 pub fn restore_open(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let (services, area) = {
+    let ids: Vec<String> = {
+        let state = app.state::<AppState>();
         let inner = state.lock();
-        let services: Vec<Service> = inner
+        inner
             .config
-            .open
+            .services
             .iter()
-            .filter_map(|id| inner.service(id).ok().cloned())
-            .collect();
-        (services, inner.area)
+            .filter(|s| inner.config.open.contains(&s.id))
+            .map(|s| s.id.clone())
+            .collect()
+    };
+    let Some((first, rest)) = ids.split_first() else {
+        return;
+    };
+    restore_one(app, first);
+    apply_layout(app);
+    if rest.is_empty() {
+        return;
+    }
+    let app = app.clone();
+    let rest = rest.to_vec();
+    std::thread::spawn(move || {
+        for id in rest {
+            std::thread::sleep(RESTORE_GAP);
+            if restore_one(&app, &id) {
+                apply_layout(&app);
+                publish(&app);
+            }
+        }
+    });
+}
+
+/// Cria a webview de uma conta a reabrir, se ainda fizer sentido.
+fn restore_one(app: &AppHandle, id: &str) -> bool {
+    let state = app.state::<AppState>();
+    let (service, area) = {
+        let inner = state.lock();
+        // Removida, hibernada ou já aberta pelo usuário enquanto esperava.
+        if !inner.config.open.iter().any(|o| o == id) || app.get_webview(id).is_some() {
+            return false;
+        }
+        let Ok(service) = inner.service(id).cloned() else {
+            return false;
+        };
+        (service, inner.area)
+    };
+    // Nasce fora de vista (o layout decide se aparece): não cobre a tela atual.
+    let offscreen = Area {
+        x: -(area.width + 100.0),
+        ..area
     };
     // Sem o lock: add_child espera a thread principal.
-    for service in services {
-        if create_service_webview(app, &service, area).is_ok() {
-            // Conta como usado agora, para a hibernação automática esperar.
-            state.lock().last_used.insert(service.id, Instant::now());
-        }
+    if create_service_webview(app, &service, offscreen).is_err() {
+        return false;
     }
-    apply_layout(app);
+    let mut inner = state.lock();
+    // Removida, com os dados apagados ou trocada por um backup durante a
+    // criação: desfaz.
+    if inner.service(&service.id).map(|s| &s.session) != Ok(&service.session) {
+        inner.config.open.retain(|o| o != &service.id);
+        drop(inner);
+        if let Some(webview) = app.get_webview(&service.id) {
+            let _ = webview.close();
+        }
+        return false;
+    }
+    // Conta como usado agora, para a hibernação automática esperar.
+    inner.last_used.insert(service.id, Instant::now());
+    true
 }
 
 /// Recarrega o site do serviço (zera a memória acumulada pela página).

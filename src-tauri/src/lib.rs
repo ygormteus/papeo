@@ -1,5 +1,6 @@
 mod commands;
 mod downloads;
+mod idle;
 mod lock;
 mod memory;
 #[cfg(target_os = "macos")]
@@ -31,10 +32,19 @@ const HIDDEN_ARG: &str = "--hidden";
 const RELOAD_IDLE: Duration = Duration::from_secs(10 * 60);
 /// …e no máximo uma vez neste intervalo.
 const RELOAD_COOLDOWN: Duration = Duration::from_secs(60 * 60);
+/// Computador sem uso há este tempo: a pessoa saiu.
+const AWAY_AFTER: Duration = Duration::from_secs(20 * 60);
+/// Com a pessoa fora, o limite cai para a metade (nunca abaixo disto), para
+/// a conta estar leve quando ela voltar.
+const AWAY_RELOAD_FLOOR: u64 = 1024 * 1024 * 1024;
+/// Chamada ou áudio/vídeo há menos que isto: não recarrega. O sinal de vida
+/// vem a cada 20 s (mais devagar com o serviço escondido).
+const MEDIA_GRACE: Duration = Duration::from_secs(3 * 60);
 
 /// Serviços acima do limite de memória que podem ser recarregados sem
 /// atrapalhar: fora de vista, parados há um tempo e sem download em curso.
-fn reload_due(app: &AppHandle, window_visible: bool) -> Vec<String> {
+/// `away`: computador sem uso; o limite cai para a metade (mínimo 1 GB).
+fn reload_due(app: &AppHandle, window_visible: bool, away: bool) -> Vec<String> {
     let state = app.state::<AppState>();
     let limit_mb = state.lock().config.settings.reload_above_mb;
     if limit_mb == 0 {
@@ -42,7 +52,10 @@ fn reload_due(app: &AppHandle, window_visible: bool) -> Vec<String> {
     }
     // Fora do lock: a medição espera a thread principal.
     let report = memory::report(app);
-    let limit = u64::from(limit_mb) * 1024 * 1024;
+    let mut limit = u64::from(limit_mb) * 1024 * 1024;
+    if away {
+        limit = limit.min((limit / 2).max(AWAY_RELOAD_FLOOR));
+    }
     let inner = state.lock();
     report
         .services
@@ -61,6 +74,13 @@ fn reload_due(app: &AppHandle, window_visible: bool) -> Vec<String> {
                 .last_reload
                 .get(id)
                 .is_none_or(|t| t.elapsed() >= RELOAD_COOLDOWN)
+        })
+        .filter(|id| {
+            inner
+                .health
+                .get(id)
+                .and_then(|h| h.media_at)
+                .is_none_or(|t| t.elapsed() >= MEDIA_GRACE)
         })
         .filter(|id| {
             !inner
@@ -139,7 +159,8 @@ fn spawn_maintenance(app: AppHandle) {
                 lock::lock_app(&app);
             }
             if tick % 4 == 0 {
-                for id in reload_due(&app, visible) {
+                let away = idle::system_idle().is_some_and(|t| t >= AWAY_AFTER);
+                for id in reload_due(&app, visible, away) {
                     if webviews::reload(&app, &id).unwrap_or(false) {
                         state
                             .lock()

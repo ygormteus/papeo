@@ -111,6 +111,8 @@ pub async fn service_status(
     webview: Webview,
     state: State<'_, AppState>,
     logged_out: bool,
+    // Opcional: páginas abertas antes da atualização não enviam.
+    media: Option<bool>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
@@ -126,6 +128,10 @@ pub async fn service_status(
         };
         health.last_beat = Some(Instant::now());
         health.logged_out = own_site && logged_out;
+        // Vale mesmo fora do site do serviço: só evita recarregar.
+        if media == Some(true) {
+            health.media_at = health.last_beat;
+        }
         // A página está pronta: abre a conversa que esperava por ela.
         let chat = own_site.then(|| inner.pending_chat.remove(&id)).flatten();
         (before != status_of(&inner, &id, true), chat)

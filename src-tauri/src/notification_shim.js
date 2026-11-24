@@ -25,9 +25,62 @@
     return Boolean(selector && document.querySelector(selector));
   };
 
+  // Chamada, microfone/câmera, tela compartilhada ou áudio/vídeo com som:
+  // o Papeo não recarrega o serviço para liberar memória enquanto isso.
+  const captures = new Set();
+  const media = navigator.mediaDevices;
+  for (const name of ["getUserMedia", "getDisplayMedia"]) {
+    if (!media || typeof media[name] !== "function") continue;
+    const original = media[name].bind(media);
+    media[name] = async (...args) => {
+      const stream = await original(...args);
+      captures.add(stream);
+      return stream;
+    };
+  }
+  // Também os elementos fora da página (`new Audio()`).
+  const players = new Set();
+  const Media = window.HTMLMediaElement;
+  if (Media && typeof Media.prototype.play === "function") {
+    const play = Media.prototype.play;
+    Media.prototype.play = function (...args) {
+      players.add(this);
+      return play.apply(this, args);
+    };
+  }
+  // Vídeo mudo em loop (GIF, figurinha) não conta.
+  const audible = (m) => m.paused === false && m.ended === false && !m.muted && m.volume > 0;
+  const mediaActive = () => {
+    try {
+      for (const stream of captures) {
+        if (stream.getTracks().some((t) => t.readyState === "live")) return true;
+        captures.delete(stream);
+      }
+      for (const m of players) {
+        if (audible(m)) return true;
+        if (m.paused !== false || m.ended) players.delete(m);
+      }
+      return Array.from(document.querySelectorAll("audio, video")).some(audible);
+    } catch (_) {
+      return false;
+    }
+  };
+
   // Sinal de vida: se o serviço visível parar de enviar, o Papeo oferece recarregar.
-  const heartbeat = () => invoke("service_status", { loggedOut: loggedOut() });
+  const heartbeat = () => invoke("service_status", { loggedOut: loggedOut(), media: mediaActive() });
   setInterval(heartbeat, 20000);
+  // Uma mídia começou: avisa logo (no máximo a cada 5 s).
+  let lastPlayBeat = 0;
+  document.addEventListener(
+    "play",
+    () => {
+      const now = Date.now();
+      if (now - lastPlayBeat < 5000) return;
+      lastPlayBeat = now;
+      heartbeat();
+    },
+    true,
+  );
   window.addEventListener("load", () => setTimeout(heartbeat, 4000));
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") heartbeat();

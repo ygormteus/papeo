@@ -55,6 +55,8 @@ pub struct Health {
     pub created: Instant,
     pub last_beat: Option<Instant>,
     pub logged_out: bool,
+    /// Último sinal de vida com chamada ou áudio/vídeo em curso.
+    pub media_at: Option<Instant>,
 }
 
 impl Health {
@@ -69,6 +71,7 @@ impl Health {
             created: Instant::now(),
             last_beat: None,
             logged_out: false,
+            media_at: None,
         }
     }
 }

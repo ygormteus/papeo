@@ -364,8 +364,9 @@
         <span class="label">Recarregar serviço pesado</span>
         <span class="hint">
           Sites como o WhatsApp Web acumulam memória com o tempo. Recarrega o serviço quando ele passa
-          do limite, só em segundo plano e parado há 10 min, no máximo uma vez por hora. As
-          notificações continuam.
+          do limite, só em segundo plano e parado há 10 min, no máximo uma vez por hora. Com o
+          computador sem uso há 20 min, o limite cai para a metade (mínimo 1 GB), para tudo estar leve
+          quando você voltar. Nunca durante chamadas, áudio ou vídeo. As notificações continuam.
         </span>
       </div>
       <select

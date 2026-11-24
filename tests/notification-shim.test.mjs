@@ -42,10 +42,24 @@ globalThis.document = {
 };
 class SWR {}
 window.ServiceWorkerRegistration = SWR;
+let micLive = true;
 Object.defineProperty(globalThis, "navigator", {
-  value: { permissions: { query: async (d) => ({ state: "prompt", d }) } },
+  value: {
+    permissions: { query: async (d) => ({ state: "prompt", d }) },
+    mediaDevices: {
+      getUserMedia: async () => ({ getTracks: () => [{ readyState: micLive ? "live" : "ended" }] }),
+    },
+  },
   configurable: true,
 });
+class FakeMedia {
+  play() {
+    this.paused = false;
+    this.ended = false;
+    return Promise.resolve();
+  }
+}
+globalThis.HTMLMediaElement = FakeMedia;
 
 eval(source);
 eval(source); // idempotente: não instala duas vezes
@@ -80,6 +94,9 @@ qrVisible = true;
 timers[0]();
 const status = calls.filter(([c]) => c === "service_status").map(([, a]) => a.loggedOut);
 check(JSON.stringify(status) === "[false,true]", `sinal de vida/deslogado: ${JSON.stringify(status)}`);
+const media = calls.filter(([c]) => c === "service_status").map(([, a]) => a.media);
+check(JSON.stringify(media) === "[false,false]", `sem mídia tocando: ${JSON.stringify(media)}`);
+check(typeof docListeners.play === "function", "sinal de vida quando uma mídia começa");
 check(typeof listeners.load === "function", "sinal de vida após carregar");
 document.visibilityState = "hidden";
 docListeners.visibilitychange();
@@ -87,6 +104,30 @@ document.visibilityState = "visible";
 docListeners.visibilitychange();
 const after = calls.filter(([c]) => c === "service_status").length;
 check(after === 3, `sinal de vida ao voltar a ficar visível: ${after}`);
+
+// Mídia em uso: o Papeo não recarrega o serviço
+const lastMedia = () => calls.filter(([c]) => c === "service_status").at(-1)[1].media;
+await navigator.mediaDevices.getUserMedia({ audio: true });
+timers[0]();
+check(lastMedia() === true, "microfone em uso conta como mídia");
+micLive = false;
+timers[0]();
+check(lastMedia() === false, "microfone encerrado deixa de contar");
+const gif = new FakeMedia();
+gif.muted = true;
+gif.volume = 1;
+await gif.play();
+timers[0]();
+check(lastMedia() === false, "vídeo mudo (GIF) não conta");
+const voice = new FakeMedia();
+voice.muted = false;
+voice.volume = 1;
+await voice.play();
+timers[0]();
+check(lastMedia() === true, "áudio fora da página conta");
+voice.paused = true;
+timers[0]();
+check(lastMedia() === false, "áudio pausado deixa de contar");
 
 // Abrir conversa pedida pelo Papeo (nome exato na lista)
 check(typeof window.__papeoOpenChat === "function", "abrir conversa disponível");
