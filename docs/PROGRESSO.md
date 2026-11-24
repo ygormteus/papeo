@@ -1,5 +1,15 @@
 # Progresso
 
+## 2026-11-24 — Testes no Mac: remoção, memória, contas reabertas, recarregamento
+
+- **Raiz/branch:** `~/Developer/PROJETOS - GIT/papeo` (Mac), `main`, base `a083cd2`.
+- **Corrigido:** remover serviço, "sair e apagar dados" e restaurar backup não faziam nada: o `{@const}` do Svelte 5 é derivado e virava `null` ao fechar o diálogo antes de ler o id (`App.svelte`).
+- **Memória:** no macOS a medição passou a usar o footprint (`proc_pid_rusage`, igual ao Monitor de Atividade); o RSS mostrava menos da metade. WhatsApp Web: ~0,9–1 GB ao abrir, ~2–2,4 GB após 10–20 min; o Papeo em si ~50 MB.
+- **Novo:** `Config.open` (local, fora do backup) reabre escondidos ao iniciar os serviços que estavam carregados; `Settings.reloadAboveMb` (padrão 2048, 0 = nunca) recarrega serviço acima do limite, fora de vista, parado há 10 min, sem download, no máximo 1×/h (Configurações → Sistema).
+- **RepoWise/Graphify no Mac:** `flock` via Homebrew, venv 0.60.1, `graphify.sh` sem caminho da LXC, hook `post-commit`; testes de proteção 0; MCP responde.
+- **Evidência (Mac):** `cargo fmt --check` 0; `cargo test -p papeo-core` 0 (31); clippy `-D warnings` macOS (core `--all-targets` e app) 0; `pnpm check`/`build`/`test` 0; `pnpm build:local` 0. App nativo: remover Telegram ok (usuário); reiniciar reabriu as 2 contas (2 WebContent, ~900 MB em 35 s).
+- **Não verificado:** clippy cruzado para Windows (sem `rustup` no Mac); recarregamento automático disparando de fato; notificações de mensagens que chegam durante o recarregamento.
+
 ## 2026-11-24 — Atualização com um clique (tauri-plugin-updater)
 
 - **Objetivo (decisões do usuário):** atualizador do Tauri; verificação ligada por padrão com aviso na primeira abertura; instalação só com clique.

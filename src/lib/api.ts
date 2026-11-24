@@ -59,6 +59,8 @@ export interface Settings {
   appearance: Appearance;
   /** `noticeSeen` falso: o aviso da verificação ainda não foi mostrado. */
   updates: { check: boolean; noticeSeen: boolean };
+  /** Recarrega serviço em segundo plano acima deste uso (MB); 0 = desligado. */
+  reloadAboveMb: number;
 }
 
 export type UpdateStatus =
@@ -121,6 +123,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     lock: { enabled: false, afterMinutes: 5 },
     appearance: "system",
     updates: { check: true, noticeSeen: false },
+    reloadAboveMb: 2048,
   },
   dndActive: false,
   autostart: false,
@@ -161,7 +164,12 @@ export const api = {
     prefs: Partial<
       Pick<
         Settings,
-        "closeToTray" | "startHidden" | "openOnNotificationFocus" | "notificationPreview" | "protectScreen"
+        | "closeToTray"
+        | "startHidden"
+        | "openOnNotificationFocus"
+        | "notificationPreview"
+        | "protectScreen"
+        | "reloadAboveMb"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
@@ -290,6 +298,14 @@ export const LOCK_OPTIONS = [
 export function isInsecure(service: Pick<ServiceView, "url">): boolean {
   return service.url.startsWith("http://");
 }
+
+export const RELOAD_OPTIONS = [
+  { mb: 0, label: "Nunca" },
+  { mb: 1536, label: "Acima de 1,5 GB" },
+  { mb: 2048, label: "Acima de 2 GB" },
+  { mb: 3072, label: "Acima de 3 GB" },
+  { mb: 4096, label: "Acima de 4 GB" },
+];
 
 export const HIBERNATE_OPTIONS = [
   { minutes: 0, label: "Nunca" },

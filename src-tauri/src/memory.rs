@@ -5,8 +5,9 @@
 //! - Windows: cada serviço tem pasta de dados própria, então um processo de
 //!   navegador WebView2 próprio; soma-se a árvore de processos dele.
 //!
-//! Os números são aproximados (memória residente) e servem para comparar
-//! serviços, não para medição exata.
+//! No macOS o número é o "footprint" (o mesmo do Monitor de Atividade:
+//! inclui memória comprimida e de vídeo, sem contar bibliotecas
+//! compartilhadas). No Windows é a memória residente da árvore, aproximada.
 
 use crate::state::AppState;
 use serde::Serialize;
@@ -66,7 +67,24 @@ fn platform_pid(_platform: &tauri::webview::PlatformWebview) -> Option<u32> {
     None
 }
 
+/// Footprint do processo (macOS), como no Monitor de Atividade.
+#[cfg(target_os = "macos")]
+fn footprint(pid: u32) -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
+    // SAFETY: `info` tem o tamanho de `rusage_info_v2`, o formato pedido.
+    let rc = unsafe {
+        libc::proc_pid_rusage(
+            i32::try_from(pid).ok()?,
+            libc::RUSAGE_INFO_V2,
+            info.as_mut_ptr().cast(),
+        )
+    };
+    // SAFETY: preenchido pelo kernel quando rc == 0.
+    (rc == 0).then(|| unsafe { info.assume_init() }.ri_phys_footprint)
+}
+
 /// Soma a memória do processo e de todos os descendentes.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn tree_memory(system: &System, root: Pid) -> u64 {
     let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
     for (pid, process) in system.processes() {
@@ -105,6 +123,17 @@ pub fn report(app: &AppHandle) -> MemoryReport {
         })
         .collect();
 
+    #[cfg(target_os = "macos")]
+    {
+        let services = pids
+            .into_iter()
+            .filter_map(|(id, pid)| Some((id, footprint(pid)?)))
+            .collect();
+        let app = footprint(std::process::id()).unwrap_or_default();
+        return MemoryReport { services, app };
+    }
+
+    #[allow(unreachable_code)]
     let Ok(mut system) = System::new() else {
         return MemoryReport::default();
     };

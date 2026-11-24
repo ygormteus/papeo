@@ -30,7 +30,15 @@ pub struct Settings {
     /// os sites dos serviços enxergam como `prefers-color-scheme`.
     pub appearance: Appearance,
     pub updates: UpdatePrefs,
+    /// Recarrega um serviço em segundo plano que passar deste uso de
+    /// memória, em MB (o WhatsApp Web cresce com o tempo). 0 = desligado.
+    pub reload_above_mb: u32,
 }
+
+/// Limite padrão e faixa aceita para `reload_above_mb`.
+pub const RELOAD_DEFAULT_MB: u32 = 2048;
+pub const RELOAD_MIN_MB: u32 = 512;
+pub const RELOAD_MAX_MB: u32 = 16 * 1024;
 
 /// Verificação de atualizações no GitHub.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +120,7 @@ impl Default for Settings {
             },
             appearance: Appearance::System,
             updates: UpdatePrefs::default(),
+            reload_above_mb: RELOAD_DEFAULT_MB,
         }
     }
 }
@@ -169,6 +178,9 @@ impl Settings {
             .map(|d| d.trim().to_owned())
             .filter(|d| !d.is_empty() && std::path::Path::new(d).is_absolute());
         self.lock.after_minutes = self.lock.after_minutes.min(LOCK_MAX_MINUTES);
+        if self.reload_above_mb != 0 {
+            self.reload_above_mb = self.reload_above_mb.clamp(RELOAD_MIN_MB, RELOAD_MAX_MB);
+        }
         self
     }
 }
@@ -258,6 +270,16 @@ mod tests {
         assert_eq!(old.appearance, Appearance::System);
         let oled: Settings = serde_json::from_str(r#"{"appearance":"oled"}"#).unwrap();
         assert_eq!(oled.appearance, Appearance::Oled);
+    }
+
+    #[test]
+    fn reload_limit_default_and_range() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.reload_above_mb, RELOAD_DEFAULT_MB);
+        let off: Settings = serde_json::from_str(r#"{"reloadAboveMb":0}"#).unwrap();
+        assert_eq!(off.sanitized().reload_above_mb, 0);
+        let low: Settings = serde_json::from_str(r#"{"reloadAboveMb":10}"#).unwrap();
+        assert_eq!(low.sanitized().reload_above_mb, RELOAD_MIN_MB);
     }
 
     #[test]

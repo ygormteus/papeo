@@ -230,16 +230,8 @@ pub async fn hibernate_service(
 }
 
 #[tauri::command]
-pub async fn reload_service(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    id: String,
-) -> CmdResult<()> {
-    if let Some(webview) = app.get_webview(&id) {
-        if let Some(health) = state.lock().health.get_mut(&id) {
-            *health = crate::state::Health::new();
-        }
-        webview.reload().map_err(|e| e.to_string())?;
+pub async fn reload_service(app: AppHandle, id: String) -> CmdResult<()> {
+    if crate::webviews::reload(&app, &id)? {
         publish(&app);
     }
     Ok(())
@@ -319,6 +311,7 @@ pub struct Preferences {
     open_on_notification_focus: Option<bool>,
     notification_preview: Option<NotificationPreview>,
     protect_screen: Option<bool>,
+    reload_above_mb: Option<u32>,
 }
 
 #[tauri::command]
@@ -344,6 +337,10 @@ pub async fn set_preferences(
         }
         if let Some(v) = prefs.protect_screen {
             s.protect_screen = v;
+        }
+        if let Some(v) = prefs.reload_above_mb {
+            s.reload_above_mb = v;
+            *s = std::mem::take(s).sanitized();
         }
         Ok(())
     })?;

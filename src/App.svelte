@@ -401,8 +401,10 @@
     confirmLabel="Remover"
     onclose={() => (confirmRemove = null)}
     onconfirm={() => {
+      // `{@const}` é derivado: lê o id antes de fechar o diálogo.
+      const { id } = service;
       confirmRemove = null;
-      run(api.removeService(service.id));
+      run(api.removeService(id));
     }}
   />
 {/if}
@@ -415,9 +417,10 @@
     confirmLabel="Sair e apagar"
     onclose={() => (confirmClear = null)}
     onconfirm={async () => {
+      const { id, name } = service;
       confirmClear = null;
-      await run(api.clearServiceData(service.id));
-      showToast({ text: `Dados de ${service.name} apagados deste computador.` });
+      await run(api.clearServiceData(id));
+      showToast({ text: `Dados de ${name} apagados deste computador.` });
     }}
   />
 {/if}
@@ -430,8 +433,9 @@
     confirmLabel="Restaurar"
     onclose={() => (restoring = null)}
     onconfirm={async () => {
+      const { path } = backup;
       restoring = null;
-      await run(api.importConfig(backup.path));
+      await run(api.importConfig(path));
       page = "home";
       showToast({ text: "Configuração restaurada." });
     }}

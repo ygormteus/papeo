@@ -16,6 +16,7 @@
   import {
     LOCK_OPTIONS,
     PREVIEW_OPTIONS,
+    RELOAD_OPTIONS,
     THEME_OPTIONS,
     api,
     errorMessage,
@@ -344,6 +345,27 @@
         label="Manter na bandeja ao fechar"
         onchange={(v) => run(api.setPreferences({ closeToTray: v }))}
       />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Recarregar serviço pesado</span>
+        <span class="hint">
+          Sites como o WhatsApp Web acumulam memória com o tempo. Recarrega o serviço quando ele passa
+          do limite, só em segundo plano e parado há 10 min, no máximo uma vez por hora. As
+          notificações continuam.
+        </span>
+      </div>
+      <select
+        class="select"
+        aria-label="Recarregar serviço pesado"
+        value={settings.reloadAboveMb}
+        onchange={(e) => run(api.setPreferences({ reloadAboveMb: Number(e.currentTarget.value) }))}
+      >
+        {#each RELOAD_OPTIONS as option (option.mb)}
+          <option value={option.mb}>{option.label}</option>
+        {/each}
+      </select>
     </div>
 
     <div class="row">

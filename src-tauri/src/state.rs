@@ -106,6 +106,8 @@ pub struct Inner {
     /// Última notificação mostrada com o app em segundo plano.
     pub last_notification: Option<(String, Instant)>,
     pub health: HashMap<String, Health>,
+    /// Último recarregamento automático por excesso de memória.
+    pub last_reload: HashMap<String, Instant>,
     pub downloads: VecDeque<DownloadEntry>,
     pub next_download_id: u64,
     /// App bloqueado: webviews dos serviços ocultas até autenticar.
@@ -137,6 +139,7 @@ impl Inner {
             last_notified: HashMap::new(),
             last_notification: None,
             health: HashMap::new(),
+            last_reload: HashMap::new(),
             downloads: VecDeque::new(),
             next_download_id: 1,
             // Bloqueia sempre ao abrir; se o sistema não tiver autenticação,

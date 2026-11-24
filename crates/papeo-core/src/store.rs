@@ -20,6 +20,10 @@ pub struct Config {
     /// de novo ao abrir. Não entra no backup.
     #[serde(default)]
     pub pending_removal: Vec<String>,
+    /// Serviços carregados (não hibernados), para reabri-los ao iniciar o
+    /// app. Local deste computador: não entra no backup.
+    #[serde(default)]
+    pub open: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -33,6 +37,8 @@ struct StoreFile {
     settings: Settings,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pending_removal: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    open: Vec<String>,
 }
 
 fn defaults() -> Config {
@@ -43,6 +49,7 @@ fn defaults() -> Config {
             .collect(),
         settings: Settings::default(),
         pending_removal: Vec::new(),
+        open: Vec::new(),
     }
 }
 
@@ -83,10 +90,18 @@ fn sanitize(file: StoreFile, strict: bool) -> Result<(Config, usize), String> {
         .collect();
     pending_removal.sort();
     pending_removal.dedup();
+    // Só serviços que existem, sem repetir.
+    let mut open = Vec::new();
+    for id in file.open {
+        if ids.contains(&id) && !open.contains(&id) {
+            open.push(id);
+        }
+    }
     let config = Config {
         services,
         settings: file.settings.sanitized(),
         pending_removal,
+        open,
     };
     Ok((config, dropped))
 }
@@ -122,11 +137,16 @@ fn to_json(config: &Config, kind: Option<&str>) -> Result<Vec<u8>, String> {
         kind: kind.map(str::to_owned),
         services: config.services.clone(),
         settings: config.settings.clone(),
-        // Limpeza pendente é local deste computador.
+        // Limpeza pendente e serviços abertos são locais deste computador.
         pending_removal: if kind.is_some() {
             Vec::new()
         } else {
             config.pending_removal.clone()
+        },
+        open: if kind.is_some() {
+            Vec::new()
+        } else {
+            config.open.clone()
         },
     })
     .map_err(|e| e.to_string())
@@ -267,6 +287,24 @@ mod tests {
     }
 
     #[test]
+    fn open_services_are_local_and_validated() {
+        let dir = temp_dir();
+        let mut config = defaults();
+        let first = config.services[0].id.clone();
+        config.open = vec![first.clone(), "svc-nao-existe".into(), first.clone()];
+        let path = dir.join("services.json");
+        save(&path, &config).unwrap();
+        assert_eq!(load(&path).open, vec![first]);
+        let backup = dir.join("backup.json");
+        export_backup(&backup, &config).unwrap();
+        assert!(read_backup(&backup).unwrap().open.is_empty());
+        // Arquivo antigo, sem o campo.
+        fs::write(&path, br#"{"version":2,"services":[]}"#).unwrap();
+        assert!(load(&path).open.is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn duplicate_ids_are_dropped() {
         let svc = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
         let file = StoreFile {
@@ -275,6 +313,7 @@ mod tests {
             services: vec![svc.clone(), svc],
             settings: Settings::default(),
             pending_removal: Vec::new(),
+            open: Vec::new(),
         };
         assert_eq!(sanitize(file, true).unwrap().0.services.len(), 1);
     }
@@ -287,6 +326,7 @@ mod tests {
             services: vec![],
             settings: Settings::default(),
             pending_removal: Vec::new(),
+            open: Vec::new(),
         };
         assert!(sanitize(file, false).is_err());
     }

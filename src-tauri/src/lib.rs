@@ -22,14 +22,61 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 /// Argumento usado pelo início automático com o sistema.
 const HIDDEN_ARG: &str = "--hidden";
 
+/// Só recarrega serviço que está em segundo plano há este tempo…
+const RELOAD_IDLE: Duration = Duration::from_secs(10 * 60);
+/// …e no máximo uma vez neste intervalo.
+const RELOAD_COOLDOWN: Duration = Duration::from_secs(60 * 60);
+
+/// Serviços acima do limite de memória que podem ser recarregados sem
+/// atrapalhar: fora de vista, parados há um tempo e sem download em curso.
+fn reload_due(app: &AppHandle, window_visible: bool) -> Vec<String> {
+    let state = app.state::<AppState>();
+    let limit_mb = state.lock().config.settings.reload_above_mb;
+    if limit_mb == 0 {
+        return Vec::new();
+    }
+    // Fora do lock: a medição espera a thread principal.
+    let report = memory::report(app);
+    let limit = u64::from(limit_mb) * 1024 * 1024;
+    let inner = state.lock();
+    report
+        .services
+        .into_iter()
+        .filter(|(_, bytes)| *bytes > limit)
+        .map(|(id, _)| id)
+        .filter(|id| !window_visible || inner.active.as_deref() != Some(id.as_str()))
+        .filter(|id| {
+            inner
+                .last_used
+                .get(id)
+                .is_none_or(|t| t.elapsed() >= RELOAD_IDLE)
+        })
+        .filter(|id| {
+            inner
+                .last_reload
+                .get(id)
+                .is_none_or(|t| t.elapsed() >= RELOAD_COOLDOWN)
+        })
+        .filter(|id| {
+            !inner
+                .downloads
+                .iter()
+                .any(|d| &d.service_id == id && d.state == state::DownloadState::Downloading)
+        })
+        .collect()
+}
+
 /// A cada 15 s: hiberna serviços parados, reavalia "não responde", aplica o
-/// bloqueio automático e agenda a verificação de atualizações.
+/// bloqueio automático e agenda a verificação de atualizações. A cada
+/// minuto, recarrega serviços que passaram do limite de memória.
 fn spawn_maintenance(app: AppHandle) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
         let mut last_status = HashMap::new();
+        let mut tick: u64 = 0;
         loop {
             std::thread::sleep(Duration::from_secs(15));
+            tick += 1;
             let state = app.state::<AppState>();
             let (due, status) = {
                 let inner = state.lock();
@@ -85,6 +132,16 @@ fn spawn_maintenance(app: AppHandle) {
             };
             if lock_due {
                 lock::lock_app(&app);
+            }
+            if tick % 4 == 0 {
+                for id in reload_due(&app, visible) {
+                    if webviews::reload(&app, &id).unwrap_or(false) {
+                        state
+                            .lock()
+                            .last_reload
+                            .insert(id, std::time::Instant::now());
+                    }
+                }
             }
             updater::tick(&app, started);
         }
@@ -171,6 +228,8 @@ pub fn run() {
             }
             app.manage(state);
             build_main_window(handle, !started_hidden, protected, appearance)?;
+            // Contas que estavam carregadas ao fechar voltam carregadas.
+            webviews::restore_open(handle);
             lock::check_availability(handle);
             // Termina de apagar sessões de serviços removidos (nada está aberto ainda).
             let cleanup = handle.clone();

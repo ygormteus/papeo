@@ -78,3 +78,17 @@ locais. Em outro host: instale o venv RepoWise 0.60.1 e o `graphify`, rode
 `scripts/repowise-post-commit.sh` para `.git/hooks/post-commit`.
 `.mcp.json` e `.codex/config.toml` apontam para esta LXC; antes de tornar o
 repositório público, revise se devem continuar versionados.
+
+No macOS (configurado em 2026-11-24), o sistema não traz `flock`:
+
+```sh
+brew install flock
+uv venv --python 3.12 ~/.local/share/repowise-local/venvs/0.60.1
+uv pip install --python ~/.local/share/repowise-local/venvs/0.60.1/bin/python 'repowise==0.60.1'
+uv tool install graphifyy          # instala ~/.local/bin/graphify
+sh scripts/repowise.sh init && sh scripts/graphify.sh
+cp scripts/repowise-post-commit.sh .git/hooks/post-commit
+```
+
+`scripts/graphify.sh` usa `~/.local/bin/graphify` ou o `graphify` do PATH.
+O hook sai em silêncio se o `flock` não estiver no PATH do Git.

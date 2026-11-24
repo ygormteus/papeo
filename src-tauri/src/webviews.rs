@@ -112,11 +112,51 @@ pub fn create_service_webview(
     if (service.zoom - 1.0).abs() > f64::EPSILON {
         let _ = webview.set_zoom(service.zoom);
     }
-    state
-        .lock()
-        .health
-        .insert(service.id.clone(), Health::new());
+    // Lembra que o serviço está carregado, para reabri-lo ao iniciar o app.
+    let _ = state.update(|inner| {
+        inner.health.insert(service.id.clone(), Health::new());
+        if !inner.config.open.contains(&service.id) {
+            inner.config.open.push(service.id.clone());
+        }
+        Ok(())
+    });
     Ok(webview)
+}
+
+/// Ao iniciar, recarrega (escondidos) os serviços que estavam carregados
+/// quando o app foi fechado, para as notificações continuarem chegando.
+pub fn restore_open(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let (services, area) = {
+        let inner = state.lock();
+        let services: Vec<Service> = inner
+            .config
+            .open
+            .iter()
+            .filter_map(|id| inner.service(id).ok().cloned())
+            .collect();
+        (services, inner.area)
+    };
+    // Sem o lock: add_child espera a thread principal.
+    for service in services {
+        if create_service_webview(app, &service, area).is_ok() {
+            // Conta como usado agora, para a hibernação automática esperar.
+            state.lock().last_used.insert(service.id, Instant::now());
+        }
+    }
+    apply_layout(app);
+}
+
+/// Recarrega o site do serviço (zera a memória acumulada pela página).
+pub fn reload(app: &AppHandle, id: &str) -> Result<bool, String> {
+    let Some(webview) = app.get_webview(id) else {
+        return Ok(false);
+    };
+    if let Some(health) = app.state::<AppState>().lock().health.get_mut(id) {
+        *health = Health::new();
+    }
+    webview.reload().map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// Posiciona e exibe apenas o serviço ativo; os demais carregados ficam ocultos.
@@ -196,6 +236,11 @@ pub fn hibernate(app: &AppHandle, id: &str) {
     let mut inner = state.lock();
     inner.unread.remove(id);
     inner.health.remove(id);
+    inner.last_reload.remove(id);
+    if let Some(pos) = inner.config.open.iter().position(|s| s == id) {
+        inner.config.open.remove(pos);
+        let _ = state.persist(&inner);
+    }
     // Downloads em andamento são interrompidos junto com a webview.
     for d in inner.downloads.iter_mut() {
         if d.service_id == id && d.state == DownloadState::Downloading {
