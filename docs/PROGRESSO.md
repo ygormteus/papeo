@@ -1,5 +1,13 @@
 # Progresso
 
+## 2026-11-24 — Logo "Balão P" e temas (claro, escuro, OLED)
+
+- **Objetivo:** logo nova em todo o app; tema OLED; tema aplicado também aos sites; voltar a "seguir o sistema"; contraste e menu de contexto.
+- **Raiz/branch:** `/srv/projetos/papeo`, `main`, base `9e130b0`.
+- **Estado:** commit "feat: logo Balão P e tema OLED" na `main`, com push pedido pelo usuário.
+- **Evidência (LXC, estado final):** `cargo fmt --all -- --check` 0; `cargo test -p papeo-core` 0 (28 testes, inclui `Appearance`); `pnpm check` 0; `pnpm build` 0; `pnpm test` 0; clippy `-D warnings` Windows 0, macOS 0, core 0. Mock 1280×820 em claro, escuro e OLED: Início, menu de contexto (uma linha), Adicionar serviço, Configurações (Aparência); fundo OLED `rgb(0,0,0)`; `papeo.theme` antigo migrado; botão da barra percorre Sistema → Claro → Escuro → OLED. Contraste: `--text-faint` saiu dos textos (2,6:1 no claro) para `--text-muted` (4,8:1).
+- **Não verificado:** app nativo — ícone no Dock/barra de tarefas, silhueta na barra de menus do Mac, WhatsApp/Telegram seguindo o tema da janela.
+
 ## 2026-11-24 — Privacidade (10 itens da análise)
 
 - **Objetivo:** apagar sessões de verdade (macOS incluído), restringir notificação/câmera/microfone ao site do serviço, prévia das notificações, "sair da conta e apagar dados", sessões antigas, bloqueio com Touch ID/Windows Hello, proteção contra captura de tela, aviso de http e documentação de privacidade.

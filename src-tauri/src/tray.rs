@@ -87,6 +87,14 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
         });
+    // macOS: silhueta "template", que o sistema pinta conforme o tema da
+    // barra de menus. Windows: o ícone colorido do app.
+    #[cfg(target_os = "macos")]
+    {
+        let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))?;
+        builder = builder.icon(icon).icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }

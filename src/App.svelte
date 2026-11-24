@@ -24,6 +24,7 @@
   import Topbar from "./lib/Topbar.svelte";
   import {
     EMPTY_SNAPSHOT,
+    THEME_OPTIONS,
     api,
     errorMessage,
     isMuted,
@@ -52,6 +53,13 @@
         /* preferência local apenas */
       }
     },
+    remove(key: string) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        /* preferência local apenas */
+      }
+    },
   };
 
   type Toast = { text: string; action?: { label: string; run: () => void } };
@@ -61,9 +69,13 @@
   let page = $state<"home" | "settings">("home");
   let collapsed = $state(store.get("papeo.sidebar") === "collapsed");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
-  let themePref = $state(store.get("papeo.theme") ?? "system");
   let systemIsDark = $state(systemDark.matches);
-  const dark = $derived(themePref === "dark" || (themePref === "system" && systemIsDark));
+  // O tema fica nas configurações do app (o backend aplica na janela, e os
+  // sites dos serviços seguem o claro/escuro dela).
+  const appearance = $derived(snap.settings.appearance);
+  const resolvedTheme = $derived(
+    appearance === "system" ? (systemIsDark ? "dark" : "light") : appearance,
+  );
 
   let addOpen = $state(false);
   let paletteOpen = $state(false);
@@ -94,7 +106,7 @@
   });
 
   $effect(() => {
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    document.documentElement.dataset.theme = resolvedTheme;
   });
 
   $effect(() => {
@@ -136,9 +148,10 @@
     api.setContentArea({ x: r.left, y: r.top, width: r.width, height: r.height }).catch(() => {});
   }
 
-  function toggleTheme() {
-    themePref = dark ? "light" : "dark";
-    store.set("papeo.theme", themePref);
+  /** Botão da barra superior: Sistema → Claro → Escuro → OLED → Sistema. */
+  function cycleTheme() {
+    const i = THEME_OPTIONS.findIndex((o) => o.value === appearance);
+    run(api.setAppearance(THEME_OPTIONS[(i + 1) % THEME_OPTIONS.length].value));
   }
 
   function toggleSidebar() {
@@ -196,7 +209,7 @@
         run: () => run(api.addService(service.kind, undefined, service.kind === "custom" ? service.url : undefined)),
       },
       { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
-      { label: "Sair da conta e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },
+      { label: "Sair e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },
       { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
     );
     return items;
@@ -269,6 +282,12 @@
       .then((s) => {
         snap = s;
         ready = true;
+        // Versões antigas guardavam o tema só na interface: leva para o app.
+        const legacy = store.get("papeo.theme");
+        if ((legacy === "light" || legacy === "dark") && s.settings.appearance === "system") {
+          run(api.setAppearance(legacy));
+        }
+        store.remove("papeo.theme");
       })
       .catch(showError);
 
@@ -306,12 +325,12 @@
   <main class="main">
     <Topbar
       {active}
-      {dark}
+      {appearance}
       lockable={snap.settings.lock.enabled && snap.lockAvailable}
       onlock={() => run(api.lockNow())}
       ontogglesidebar={toggleSidebar}
       onsearch={() => (paletteOpen = true)}
-      ontheme={toggleTheme}
+      ontheme={cycleTheme}
       onreload={() => active && run(api.reload(active.id))}
       onhibernate={() => active && run(api.hibernate(active.id))}
       onzoomreset={() => zoom({ zoom: 1 })}

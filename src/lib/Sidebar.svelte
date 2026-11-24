@@ -71,7 +71,12 @@
 
 <aside class="sidebar" class:collapsed class:mac={isMac}>
   <div class="brand" data-tauri-drag-region>
-    <span class="logo" aria-hidden="true"></span>
+    <svg class="logo" viewBox="0 0 1024 1024" aria-hidden="true">
+      <rect width="1024" height="1024" rx="230" class="logo-tile" />
+      <circle cx="512" cy="422" r="236" class="logo-mark" />
+      <path d="M276 422h170v300L276 838Z" class="logo-mark" />
+      <circle cx="512" cy="422" r="92" fill="#22c55e" />
+    </svg>
     {#if !collapsed}<span class="brand-name" data-tauri-drag-region>Papeo</span>{/if}
   </div>
 
@@ -218,12 +223,18 @@
   }
 
   .logo {
-    width: 20px;
-    height: 20px;
-    border-radius: 6px;
-    border: 3.5px solid var(--text);
+    width: 24px;
+    height: 24px;
     flex: none;
     pointer-events: none;
+  }
+
+  .logo-tile {
+    fill: var(--text);
+  }
+
+  .logo-mark {
+    fill: var(--bg);
   }
 
   .brand-name {
@@ -328,7 +339,7 @@
   .kbd {
     font-family: inherit;
     font-size: 11.5px;
-    color: var(--text-faint);
+    color: var(--text-muted);
     opacity: 0;
     transition: opacity 0.12s;
   }
@@ -339,7 +350,7 @@
 
   .item :global(.muted-icon) {
     flex: none;
-    color: var(--text-faint);
+    color: var(--text-muted);
   }
 
   .item.dragging {

@@ -4,6 +4,7 @@ import type { Component } from "svelte";
 
 export type ServiceKind = "whatsapp" | "telegram" | "custom";
 export type MediaPolicy = "ask" | "allow" | "block";
+export type Appearance = "system" | "light" | "dark" | "oled";
 /** Conteúdo nas notificações: completo · só remetente · oculto. */
 export type NotificationPreview = "full" | "sender" | "hidden";
 /** ok · dormindo (hibernado) · desconectado (tela de login) · não responde */
@@ -55,6 +56,7 @@ export interface Settings {
   protectScreen: boolean;
   /** `afterMinutes` 0 = ao esconder a janela. */
   lock: { enabled: boolean; afterMinutes: number };
+  appearance: Appearance;
 }
 
 export interface DownloadEntry {
@@ -107,6 +109,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     notificationPreview: "full",
     protectScreen: false,
     lock: { enabled: false, afterMinutes: 5 },
+    appearance: "system",
   },
   dndActive: false,
   autostart: false,
@@ -166,6 +169,7 @@ export const api = {
     invoke<Snapshot>("set_lock", { enabled, afterMinutes }),
   lockNow: () => invoke<Snapshot>("lock_now"),
   unlock: () => invoke<Snapshot>("unlock"),
+  setAppearance: (appearance: Appearance) => invoke<Snapshot>("set_appearance", { appearance }),
 };
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
@@ -221,6 +225,13 @@ export const MEDIA_OPTIONS: { value: MediaPolicy; label: string }[] = [
   { value: "allow", label: "Permitir" },
   { value: "ask", label: "Perguntar" },
   { value: "block", label: "Bloquear" },
+];
+
+export const THEME_OPTIONS: { value: Appearance; label: string }[] = [
+  { value: "system", label: "Sistema" },
+  { value: "light", label: "Claro" },
+  { value: "dark", label: "Escuro" },
+  { value: "oled", label: "OLED" },
 ];
 
 export const PREVIEW_OPTIONS: { value: NotificationPreview; label: string }[] = [

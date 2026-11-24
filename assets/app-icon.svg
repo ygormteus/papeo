@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Ícone do app com a margem da grade do macOS (824 px de 1024). -->
+  <g transform="translate(100 100) scale(0.8046875)">
+    <rect width="1024" height="1024" rx="230" fill="#18181b"/>
+    <circle cx="512" cy="422" r="236" fill="#fff"/>
+  <path d="M276 422h170v300L276 838Z" fill="#fff"/>
+  <circle cx="512" cy="422" r="92" fill="#22c55e"/>
+  </g>
+</svg>

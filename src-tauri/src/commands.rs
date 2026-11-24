@@ -579,3 +579,22 @@ pub async fn unlock(app: AppHandle, state: State<'_, AppState>) -> CmdResult {
     apply_layout(&app);
     Ok(publish(&app))
 }
+
+/// Tema da interface e da janela (os sites seguem o claro/escuro da janela).
+#[tauri::command]
+pub async fn set_appearance(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    appearance: papeo_core::Appearance,
+) -> CmdResult {
+    state.update(|inner| {
+        inner.config.settings.appearance = appearance;
+        Ok(())
+    })?;
+    if let Some(window) = app.get_window(crate::state::MAIN_WINDOW) {
+        window
+            .set_theme(crate::window_theme(appearance))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(publish(&app))
+}

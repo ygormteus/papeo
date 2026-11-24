@@ -1,11 +1,22 @@
 <script lang="ts">
-  import { Lock, LockOpen, Moon, PanelLeft, RotateCw, Search, Snowflake, Sun } from "@lucide/svelte";
+  import {
+    Circle,
+    Lock,
+    LockOpen,
+    Monitor,
+    Moon,
+    PanelLeft,
+    RotateCw,
+    Search,
+    Snowflake,
+    Sun,
+  } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { isInsecure, modKey, type ServiceView } from "./api";
+  import { THEME_OPTIONS, isInsecure, modKey, type Appearance, type ServiceView } from "./api";
 
   let {
     active,
-    dark,
+    appearance,
     ontogglesidebar,
     onsearch,
     ontheme,
@@ -16,7 +27,7 @@
     onlock,
   }: {
     active: ServiceView | null;
-    dark: boolean;
+    appearance: Appearance;
     ontogglesidebar: () => void;
     onsearch: () => void;
     ontheme: () => void;
@@ -26,6 +37,13 @@
     lockable: boolean;
     onlock: () => void;
   } = $props();
+
+  const THEME_ICON = { system: Monitor, light: Sun, dark: Moon, oled: Circle };
+  const ThemeIcon = $derived(THEME_ICON[appearance]);
+  const themeLabel = $derived(THEME_OPTIONS.find((o) => o.value === appearance)?.label ?? "");
+  const nextLabel = $derived(
+    THEME_OPTIONS[(THEME_OPTIONS.findIndex((o) => o.value === appearance) + 1) % THEME_OPTIONS.length].label,
+  );
 </script>
 
 <header class="topbar" data-tauri-drag-region>
@@ -88,8 +106,13 @@
       <Lock size={17} />
     </button>
   {/if}
-  <button class="icon-btn solid" onclick={ontheme} aria-label={dark ? "Usar tema claro" : "Usar tema escuro"}>
-    {#if dark}<Sun size={17} />{:else}<Moon size={17} />{/if}
+  <button
+    class="icon-btn solid"
+    onclick={ontheme}
+    title="Tema: {themeLabel} (clique para {nextLabel})"
+    aria-label="Tema: {themeLabel}. Mudar para {nextLabel}"
+  >
+    <ThemeIcon size={17} fill={appearance === "oled" ? "currentColor" : "none"} />
   </button>
 </header>
 

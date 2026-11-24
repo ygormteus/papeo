@@ -58,6 +58,35 @@
   color-scheme: dark;
 }
 
+/* OLED: preto puro no fundo (pixels apagados), superfícies quase pretas
+   separadas por bordas, sem sombras. Texto um pouco abaixo do branco. */
+:root[data-theme="oled"] {
+  --bg: #000000;
+  --bg-sidebar: #000000;
+  --bg-subtle: #0a0a0a;
+  --bg-hover: #161616;
+  --border: #1f1f1f;
+  --border-strong: #2e2e2e;
+  --text: #ededed;
+  --text-muted: #a3a3a3;
+  --text-faint: #8a8a8a;
+  --primary: #ededed;
+  --primary-text: #000000;
+  --accent: #60a5fa;
+  --success-bg: #0a1f12;
+  --success-text: #4ade80;
+  --success-border: #1a3d27;
+  --danger: #f87171;
+  --danger-bg: #1f0b0d;
+  --warn: #f59e0b;
+  --warn-text: #fbbf24;
+  --warn-bg: #1c1405;
+  --warn-border: #3d2c0c;
+  --shadow-card: none;
+  --shadow-pop: 0 0 0 1px var(--border-strong);
+  color-scheme: dark;
+}
+
 *,
 *::before,
 *::after {

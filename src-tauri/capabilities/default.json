@@ -41,6 +41,7 @@
     "allow-clean-orphan-sessions",
     "allow-set-lock",
     "allow-lock-now",
-    "allow-unlock"
+    "allow-unlock",
+    "allow-set-appearance"
   ]
 }

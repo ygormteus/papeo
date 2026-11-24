@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Papeo: o "P" é um balão de conversa; o ponto verde, a mensagem nova. -->
   <rect width="1024" height="1024" rx="230" fill="#18181b"/>
-  <path d="M512 232c-168 0-292 112-292 256 0 74 33 140 88 186l-22 112c-3 17 15 29 29 20l108-66c28 7 58 10 89 10 168 0 292-112 292-262S680 232 512 232Z" fill="#ffffff"/>
-  <circle cx="404" cy="494" r="42" fill="#3b82f6"/>
-  <circle cx="512" cy="494" r="42" fill="#25d366"/>
-  <circle cx="620" cy="494" r="42" fill="#2aabee"/>
+  <circle cx="512" cy="422" r="236" fill="#fff"/>
+  <path d="M276 422h170v300L276 838Z" fill="#fff"/>
+  <circle cx="512" cy="422" r="92" fill="#22c55e"/>
 </svg>

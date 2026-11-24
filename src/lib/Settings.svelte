@@ -1,12 +1,22 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { BellOff, Download, FolderOpen, HardDrive, Monitor, ShieldCheck, Upload } from "@lucide/svelte";
+  import {
+    BellOff,
+    Download,
+    FolderOpen,
+    HardDrive,
+    Monitor,
+    Palette,
+    ShieldCheck,
+    Upload,
+  } from "@lucide/svelte";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import Switch from "./Switch.svelte";
   import {
     LOCK_OPTIONS,
     PREVIEW_OPTIONS,
+    THEME_OPTIONS,
     api,
     errorMessage,
     isMac,
@@ -122,6 +132,31 @@
 
 <div class="page">
   <h1>Configurações</h1>
+
+  <section class="card" aria-labelledby="s-look">
+    <h2 id="s-look"><Palette size={18} /> Aparência</h2>
+    <div class="row">
+      <div class="text">
+        <span class="label">Tema</span>
+        <span class="hint">
+          OLED usa preto puro: economiza bateria em telas OLED. WhatsApp e Telegram acompanham o claro/escuro
+          quando estão no tema do sistema.
+        </span>
+      </div>
+      <div class="segmented" role="radiogroup" aria-label="Tema">
+        {#each THEME_OPTIONS as option (option.value)}
+          <button
+            role="radio"
+            aria-checked={settings.appearance === option.value}
+            class:selected={settings.appearance === option.value}
+            onclick={() => run(api.setAppearance(option.value))}
+          >
+            {option.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+  </section>
 
   <section class="card" aria-labelledby="s-notif">
     <h2 id="s-notif"><BellOff size={18} /> Não perturbe</h2>

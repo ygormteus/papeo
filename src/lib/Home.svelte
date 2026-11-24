@@ -400,7 +400,7 @@
 
   .hint {
     font-size: 12.5px;
-    color: var(--text-faint);
+    color: var(--text-muted);
   }
 
   table {
@@ -453,7 +453,7 @@
   }
 
   .muted {
-    color: var(--text-faint);
+    color: var(--text-muted);
   }
 
   .svc {

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Bandeja/menu bar: silhueta preta com fundo transparente (template no macOS). -->
+  <mask id="furo">
+    <rect width="1024" height="1024" fill="#fff"/>
+    <circle cx="512" cy="422" r="92" fill="#000"/>
+  </mask>
+  <g transform="translate(512 512) scale(1.445) translate(-512 -512)" mask="url(#furo)">
+    <circle cx="512" cy="422" r="236" fill="#000"/>
+    <path d="M276 422h170v300L276 838Z" fill="#000"/>
+  </g>
+</svg>

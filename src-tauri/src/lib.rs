@@ -88,13 +88,31 @@ fn spawn_maintenance(app: AppHandle) {
     });
 }
 
-fn build_main_window(app: &AppHandle, visible: bool, protected: bool) -> tauri::Result<()> {
+/// Tema da janela nativa conforme a aparência escolhida (`None` = sistema).
+/// As webviews dos sites herdam esse tema como `prefers-color-scheme`.
+pub fn window_theme(appearance: papeo_core::Appearance) -> Option<tauri::Theme> {
+    appearance.dark().map(|dark| {
+        if dark {
+            tauri::Theme::Dark
+        } else {
+            tauri::Theme::Light
+        }
+    })
+}
+
+fn build_main_window(
+    app: &AppHandle,
+    visible: bool,
+    protected: bool,
+    appearance: papeo_core::Appearance,
+) -> tauri::Result<()> {
     let builder = tauri::window::WindowBuilder::new(app, MAIN_WINDOW)
         .title("Papeo")
         .inner_size(1280.0, 820.0)
         .min_inner_size(960.0, 600.0)
         // Fora de capturas e do compartilhamento de tela, se pedido.
         .content_protected(protected)
+        .theme(window_theme(appearance))
         .visible(visible);
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -132,6 +150,7 @@ pub fn run() {
             let started_hidden =
                 config.settings.start_hidden && std::env::args().any(|a| a == HIDDEN_ARG);
             let protected = config.settings.protect_screen;
+            let appearance = config.settings.appearance;
             let state = AppState {
                 store_path,
                 sessions_dir: app.path().app_data_dir()?.join("sessions"),
@@ -147,7 +166,7 @@ pub fn run() {
                 state.persist(&inner)?;
             }
             app.manage(state);
-            build_main_window(handle, !started_hidden, protected)?;
+            build_main_window(handle, !started_hidden, protected, appearance)?;
             lock::check_availability(handle);
             // Termina de apagar sessões de serviços removidos (nada está aberto ainda).
             let cleanup = handle.clone();
@@ -195,6 +214,7 @@ pub fn run() {
             commands::set_lock,
             commands::lock_now,
             commands::unlock,
+            commands::set_appearance,
             notify::service_notify,
             notify::service_status,
         ])

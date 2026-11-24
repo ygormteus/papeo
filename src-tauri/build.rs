@@ -35,6 +35,7 @@ const COMMANDS: &[&str] = &[
     "set_lock",
     "lock_now",
     "unlock",
+    "set_appearance",
     "service_notify",
     "service_status",
 ];

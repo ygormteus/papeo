@@ -26,6 +26,31 @@ pub struct Settings {
     /// Esconde a janela em capturas e compartilhamento de tela.
     pub protect_screen: bool,
     pub lock: AppLock,
+    /// Tema da interface; também define o tema claro/escuro da janela, que
+    /// os sites dos serviços enxergam como `prefers-color-scheme`.
+    pub appearance: Appearance,
+}
+
+/// Tema escolhido. `Oled` é o escuro com preto puro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+    Oled,
+}
+
+impl Appearance {
+    /// Tema da janela nativa: `None` segue o sistema; `Some(true)` = escuro.
+    pub fn dark(self) -> Option<bool> {
+        match self {
+            Appearance::System => None,
+            Appearance::Light => Some(false),
+            Appearance::Dark | Appearance::Oled => Some(true),
+        }
+    }
 }
 
 /// Maior espera configurável antes do bloqueio automático.
@@ -57,6 +82,7 @@ impl Default for Settings {
                 enabled: false,
                 after_minutes: 5,
             },
+            appearance: Appearance::System,
         }
     }
 }
@@ -192,5 +218,16 @@ mod tests {
         }
         .sanitized();
         assert_eq!(s.downloads_dir, None);
+    }
+
+    #[test]
+    fn appearance_maps_to_window_theme() {
+        assert_eq!(Appearance::System.dark(), None);
+        assert_eq!(Appearance::Light.dark(), Some(false));
+        assert_eq!(Appearance::Oled.dark(), Some(true));
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.appearance, Appearance::System);
+        let oled: Settings = serde_json::from_str(r#"{"appearance":"oled"}"#).unwrap();
+        assert_eq!(oled.appearance, Appearance::Oled);
     }
 }

@@ -158,6 +158,9 @@ export function installDevMock() {
         if (locked) throw "Desbloqueie o Papeo primeiro.";
         settings.lock = { enabled: Boolean(args.enabled), afterMinutes: Number(args.afterMinutes) };
         return snap();
+      case "set_appearance":
+        settings.appearance = args.appearance as Settings["appearance"];
+        return snap();
       case "lock_now":
         if (settings.lock.enabled) locked = true;
         return snap();
