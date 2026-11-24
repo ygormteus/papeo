@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-service-notify"
+description = "Enables the service_notify command without any pre-configured scope."
+commands.allow = ["service_notify"]
+
+[[permission]]
+identifier = "deny-service-notify"
+description = "Denies the service_notify command without any pre-configured scope."
+commands.deny = ["service_notify"]

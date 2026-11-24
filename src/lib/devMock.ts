@@ -30,7 +30,9 @@ export function installDevMock() {
         const kind = args.kind as ServiceView["kind"];
         if (kind === "custom" && !args.url) throw "Informe a URL do serviço.";
         const id = `svc-${Math.random().toString(16).slice(2, 8)}`;
-        const name = (args.name as string) || (kind === "custom" ? String(args.url) : kind === "whatsapp" ? "WhatsApp" : "Telegram");
+        const base = (args.name as string) || (kind === "custom" ? String(args.url) : kind === "whatsapp" ? "WhatsApp" : "Telegram");
+        let name = base;
+        for (let n = 2; services.some((s) => s.name === name); n++) name = `${base} ${n}`;
         services.push(mk(id, kind, name, String(args.url ?? ""), true, 0));
         active = id;
         return snap();
@@ -41,6 +43,9 @@ export function installDevMock() {
         return snap();
       case "rename_service":
         find()!.name = String(args.name);
+        return snap();
+      case "set_notifications":
+        find()!.notifications = Boolean(args.enabled);
         return snap();
       case "set_hibernation":
         find()!.hibernateAfterMinutes = Number(args.minutes);
@@ -63,5 +68,5 @@ function mk(
   loaded: boolean,
   unread: number,
 ): ServiceView {
-  return { id, kind, name, url, session: id, hibernateAfterMinutes: 0, loaded, unread };
+  return { id, kind, name, url, session: id, hibernateAfterMinutes: 0, notifications: true, loaded, unread };
 }

@@ -10,13 +10,14 @@ Em desenvolvimento inicial. Já funciona:
 
 - barra lateral com os serviços, badge de não lidas (lido do título da página) e badge no ícone do app;
 - WhatsApp e Telegram por padrão, mais qualquer site https;
-- sessão isolada por serviço (duas contas do mesmo mensageiro);
+- várias contas do mesmo mensageiro (ex.: dois WhatsApp), cada uma com sessão isolada — pelo botão direito → **Adicionar outra conta**;
+- notificações nativas do sistema, com interruptor por serviço; não notifica o serviço que você está vendo;
 - hibernação manual e automática por serviço (descarrega a webview da memória);
 - atalhos `⌘/Ctrl+0…9`, busca `⌘/Ctrl+K`, novo serviço `⌘/Ctrl+N`;
 - tema claro/escuro, barra lateral recolhível;
 - links externos abrem no navegador padrão.
 
-Ainda falta: notificações nativas, contagem de RAM por serviço, reordenar arrastando, atalhos com o foco dentro do serviço no Windows.
+Ainda falta: clicar na notificação abrir o serviço certo, contagem de RAM por serviço, reordenar arrastando, atalhos com o foco dentro do serviço no Windows.
 
 ## Plataformas
 
@@ -38,6 +39,7 @@ Checagens:
 ```sh
 pnpm check                      # tipos do frontend (svelte-check)
 cargo test -p papeo-core        # modelo e persistência (roda em qualquer SO)
+pnpm test                       # shim de notificações injetado nos sites
 cargo clippy --workspace -- -D warnings
 cargo fmt --all -- --check
 ```
@@ -56,4 +58,4 @@ Os dados ficam no diretório de configuração do app (`services.json`) e as ses
 
 ## Segurança
 
-As webviews dos serviços carregam sites remotos e **não** recebem nenhuma permissão de IPC: só a webview da interface (`ui`) está na capability `default`.
+Os comandos do app passam por um manifesto de ACL (`src-tauri/build.rs`). A interface (`ui`) recebe todos pela capability `default`. Os sites dos serviços (`svc-*`, origem remota) recebem **apenas** `service_notify` pela capability `services`; o backend identifica o serviço pelo rótulo da webview, então um site não consegue notificar em nome de outro nem acionar outros comandos.

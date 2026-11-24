@@ -11,6 +11,8 @@ export interface ServiceView {
   url: string;
   session: string;
   hibernateAfterMinutes: number;
+  /** Repassa as notificações do site como notificações nativas. */
+  notifications: boolean;
   userAgent?: string;
   /** A webview do serviço está em memória (não hibernado). */
   loaded: boolean;
@@ -39,6 +41,8 @@ export const api = {
   moveService: (id: string, to: number) => invoke<Snapshot>("move_service", { id, to }),
   setHibernation: (id: string, minutes: number) =>
     invoke<Snapshot>("set_hibernation", { id, minutes }),
+  setNotifications: (id: string, enabled: boolean) =>
+    invoke<Snapshot>("set_notifications", { id, enabled }),
   activate: (id: string | null) => invoke<Snapshot>("activate_service", { id }),
   hibernate: (id: string) => invoke<Snapshot>("hibernate_service", { id }),
   reload: (id: string) => invoke<void>("reload_service", { id }),

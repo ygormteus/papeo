@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CirclePlus, House, MemoryStick } from "@lucide/svelte";
+  import { BellOff, CirclePlus, House, MemoryStick } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import { isMac, modKey, type Snapshot, type ServiceView } from "./api";
 
@@ -77,6 +77,9 @@
         </span>
         {#if !collapsed}
           <span class="label">{service.name}</span>
+          {#if !service.notifications}
+            <BellOff size={14} class="muted-icon" aria-label="Notificações silenciadas" />
+          {/if}
           {#if service.unread > 0}
             <span class="pill pill-success" aria-label="{service.unread} não lidas">
               {service.unread > 99 ? "99+" : service.unread}
@@ -260,6 +263,11 @@
 
   .item:hover .kbd {
     opacity: 1;
+  }
+
+  .item :global(.muted-icon) {
+    flex: none;
+    color: var(--text-faint);
   }
 
   .empty {

@@ -50,6 +50,9 @@ pub struct Service {
     /// Minutos sem uso até hibernar; 0 desativa a hibernação automática.
     #[serde(default)]
     pub hibernate_after_minutes: u32,
+    /// Repassa as notificações do site como notificações nativas.
+    #[serde(default = "enabled")]
+    pub notifications: bool,
     /// Sobrescreve o user-agent padrão da plataforma.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
@@ -82,6 +85,7 @@ impl Service {
             url,
             session,
             hibernate_after_minutes: 0,
+            notifications: true,
             user_agent: None,
         })
     }
@@ -98,6 +102,31 @@ impl Service {
                 .unwrap_or(0);
         }
         out
+    }
+}
+
+fn enabled() -> bool {
+    true
+}
+
+/// Evita dois serviços com o mesmo nome automático: "WhatsApp", "WhatsApp 2"…
+pub fn unique_name(base: &str, existing: &[Service]) -> String {
+    let taken = |name: &str| existing.iter().any(|s| s.name.eq_ignore_ascii_case(name));
+    if !taken(base) {
+        return base.to_owned();
+    }
+    (2..)
+        .map(|n| format!("{base} {n}"))
+        .find(|candidate| !taken(candidate))
+        .unwrap_or_else(|| base.to_owned())
+}
+
+/// Limita o texto vindo dos sites (título e corpo das notificações).
+pub fn clip(text: &str, max_chars: usize) -> String {
+    let text = text.trim();
+    match text.char_indices().nth(max_chars) {
+        Some((cut, _)) => format!("{}…", text[..cut].trim_end()),
+        None => text.to_owned(),
     }
 }
 
@@ -214,6 +243,30 @@ mod tests {
         assert_eq!(s.name, "app.slack.com");
         assert_eq!(s.session.len(), 32);
         assert!(s.id.starts_with("svc-"));
+    }
+
+    #[test]
+    fn second_account_gets_numbered_name() {
+        let first = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        assert_eq!(unique_name("WhatsApp", &[]), "WhatsApp");
+        let mut second = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        second.name = unique_name("WhatsApp", std::slice::from_ref(&first));
+        assert_eq!(second.name, "WhatsApp 2");
+        assert_eq!(unique_name("whatsapp", &[first, second]), "whatsapp 3");
+    }
+
+    #[test]
+    fn clip_limits_chars() {
+        assert_eq!(clip("  oi  ", 10), "oi");
+        assert_eq!(clip("ação longa demais", 4), "ação…");
+    }
+
+    #[test]
+    fn old_store_without_notifications_defaults_on() {
+        let json = r#"{"id":"svc-1","kind":"telegram","name":"T","url":"https://web.telegram.org/a/","session":"00"}"#;
+        let s: Service = serde_json::from_str(json).unwrap();
+        assert!(s.notifications);
+        assert_eq!(s.hibernate_after_minutes, 0);
     }
 
     #[test]

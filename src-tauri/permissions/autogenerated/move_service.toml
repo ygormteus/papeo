@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-move-service"
+description = "Enables the move_service command without any pre-configured scope."
+commands.allow = ["move_service"]
+
+[[permission]]
+identifier = "deny-move-service"
+description = "Denies the move_service command without any pre-configured scope."
+commands.deny = ["move_service"]

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Pencil, RotateCw, Snowflake, Trash2 } from "@lucide/svelte";
+  import { Bell, BellOff, Pencil, RotateCw, Snowflake, Trash2, UserPlus } from "@lucide/svelte";
   import AddServiceDialog from "./lib/AddServiceDialog.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
@@ -113,6 +113,14 @@
     return [
       { label: "Recarregar", icon: RotateCw, run: () => run(api.reload(service.id)) },
       { label: "Hibernar agora", icon: Snowflake, run: () => run(api.hibernate(service.id)) },
+      service.notifications
+        ? { label: "Silenciar notificações", icon: BellOff, run: () => run(api.setNotifications(service.id, false)) }
+        : { label: "Ativar notificações", icon: Bell, run: () => run(api.setNotifications(service.id, true)) },
+      {
+        label: "Adicionar outra conta",
+        icon: UserPlus,
+        run: () => run(api.addService(service.kind, undefined, service.kind === "custom" ? service.url : undefined)),
+      },
       { label: "Renomear…", icon: Pencil, run: () => (renaming = { service, name: service.name }) },
       { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
     ];
@@ -210,6 +218,7 @@
           onhibernate={(id) => run(api.hibernate(id))}
           onremove={(service) => (confirmRemove = service)}
           onsethibernation={(id, minutes) => run(api.setHibernation(id, minutes))}
+          onsetnotifications={(id, enabled) => run(api.setNotifications(id, enabled))}
         />
       {/if}
     </section>

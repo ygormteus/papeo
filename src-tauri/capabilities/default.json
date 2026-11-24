@@ -1,12 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissões da interface do Papeo. As webviews dos serviços (sites remotos) não recebem nenhuma.",
-  "windows": ["main"],
+  "description": "Interface do Papeo (webview local `ui`). As webviews dos serviços não entram aqui.",
   "webviews": ["ui"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "opener:default"
+    "opener:default",
+    "allow-get-state",
+    "allow-add-service",
+    "allow-remove-service",
+    "allow-rename-service",
+    "allow-move-service",
+    "allow-set-hibernation",
+    "allow-set-notifications",
+    "allow-activate-service",
+    "allow-hibernate-service",
+    "allow-reload-service",
+    "allow-set-content-area",
+    "allow-set-overlay"
   ]
 }

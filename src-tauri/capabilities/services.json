@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "services",
+  "description": "Sites dos serviços (webviews `svc-*`): só podem pedir uma notificação. O backend identifica o serviço pelo rótulo da webview, então um site não fala em nome de outro.",
+  "webviews": ["svc-*"],
+  "remote": {
+    "urls": ["https://*", "http://*"]
+  },
+  "permissions": ["allow-service-notify"]
+}

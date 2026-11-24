@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-hibernation"
+description = "Enables the set_hibernation command without any pre-configured scope."
+commands.allow = ["set_hibernation"]
+
+[[permission]]
+identifier = "deny-set-hibernation"
+description = "Denies the set_hibernation command without any pre-configured scope."
+commands.deny = ["set_hibernation"]

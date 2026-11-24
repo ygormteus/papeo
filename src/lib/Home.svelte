@@ -10,6 +10,7 @@
     onhibernate,
     onremove,
     onsethibernation,
+    onsetnotifications,
   }: {
     snap: Snapshot;
     onadd: () => void;
@@ -17,6 +18,7 @@
     onhibernate: (id: string) => void;
     onremove: (service: ServiceView) => void;
     onsethibernation: (id: string, minutes: number) => void;
+    onsetnotifications: (id: string, enabled: boolean) => void;
   } = $props();
 
   const hour = new Date().getHours();
@@ -91,6 +93,7 @@
             <th>Serviço</th>
             <th>Estado</th>
             <th class="num">Não lidas</th>
+            <th>Notificações</th>
             <th>Hibernar após</th>
             <th><span class="sr-only">Ações</span></th>
           </tr>
@@ -115,6 +118,18 @@
                 {/if}
               </td>
               <td class="num">{service.unread || "—"}</td>
+              <td>
+                <label class="switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={service.notifications}
+                    onchange={(e) => onsetnotifications(service.id, e.currentTarget.checked)}
+                  />
+                  <span class="track" aria-hidden="true"></span>
+                  <span class="sr-only">Notificações de {service.name}</span>
+                </label>
+              </td>
               <td>
                 <select
                   class="select"
@@ -323,6 +338,56 @@
   .icon-btn:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+
+  .switch {
+    position: relative;
+    display: inline-flex;
+    cursor: pointer;
+  }
+
+  .switch input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .track {
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    position: relative;
+    transition: background 0.15s;
+  }
+
+  .track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+    transition: transform 0.15s;
+  }
+
+  .switch input:checked + .track {
+    background: var(--success-text);
+  }
+
+  .switch input:checked + .track::after {
+    transform: translateX(16px);
+  }
+
+  .switch input:focus-visible + .track {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .empty {

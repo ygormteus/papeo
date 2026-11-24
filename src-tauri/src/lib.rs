@@ -8,11 +8,15 @@ use tauri::webview::{NewWindowResponse, WebviewBuilder};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl,
 };
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 const MAIN_WINDOW: &str = "main";
 const UI_WEBVIEW: &str = "ui";
 const STATE_EVENT: &str = "papeo://state";
+const NOTIFICATION_SHIM: &str = include_str!("notification_shim.js");
+/// Intervalo mínimo entre notificações do mesmo serviço (contra excesso de alertas).
+const NOTIFY_MIN_GAP: Duration = Duration::from_millis(1500);
 
 /// WKWebView (macOS) e WebKitGTK (Linux) não trazem o token "Safari" no
 /// user-agent padrão, e o WhatsApp Web recusa o navegador sem ele.
@@ -47,6 +51,7 @@ struct Inner {
     overlay: bool,
     last_used: HashMap<String, Instant>,
     unread: HashMap<String, u32>,
+    last_notified: HashMap<String, Instant>,
 }
 
 struct AppState {
@@ -136,6 +141,7 @@ fn create_service_webview(
 
     let mut builder = WebviewBuilder::new(&service.id, WebviewUrl::External(url))
         .data_directory(state.sessions_dir.join(&service.session))
+        .initialization_script(NOTIFICATION_SHIM)
         .on_document_title_changed(|webview, title| {
             let app = webview.app_handle().clone();
             let count = services::parse_unread(&title);
@@ -264,10 +270,15 @@ async fn add_service(
     name: Option<String>,
     url: Option<String>,
 ) -> Result<Snapshot, String> {
-    let service = Service::new(kind, name, url)?;
+    let auto_name = name.as_deref().is_none_or(|n| n.trim().is_empty());
+    let mut service = Service::new(kind, name, url)?;
     let id = service.id.clone();
     {
         let mut inner = state.lock();
+        if auto_name {
+            // Segunda conta do mesmo mensageiro: "WhatsApp 2", "WhatsApp 3"…
+            service.name = services::unique_name(&service.name, &inner.services);
+        }
         inner.services.push(service);
         persist(&state, &inner)?;
     }
@@ -367,6 +378,93 @@ async fn set_hibernation(
     }
     Ok(publish(&app))
 }
+
+#[tauri::command]
+async fn set_notifications(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<Snapshot, String> {
+    {
+        let mut inner = state.lock();
+        let service = inner
+            .services
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or("Serviço não encontrado.")?;
+        service.notifications = enabled;
+        persist(&state, &inner)?;
+    }
+    Ok(publish(&app))
+}
+
+/// Chamado pelo site do serviço (via `notification_shim.js`). O serviço é
+/// identificado pelo rótulo da webview que chamou, nunca por um argumento.
+#[tauri::command]
+async fn service_notify(
+    app: AppHandle,
+    webview: Webview,
+    state: State<'_, AppState>,
+    title: String,
+    body: String,
+    silent: Option<bool>,
+) -> Result<(), String> {
+    let id = webview.label().to_owned();
+    // Lido antes do lock: `is_focused` espera a thread principal, que também
+    // pega o lock (callback de título) — segurá-lo aqui causaria deadlock.
+    let focused = app
+        .get_window(MAIN_WINDOW)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    let name = {
+        let mut inner = state.lock();
+        let Some(service) = inner.services.iter().find(|s| s.id == id) else {
+            return Ok(());
+        };
+        if !service.notifications {
+            return Ok(());
+        }
+        let name = service.name.clone();
+        let viewing = focused && inner.active.as_deref() == Some(id.as_str());
+        if viewing {
+            // Você já está olhando para este serviço.
+            return Ok(());
+        }
+        let now = Instant::now();
+        if inner
+            .last_notified
+            .get(&id)
+            .is_some_and(|t| now.duration_since(*t) < NOTIFY_MIN_GAP)
+        {
+            return Ok(());
+        }
+        inner.last_notified.insert(id, now);
+        name
+    };
+
+    let title = services::clip(&title, 80);
+    let heading = if title.is_empty() {
+        name
+    } else {
+        format!("{name} · {title}")
+    };
+    let mut notification = app
+        .notification()
+        .builder()
+        .title(heading)
+        .body(services::clip(&body, 240));
+    if !silent.unwrap_or(false) {
+        notification = notification.sound(DEFAULT_SOUND);
+    }
+    notification.show().map_err(|e| e.to_string())
+}
+
+/// Som do sistema: nome de som do macOS ou variante do toast do Windows.
+#[cfg(target_os = "macos")]
+const DEFAULT_SOUND: &str = "Glass";
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_SOUND: &str = "Default";
 
 #[tauri::command]
 async fn activate_service(app: AppHandle, id: Option<String>) -> Result<Snapshot, String> {
@@ -554,6 +652,7 @@ fn build_main_window(app: &AppHandle) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle();
             let config_dir = app.path().app_config_dir()?;
@@ -570,6 +669,7 @@ pub fn run() {
                     overlay: false,
                     last_used: HashMap::new(),
                     unread: HashMap::new(),
+                    last_notified: HashMap::new(),
                 }),
             };
             {
@@ -595,6 +695,8 @@ pub fn run() {
             reload_service,
             set_content_area,
             set_overlay,
+            set_notifications,
+            service_notify,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Papeo");
