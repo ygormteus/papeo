@@ -1,43 +1,95 @@
 <script lang="ts">
-  import { CirclePlus, House, Search } from "@lucide/svelte";
+  import { CirclePlus, House, MessageCircle, Search } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import type { ServiceView } from "./api";
+  import { searchable, type RecentMessage, type ServiceView } from "./api";
 
   let {
     services,
+    recent,
     onclose,
     onselect,
     onadd,
+    onchat,
   }: {
     services: ServiceView[];
+    recent: RecentMessage[];
     onclose: () => void;
     onselect: (id: string | null) => void;
     onadd: () => void;
+    /** Abre o serviço e procura a conversa pelo nome. */
+    onchat: (serviceId: string, query: string) => void;
   } = $props();
 
-  type Entry = { key: string; label: string; detail?: string; service?: ServiceView; run: () => void };
+  type Kind = "service" | "chat" | "search" | "home" | "add";
+  type Entry = {
+    key: string;
+    kind: Kind;
+    group: string;
+    label: string;
+    detail?: string;
+    service?: ServiceView;
+    run: () => void;
+  };
 
   let query = $state("");
   let index = $state(0);
 
   const normalize = (s: string) =>
     s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
   const entries = $derived.by<Entry[]>(() => {
-    const all: Entry[] = [
-      ...services.map((s) => ({
-        key: s.id,
+    const raw = query.trim();
+    const q = normalize(raw);
+    const has = (...texts: string[]) => !q || texts.some((t) => normalize(t).includes(q));
+    const byId = new Map(services.map((s) => [s.id, s]));
+
+    const accounts: Entry[] = services
+      .filter((s) => has(s.name))
+      .map((s) => ({
+        key: `svc-${s.id}`,
+        kind: "service",
+        group: "Contas",
         label: s.name,
         detail: s.unread ? `${s.unread} não lidas` : s.loaded ? "" : "dormindo",
         service: s,
         run: () => onselect(s.id),
-      })),
-      { key: "home", label: "Início", run: () => onselect(null) },
-      { key: "add", label: "Adicionar serviço", run: onadd },
+      }));
+
+    const chats: Entry[] = recent
+      .filter((m) => byId.has(m.serviceId) && has(m.title, m.body))
+      .slice(0, 6)
+      .map((m, i) => {
+        const service = byId.get(m.serviceId)!;
+        return {
+          key: `chat-${i}`,
+          kind: "chat",
+          group: "Conversas recentes",
+          label: m.title,
+          detail: m.body ? `${service.name} · ${clip(m.body, 36)}` : service.name,
+          service,
+          run: () => onchat(m.serviceId, m.title),
+        };
+      });
+
+    const searches: Entry[] = raw
+      ? services.filter(searchable).map((s) => ({
+          key: `search-${s.id}`,
+          kind: "search",
+          group: "Buscar contato ou grupo",
+          label: `Buscar “${clip(raw, 40)}” em ${s.name}`,
+          detail: s.loaded ? "" : "vai acordar",
+          service: s,
+          run: () => onchat(s.id, raw),
+        }))
+      : [];
+
+    const extras: Entry[] = [
+      { key: "home", kind: "home", group: "Papeo", label: "Início", run: () => onselect(null) },
+      { key: "add", kind: "add", group: "Papeo", label: "Adicionar serviço", run: onadd },
     ];
-    const q = normalize(query.trim());
-    return q ? all.filter((e) => normalize(e.label).includes(q)) : all;
+    return [...accounts, ...chats, ...searches, ...extras.filter((e) => has(e.label))];
   });
 
   $effect(() => {
@@ -57,14 +109,14 @@
   }
 </script>
 
-<Modal {onclose} label="Buscar serviço" width={520} top>
+<Modal {onclose} label="Buscar" width={560} top>
   <div class="search">
     <Search size={18} />
     <!-- svelte-ignore a11y_autofocus -->
     <input
       bind:value={query}
       onkeydown={keydown}
-      placeholder="Ir para…"
+      placeholder="Ir para uma conta ou buscar um contato…"
       autofocus
       role="combobox"
       aria-expanded="true"
@@ -74,6 +126,9 @@
   </div>
   <ul id="palette-list" role="listbox" aria-label="Resultados">
     {#each entries as entry, i (entry.key)}
+      {#if i === 0 || entries[i - 1].group !== entry.group}
+        <li class="group" role="presentation">{entry.group}</li>
+      {/if}
       <li
         id="palette-{entry.key}"
         role="option"
@@ -83,9 +138,13 @@
         onkeydown={() => {}}
         onmousemove={() => (index = i)}
       >
-        {#if entry.service}
+        {#if entry.kind === "service" && entry.service}
           <ServiceAvatar service={entry.service} size={22} dimmed={!entry.service.loaded} />
-        {:else if entry.key === "home"}
+        {:else if entry.kind === "chat"}
+          <span class="glyph"><MessageCircle size={17} /></span>
+        {:else if entry.kind === "search"}
+          <span class="glyph"><Search size={17} /></span>
+        {:else if entry.kind === "home"}
           <span class="glyph"><House size={17} /></span>
         {:else}
           <span class="glyph"><CirclePlus size={17} /></span>
@@ -97,6 +156,9 @@
       <li class="none" role="presentation">Nada encontrado.</li>
     {/each}
   </ul>
+  {#if !query.trim() && services.some(searchable)}
+    <p class="tip">Digite um nome para procurar contatos e grupos no WhatsApp ou no Telegram.</p>
+  {/if}
 </Modal>
 
 <style>
@@ -150,9 +212,35 @@
 
   .label {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .group {
+    height: auto;
+    padding: 10px 10px 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: default;
+  }
+
+  .tip {
+    margin: 0;
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--text-muted);
   }
 
   .detail {
+    flex: none;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 12.5px;
     color: var(--text-muted);
   }

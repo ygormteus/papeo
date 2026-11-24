@@ -146,6 +146,12 @@
     run(api.activate(id));
   };
 
+  /** Abre a conta e procura a conversa na busca do próprio WhatsApp/Telegram. */
+  function openChat(serviceId: string, query: string) {
+    paletteOpen = false;
+    run(api.openChat(serviceId, query));
+  }
+
   function openSettings() {
     page = "settings";
     if (snap.active !== null) run(api.activate(null));
@@ -387,9 +393,11 @@
 {#if paletteOpen}
   <CommandPalette
     services={snap.services}
+    recent={snap.recent}
     onclose={() => (paletteOpen = false)}
     onselect={select}
     onadd={openAdd}
+    onchat={openChat}
   />
 {/if}
 

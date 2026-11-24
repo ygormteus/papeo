@@ -21,6 +21,7 @@
     "allow-set-zoom",
     "allow-activate-service",
     "allow-hibernate-service",
+    "allow-open-chat",
     "allow-reload-service",
     "allow-set-content-area",
     "allow-set-overlay",

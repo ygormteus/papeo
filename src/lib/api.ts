@@ -92,6 +92,19 @@ export interface Snapshot {
   lockAvailable: boolean;
   update: UpdateStatus;
   appVersion: string;
+  /** Mensagens que chegaram como notificação, mais nova primeiro. Só na
+   * memória; vazia com o app bloqueado ou a prévia oculta. */
+  recent: RecentMessage[];
+}
+
+export interface RecentMessage {
+  serviceId: string;
+  /** Nome da conversa (contato ou grupo). */
+  title: string;
+  /** Vazio com a prévia "só remetente". */
+  body: string;
+  /** Segundos Unix. */
+  at: number;
 }
 
 export interface MemoryReport {
@@ -133,6 +146,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   lockAvailable: false,
   update: { state: "idle" },
   appVersion: "",
+  recent: [],
 };
 
 export const api = {
@@ -154,6 +168,8 @@ export const api = {
     invoke<Snapshot>("set_zoom", { id, zoom: change.zoom ?? null, delta: change.delta ?? null }),
   activate: (id: string | null) => invoke<Snapshot>("activate_service", { id }),
   hibernate: (id: string) => invoke<Snapshot>("hibernate_service", { id }),
+  /** Abre o serviço e procura a conversa pelo nome na busca do próprio site. */
+  openChat: (id: string, query: string) => invoke<Snapshot>("open_chat", { id, query }),
   reload: (id: string) => invoke<void>("reload_service", { id }),
   setContentArea: (area: Area) => invoke<void>("set_content_area", { area }),
   setOverlay: (open: boolean) => invoke<void>("set_overlay", { open }),
@@ -299,6 +315,11 @@ export const LOCK_OPTIONS = [
 /** Site personalizado sem criptografia (http). */
 export function isInsecure(service: Pick<ServiceView, "url">): boolean {
   return service.url.startsWith("http://");
+}
+
+/** Serviços em que a busca de conversas funciona (WhatsApp e Telegram). */
+export function searchable(service: Pick<ServiceView, "kind">): boolean {
+  return service.kind === "whatsapp" || service.kind === "telegram";
 }
 
 /** Créditos e links mostrados em Configurações → Sobre. */

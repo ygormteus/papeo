@@ -1,7 +1,9 @@
 //! Comandos chamados pelos sites dos serviços (via `notification_shim.js`).
 //! O serviço é sempre identificado pelo rótulo da webview que chamou.
 
-use crate::state::{local_minute_of_day, now_secs, publish, status_of, AppState, MAIN_WINDOW};
+use crate::state::{
+    local_minute_of_day, now_secs, publish, status_of, AppState, RecentMessage, MAIN_WINDOW,
+};
 use papeo_core::NotificationPreview;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State, Webview};
@@ -60,12 +62,21 @@ pub async fn service_notify(
             // Você já está olhando para este serviço.
             return Ok(());
         }
+        // Barra de menus e busca (só na memória; a prévia é aplicada ao exibir).
+        inner.push_recent(RecentMessage {
+            service_id: id.clone(),
+            title: papeo_core::clip(&title, 80),
+            body: papeo_core::clip(&body, 240),
+            at: now_unix,
+        });
         let now = Instant::now();
         if inner
             .last_notified
             .get(&id)
             .is_some_and(|t| now.duration_since(*t) < NOTIFY_MIN_GAP)
         {
+            drop(inner);
+            publish(&app);
             return Ok(());
         }
         inner.last_notified.insert(id.clone(), now);
@@ -75,6 +86,7 @@ pub async fn service_notify(
         (name, preview)
     };
 
+    publish(&app);
     let (heading, text) = papeo_core::notification_text(preview, &name, &title, &body);
     let mut notification = app.notification().builder().title(heading).body(text);
     if !silent.unwrap_or(false) {
@@ -93,7 +105,7 @@ pub async fn service_status(
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
-    let changed = {
+    let (changed, chat) = {
         let mut inner = state.lock();
         let before = status_of(&inner, &id, true);
         // "Desconectado" só vale quando dito pelo próprio site do serviço.
@@ -105,8 +117,13 @@ pub async fn service_status(
         };
         health.last_beat = Some(Instant::now());
         health.logged_out = own_site && logged_out;
-        before != status_of(&inner, &id, true)
+        // A página está pronta: abre a conversa que esperava por ela.
+        let chat = own_site.then(|| inner.pending_chat.remove(&id)).flatten();
+        (before != status_of(&inner, &id, true), chat)
     };
+    if let Some(query) = chat {
+        crate::webviews::run_open_chat(&webview, &query);
+    }
     if changed {
         publish(&app);
     }

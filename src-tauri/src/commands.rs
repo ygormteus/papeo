@@ -71,6 +71,7 @@ pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: Stri
             inner.active = None;
         }
         inner.last_used.remove(&id);
+        inner.forget_recent(&id);
         Ok(inner.config.services.remove(pos))
     })?;
     // Apaga cookies e dados locais da sessão (pasta e, no macOS, o
@@ -213,6 +214,13 @@ pub async fn set_zoom(
 #[tauri::command]
 pub async fn activate_service(app: AppHandle, id: Option<String>) -> CmdResult {
     activate(&app, id)
+}
+
+/// Abre o serviço e procura a conversa pelo nome (busca do próprio site).
+#[tauri::command]
+pub async fn open_chat(app: AppHandle, id: String, query: String) -> CmdResult {
+    ensure_unlocked(&app)?;
+    crate::webviews::open_chat(&app, &id, &query)
 }
 
 #[tauri::command]
@@ -484,6 +492,7 @@ pub async fn clear_service_data(
     hibernate(&app, &id);
     let (old, was_active) = state.update(|inner| {
         let was_active = inner.active.as_deref() == Some(id.as_str());
+        inner.forget_recent(&id);
         let service = inner.service_mut(&id)?;
         let old = std::mem::replace(&mut service.session, papeo_core::new_session());
         Ok((old, was_active))

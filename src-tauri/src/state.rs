@@ -24,6 +24,8 @@ pub const DOWNLOAD_EVENT: &str = "papeo://download";
 /// Sem sinal de vida do serviço visível por este tempo = "não responde".
 pub const UNRESPONSIVE_AFTER: Duration = Duration::from_secs(75);
 const MAX_DOWNLOADS: usize = 20;
+/// Mensagens recentes guardadas (só na memória, somem ao fechar o app).
+const MAX_RECENT: usize = 8;
 
 /// Área (em pixels lógicos, relativa à janela) onde o serviço ativo aparece.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -92,6 +94,28 @@ pub struct DownloadEntry {
     pub at: u64,
 }
 
+/// Mensagem que chegou como notificação. Só na memória: nunca vai para o
+/// disco e some ao fechar o app.
+#[derive(Debug, Clone)]
+pub struct RecentMessage {
+    pub service_id: String,
+    pub title: String,
+    pub body: String,
+    /// Segundos Unix.
+    pub at: u64,
+}
+
+/// Mensagem recente como a interface e a barra de menus a veem, já com a
+/// prévia escolhida aplicada.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentView {
+    pub service_id: String,
+    pub title: String,
+    pub body: String,
+    pub at: u64,
+}
+
 pub struct Inner {
     pub config: Config,
     pub active: Option<String>,
@@ -110,6 +134,10 @@ pub struct Inner {
     pub last_reload: HashMap<String, Instant>,
     pub downloads: VecDeque<DownloadEntry>,
     pub next_download_id: u64,
+    pub recent: VecDeque<RecentMessage>,
+    /// Conversa a abrir assim que a página do serviço der sinal de vida
+    /// (o serviço estava dormindo ou ainda carregando).
+    pub pending_chat: HashMap<String, String>,
     /// App bloqueado: webviews dos serviços ocultas até autenticar.
     pub locked: bool,
     /// O sistema oferece Touch ID/senha ou Windows Hello.
@@ -142,6 +170,8 @@ impl Inner {
             last_reload: HashMap::new(),
             downloads: VecDeque::new(),
             next_download_id: 1,
+            recent: VecDeque::new(),
+            pending_chat: HashMap::new(),
             // Bloqueia sempre ao abrir; se o sistema não tiver autenticação,
             // `lock::check_availability` desfaz isso logo em seguida.
             locked: config_lock_enabled,
@@ -167,6 +197,38 @@ impl Inner {
             .iter_mut()
             .find(|s| s.id == id)
             .ok_or_else(|| "Serviço não encontrado.".to_owned())
+    }
+
+    pub fn push_recent(&mut self, message: RecentMessage) {
+        // A mesma conversa aparece uma vez só, com a mensagem mais nova.
+        self.recent
+            .retain(|m| !(m.service_id == message.service_id && m.title == message.title));
+        self.recent.push_front(message);
+        self.recent.truncate(MAX_RECENT);
+    }
+
+    /// Esquece as mensagens de um serviço (removido ou "sair da conta").
+    pub fn forget_recent(&mut self, service_id: &str) {
+        self.recent.retain(|m| m.service_id != service_id);
+        self.pending_chat.remove(service_id);
+    }
+
+    fn recent_views(&self) -> Vec<RecentView> {
+        let preview = self.config.settings.notification_preview;
+        self.recent
+            .iter()
+            .filter(|m| self.service(&m.service_id).is_ok())
+            .filter_map(|m| {
+                let (title, body) =
+                    papeo_core::recent_text(preview, self.locked, &m.title, &m.body)?;
+                Some(RecentView {
+                    service_id: m.service_id.clone(),
+                    title,
+                    body,
+                    at: m.at,
+                })
+            })
+            .collect()
     }
 
     pub fn push_download(&mut self, mut entry: DownloadEntry) -> u64 {
@@ -279,6 +341,8 @@ pub struct Snapshot {
     pub lock_available: bool,
     pub update: UpdateStatus,
     pub app_version: String,
+    /// Mensagens recentes, mais nova primeiro (vazia com o app bloqueado).
+    pub recent: Vec<RecentView>,
 }
 
 pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
@@ -350,6 +414,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         lock_available: inner.lock_available,
         update: inner.update.clone(),
         app_version: app.package_info().version.to_string(),
+        recent: inner.recent_views(),
     }
 }
 

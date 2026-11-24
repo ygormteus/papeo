@@ -9,7 +9,7 @@ mod store;
 mod util;
 
 pub use privacy::{
-    is_session_id, new_session, notification_text, same_site, session_from_bytes,
+    is_session_id, new_session, notification_text, recent_text, same_site, session_from_bytes,
     NotificationPreview,
 };
 pub use service::{

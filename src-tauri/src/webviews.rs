@@ -229,6 +229,44 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
     Ok(publish(app))
 }
 
+/// Mostra o serviço e procura uma conversa nele (busca do próprio site).
+/// Se a página ainda não está pronta, a busca espera o primeiro sinal de vida
+/// dela (`service_status`).
+pub fn open_chat(app: &AppHandle, id: &str, query: &str) -> Result<Snapshot, String> {
+    let query: String = query.chars().filter(|c| !c.is_control()).collect();
+    let query = papeo_core::clip(&query, 100);
+    let snap = activate(app, Some(id.to_owned()))?;
+    if query.is_empty() {
+        return Ok(snap);
+    }
+    let ready = {
+        let state = app.state::<AppState>();
+        let mut inner = state.lock();
+        let ready = inner.health.get(id).is_some_and(|h| h.last_beat.is_some());
+        if !ready {
+            inner.pending_chat.insert(id.to_owned(), query.clone());
+        }
+        ready
+    };
+    if ready {
+        if let Some(webview) = app.get_webview(id) {
+            run_open_chat(&webview, &query);
+        }
+    }
+    Ok(snap)
+}
+
+/// Pede ao script do serviço (`notification_shim.js`) para buscar a conversa.
+/// O texto vai como JSON: não é interpretado como código.
+pub fn run_open_chat(webview: &Webview, query: &str) {
+    let Ok(arg) = serde_json::to_string(query) else {
+        return;
+    };
+    let _ = webview.eval(format!(
+        "window.__papeoOpenChat && window.__papeoOpenChat({arg})"
+    ));
+}
+
 /// Descarrega a webview (libera a memória); a sessão continua salva.
 pub fn hibernate(app: &AppHandle, id: &str) {
     if let Some(webview) = app.get_webview(id) {
@@ -239,6 +277,7 @@ pub fn hibernate(app: &AppHandle, id: &str) {
     inner.unread.remove(id);
     inner.health.remove(id);
     inner.last_reload.remove(id);
+    inner.pending_chat.remove(id);
     if let Some(pos) = inner.config.open.iter().position(|s| s == id) {
         inner.config.open.remove(pos);
         let _ = state.persist(&inner);

@@ -262,6 +262,7 @@ pub fn run() {
             commands::set_zoom,
             commands::activate_service,
             commands::hibernate_service,
+            commands::open_chat,
             commands::reload_service,
             commands::set_content_area,
             commands::set_overlay,

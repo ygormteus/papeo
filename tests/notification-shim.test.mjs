@@ -13,9 +13,18 @@ window.setInterval = (fn) => timers.push(fn);
 window.addEventListener = (type, fn) => (listeners[type] = fn);
 globalThis.location = { hostname: "web.whatsapp.com" };
 const docListeners = {};
+const pressed = [];
+const chatRow = { dispatchEvent: (e) => pressed.push(e.type) };
+const chatTitles = [{ getAttribute: () => "Ana Souza", closest: () => chatRow }];
+globalThis.MouseEvent = class {
+  constructor(type) {
+    this.type = type;
+  }
+};
 globalThis.document = {
   visibilityState: "visible",
   querySelector: (sel) => (qrVisible && sel.includes("canvas") ? {} : null),
+  querySelectorAll: () => chatTitles,
   addEventListener: (type, fn) => (docListeners[type] = fn),
 };
 class SWR {}
@@ -65,6 +74,19 @@ document.visibilityState = "visible";
 docListeners.visibilitychange();
 const after = calls.filter(([c]) => c === "service_status").length;
 check(after === 3, `sinal de vida ao voltar a ficar visível: ${after}`);
+
+// Abrir conversa pedida pelo Papeo (nome exato na lista)
+check(typeof window.__papeoOpenChat === "function", "abrir conversa disponível");
+try {
+  window.__papeoOpenChat = null;
+} catch {
+  /* modo estrito: a atribuição falha, como deve */
+}
+check(typeof window.__papeoOpenChat === "function", "abrir conversa não pode ser trocada pelo site");
+window.__papeoOpenChat("Ana Souza");
+check(pressed.join() === "mousedown,mouseup,click", `abre a conversa exata: ${pressed}`);
+window.__papeoOpenChat("   ");
+check(pressed.length === 3, "nome vazio não faz nada");
 
 if (failures.length) {
   console.error("FALHOU:", failures.join("; "));

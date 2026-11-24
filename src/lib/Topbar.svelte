@@ -51,7 +51,7 @@
     <PanelLeft size={18} />
   </button>
   <span class="divider" aria-hidden="true"></span>
-  <button class="search" onclick={onsearch} aria-label="Buscar serviço">
+  <button class="search" onclick={onsearch} aria-label="Buscar conta ou contato">
     <Search size={17} />
     <span>Buscar</span>
     <kbd>{modKey} K</kbd>

@@ -14,6 +14,7 @@ const COMMANDS: &[&str] = &[
     "set_zoom",
     "activate_service",
     "hibernate_service",
+    "open_chat",
     "reload_service",
     "set_content_area",
     "set_overlay",

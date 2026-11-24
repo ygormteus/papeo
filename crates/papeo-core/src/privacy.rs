@@ -39,6 +39,26 @@ pub fn notification_text(
     }
 }
 
+/// Como uma mensagem recente aparece no menu da barra de menus e na busca:
+/// `(conversa, texto)`. `None` = não mostrar (app bloqueado, prévia oculta ou
+/// sem nome de conversa). Com "só remetente", o texto vem vazio.
+pub fn recent_text(
+    preview: NotificationPreview,
+    locked: bool,
+    title: &str,
+    body: &str,
+) -> Option<(String, String)> {
+    let title = crate::clip(title, 60);
+    if locked || title.is_empty() {
+        return None;
+    }
+    match preview {
+        NotificationPreview::Full => Some((title, crate::clip(body, 80))),
+        NotificationPreview::Sender => Some((title, String::new())),
+        NotificationPreview::Hidden => None,
+    }
+}
+
 /// Domínio "registrável" aproximado: as duas últimas partes do host, ou três
 /// quando a penúltima é um sufixo curto de país (`exemplo.com.br`).
 fn site_of(host: &str) -> String {
@@ -140,5 +160,16 @@ mod tests {
         assert!(is_session_id(&new_session()));
         assert!(!is_session_id("../../etc"));
         assert!(!is_session_id(&"A".repeat(32)));
+    }
+
+    #[test]
+    fn recent_text_respects_privacy() {
+        use NotificationPreview::*;
+        let full = recent_text(Full, false, "Ana", "Oi, tudo bem?").unwrap();
+        assert_eq!(full, ("Ana".into(), "Oi, tudo bem?".into()));
+        assert_eq!(recent_text(Sender, false, "Ana", "Oi").unwrap().1, "");
+        assert!(recent_text(Hidden, false, "Ana", "Oi").is_none());
+        assert!(recent_text(Full, true, "Ana", "Oi").is_none());
+        assert!(recent_text(Full, false, "  ", "Oi").is_none());
     }
 }

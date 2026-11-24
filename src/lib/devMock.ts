@@ -36,6 +36,12 @@ export function installDevMock() {
   let orphans = 2;
   let update: Snapshot["update"] = { state: "idle" };
   let active: string | null = null;
+  const minutesAgo = (m: number) => Math.round(Date.now() / 1000 - m * 60);
+  const recent: Snapshot["recent"] = [
+    { serviceId: "svc-a", title: "Ana Souza", body: "Chego às 19h, beleza?", at: minutesAgo(2) },
+    { serviceId: "svc-c", title: "Equipe Vendas", body: "Proposta aprovada! 🎉", at: minutesAgo(6) },
+    { serviceId: "svc-b", title: "Grupo da família", body: "Foto", at: minutesAgo(15) },
+  ];
   const downloads: DownloadEntry[] = [
     { id: 1, serviceId: "svc-a", fileName: "orçamento-2026.pdf", state: "done", at: 0 },
     { id: 2, serviceId: "svc-a", fileName: "foto-praia.jpg", state: "downloading", at: 0 },
@@ -55,6 +61,7 @@ export function installDevMock() {
     lockAvailable: true,
     update: structuredClone(update),
     appVersion: "0.1.0",
+    recent: locked || settings.notificationPreview === "hidden" ? [] : structuredClone(recent),
   });
 
   mockIPC((cmd, payload) => {
@@ -67,6 +74,13 @@ export function installDevMock() {
     switch (cmd) {
       case "get_state":
         return snap();
+      case "open_chat": {
+        const s = find();
+        active = s.id;
+        s.loaded = true;
+        s.status = "ok";
+        return snap();
+      }
       case "plugin:opener|open_url":
         window.open(String(args.url), "_blank", "noopener");
         return null;

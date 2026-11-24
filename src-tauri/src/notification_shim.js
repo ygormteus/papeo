@@ -32,6 +32,80 @@
     if (document.visibilityState === "visible") heartbeat();
   });
 
+  // Abrir conversa a pedido do Papeo (barra de menus, busca ⌘K): preenche a
+  // busca do próprio site e, se o nome bater exatamente, abre a conversa.
+  // Só age nos mensageiros conhecidos; nada é enviado de volta ao app.
+  const SEARCH_BOX = {
+    "web.whatsapp.com": [
+      '#side [contenteditable="true"][role="textbox"]',
+      '#side input[type="text"]',
+      '#side [contenteditable="true"]',
+      'input[role="textbox"][aria-label]',
+    ],
+    "web.telegram.org": ["#telegram-search-input", ".SearchInput input", "input.input-search-input"],
+  };
+  const CHAT_TITLES = {
+    "web.whatsapp.com": "#pane-side span[title]",
+    "web.telegram.org": ".chat-list .ListItem .fullName, .search-section .ListItem .fullName, .chatlist .peer-title",
+  };
+  const findSearchBox = () => {
+    for (const sel of SEARCH_BOX[location.hostname] || []) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
+  };
+  const typeInto = (el, text) => {
+    el.focus();
+    if (el.isContentEditable) {
+      document.execCommand("selectAll", false);
+      document.execCommand("insertText", false, text);
+    } else {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setter.call(el, text);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  };
+  const press = (el) => {
+    for (const type of ["mousedown", "mouseup", "click"]) {
+      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    }
+  };
+  const openExact = (name) => {
+    const sel = CHAT_TITLES[location.hostname];
+    if (!sel) return false;
+    for (const el of document.querySelectorAll(sel)) {
+      const title = (el.getAttribute("title") || el.textContent || "").trim();
+      if (title === name) {
+        press(el.closest('[role="listitem"], [role="row"], .ListItem-button, .ListItem, a') || el);
+        return true;
+      }
+    }
+    return false;
+  };
+  const openChat = (query) => {
+    const name = String(query || "").trim();
+    if (!name || !SEARCH_BOX[location.hostname]) return;
+    let tries = 0;
+    const step = () => {
+      if (openExact(name)) return;
+      const box = findSearchBox();
+      // O site ainda carregando: tenta por até ~20 s.
+      if (!box) {
+        if (++tries < 40) setTimeout(step, 500);
+        return;
+      }
+      typeInto(box, name);
+      let picks = 0;
+      const pick = () => {
+        if (!openExact(name) && ++picks < 10) setTimeout(pick, 300);
+      };
+      setTimeout(pick, 300);
+    };
+    step();
+  };
+  Object.defineProperty(window, "__papeoOpenChat", { value: openChat });
+
   const send = (title, options) => {
     const o = options || {};
     invoke("service_notify", {
