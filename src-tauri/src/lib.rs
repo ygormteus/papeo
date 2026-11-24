@@ -313,17 +313,20 @@ async fn remove_service(
     Ok(publish(&app))
 }
 
+/// Nome, cor e emoji do serviço (para diferenciar contas do mesmo mensageiro).
+/// `color`/`emoji` vazios voltam ao padrão do tipo de serviço.
 #[tauri::command]
-async fn rename_service(
+async fn customize_service(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
     name: String,
+    color: Option<String>,
+    emoji: Option<String>,
 ) -> Result<Snapshot, String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err("O nome não pode ficar vazio.".into());
-    }
+    let name = services::normalize_name(&name)?;
+    let color = services::normalize_color(color.as_deref())?;
+    let emoji = services::normalize_emoji(emoji.as_deref())?;
     {
         let mut inner = state.lock();
         let service = inner
@@ -331,7 +334,9 @@ async fn rename_service(
             .iter_mut()
             .find(|s| s.id == id)
             .ok_or("Serviço não encontrado.")?;
-        service.name = name.to_owned();
+        service.name = name;
+        service.color = color;
+        service.emoji = emoji;
         persist(&state, &inner)?;
     }
     Ok(publish(&app))
@@ -687,7 +692,7 @@ pub fn run() {
             get_state,
             add_service,
             remove_service,
-            rename_service,
+            customize_service,
             move_service,
             set_hibernation,
             activate_service,

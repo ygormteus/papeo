@@ -33,7 +33,8 @@ export function installDevMock() {
         const base = (args.name as string) || (kind === "custom" ? String(args.url) : kind === "whatsapp" ? "WhatsApp" : "Telegram");
         let name = base;
         for (let n = 2; services.some((s) => s.name === name); n++) name = `${base} ${n}`;
-        services.push(mk(id, kind, name, String(args.url ?? ""), true, 0));
+        const url = kind === "whatsapp" ? "https://web.whatsapp.com/" : kind === "telegram" ? "https://web.telegram.org/a/" : String(args.url);
+        services.push(mk(id, kind, name, url, true, 0));
         active = id;
         return snap();
       }
@@ -41,9 +42,13 @@ export function installDevMock() {
         services.splice(services.indexOf(find()!), 1);
         if (active === args.id) active = null;
         return snap();
-      case "rename_service":
-        find()!.name = String(args.name);
+      case "customize_service": {
+        const s = find()!;
+        s.name = String(args.name);
+        s.color = (args.color as string | null) || undefined;
+        s.emoji = (args.emoji as string | null) || undefined;
         return snap();
+      }
       case "set_notifications":
         find()!.notifications = Boolean(args.enabled);
         return snap();

@@ -5,7 +5,7 @@ const COMMANDS: &[&str] = &[
     "get_state",
     "add_service",
     "remove_service",
-    "rename_service",
+    "customize_service",
     "move_service",
     "set_hibernation",
     "set_notifications",

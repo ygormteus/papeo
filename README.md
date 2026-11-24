@@ -11,6 +11,7 @@ Em desenvolvimento inicial. Já funciona:
 - barra lateral com os serviços, badge de não lidas (lido do título da página) e badge no ícone do app;
 - WhatsApp e Telegram por padrão, mais qualquer site https;
 - várias contas do mesmo mensageiro (ex.: dois WhatsApp), cada uma com sessão isolada — pelo botão direito → **Adicionar outra conta**;
+- nome, cor e emoji por serviço (botão direito → **Personalizar…**), para diferenciar contas como "Pessoal" e "Trabalho";
 - notificações nativas do sistema, com interruptor por serviço; não notifica o serviço que você está vendo;
 - hibernação manual e automática por serviço (descarrega a webview da memória);
 - atalhos `⌘/Ctrl+0…9`, busca `⌘/Ctrl+K`, novo serviço `⌘/Ctrl+N`;

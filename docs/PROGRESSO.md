@@ -1,5 +1,13 @@
 # Progresso
 
+## 2026-11-24 — Cor e emoji por serviço
+
+- **Objetivo:** diferenciar contas do mesmo mensageiro (ex.: "Pessoal" e "Trabalho").
+- **Estado:** commit "feat: cor e emoji por serviço" na `main`, sobre `17e608f`; push confirmado em seguida pelo `git status -sb`.
+- **Evidência:** `cargo test -p papeo-core` (8 testes, inclui validação de cor/emoji/nome), clippy cruzado Windows/macOS sem avisos, `pnpm check`, `pnpm build`, `pnpm test`. No navegador com mock: diálogo Personalizar, duas contas renomeadas com cores diferentes na barra lateral e na tabela.
+- **Não verificado:** emoji renderizado (sem fonte de emoji na LXC) e app nativo.
+
+
 ## 2026-11-24 — Notificações nativas e várias contas
 
 - **Objetivo:** notificações nativas dos serviços e mais de uma conta por mensageiro.

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Bell, BellOff, Pencil, RotateCw, Snowflake, Trash2, UserPlus } from "@lucide/svelte";
+  import { Bell, BellOff, Palette, RotateCw, Snowflake, Trash2, UserPlus } from "@lucide/svelte";
   import AddServiceDialog from "./lib/AddServiceDialog.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
+  import CustomizeDialog from "./lib/CustomizeDialog.svelte";
   import Home from "./lib/Home.svelte";
-  import Modal from "./lib/Modal.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import Topbar from "./lib/Topbar.svelte";
   import {
@@ -48,7 +48,7 @@
   let addOpen = $state(false);
   let paletteOpen = $state(false);
   let confirmRemove = $state<ServiceView | null>(null);
-  let renaming = $state<{ service: ServiceView; name: string } | null>(null);
+  let customizing = $state<ServiceView | null>(null);
   let menu = $state<{ service: ServiceView; x: number; y: number } | null>(null);
   let toast = $state("");
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -56,7 +56,7 @@
   let content = $state<HTMLElement>();
 
   const active = $derived(snap.services.find((s) => s.id === snap.active) ?? null);
-  const modalOpen = $derived(addOpen || paletteOpen || !!confirmRemove || !!renaming);
+  const modalOpen = $derived(addOpen || paletteOpen || !!confirmRemove || !!customizing);
 
   $effect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -121,7 +121,7 @@
         icon: UserPlus,
         run: () => run(api.addService(service.kind, undefined, service.kind === "custom" ? service.url : undefined)),
       },
-      { label: "Renomear…", icon: Pencil, run: () => (renaming = { service, name: service.name }) },
+      { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
       { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
     ];
   }
@@ -219,6 +219,7 @@
           onremove={(service) => (confirmRemove = service)}
           onsethibernation={(id, minutes) => run(api.setHibernation(id, minutes))}
           onsetnotifications={(id, enabled) => run(api.setNotifications(id, enabled))}
+          oncustomize={(service) => (customizing = service)}
         />
       {/if}
     </section>
@@ -262,29 +263,17 @@
   />
 {/if}
 
-{#if renaming}
-  {@const target = renaming}
-  <Modal label="Renomear serviço" width={380} onclose={() => (renaming = null)}>
-    <form
-      class="rename"
-      onsubmit={(e) => {
-        e.preventDefault();
-        renaming = null;
-        run(api.renameService(target.service.id, target.name));
-      }}
-    >
-      <h2>Renomear</h2>
-      <div class="field">
-        <label for="rename-input">Nome</label>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input id="rename-input" class="input" bind:value={target.name} autofocus />
-      </div>
-      <div class="rename-actions">
-        <button type="button" class="btn" onclick={() => (renaming = null)}>Cancelar</button>
-        <button type="submit" class="btn btn-primary" disabled={!target.name.trim()}>Salvar</button>
-      </div>
-    </form>
-  </Modal>
+{#if customizing}
+  {@const target = customizing}
+  <CustomizeDialog
+    service={target}
+    onclose={() => (customizing = null)}
+    onsubmit={async (name, color, emoji) => {
+      // Erros sobem para o diálogo, que os mostra no formulário.
+      snap = await api.customizeService(target.id, name, color, emoji);
+      customizing = null;
+    }}
+  />
 {/if}
 
 {#if toast}
@@ -317,23 +306,6 @@
     color: var(--text-muted);
   }
 
-  .rename {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .rename h2 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 600;
-  }
-
-  .rename-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
 
   .toast {
     position: fixed;

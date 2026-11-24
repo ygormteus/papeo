@@ -13,6 +13,10 @@ export interface ServiceView {
   hibernateAfterMinutes: number;
   /** Repassa as notificações do site como notificações nativas. */
   notifications: boolean;
+  /** Cor própria (`#rrggbb`); sem ela, a cor do tipo de serviço. */
+  color?: string;
+  /** Emoji ou até 2 letras no lugar do símbolo do serviço. */
+  emoji?: string;
   userAgent?: string;
   /** A webview do serviço está em memória (não hibernado). */
   loaded: boolean;
@@ -37,7 +41,8 @@ export const api = {
   addService: (kind: ServiceKind, name?: string, url?: string) =>
     invoke<Snapshot>("add_service", { kind, name: name ?? null, url: url ?? null }),
   removeService: (id: string) => invoke<Snapshot>("remove_service", { id }),
-  renameService: (id: string, name: string) => invoke<Snapshot>("rename_service", { id, name }),
+  customizeService: (id: string, name: string, color: string | null, emoji: string | null) =>
+    invoke<Snapshot>("customize_service", { id, name, color, emoji }),
   moveService: (id: string, to: number) => invoke<Snapshot>("move_service", { id, to }),
   setHibernation: (id: string, minutes: number) =>
     invoke<Snapshot>("set_hibernation", { id, minutes }),
@@ -66,6 +71,26 @@ export const KIND_META: Record<ServiceKind, { label: string; color: string; hint
   telegram: { label: "Telegram", color: "#2aabee", hint: "web.telegram.org" },
   custom: { label: "Outro site", color: "#8b5cf6", hint: "Qualquer endereço https" },
 };
+
+/** Paleta para diferenciar contas; tons escuros o bastante para ícone branco. */
+export const SERVICE_COLORS = [
+  { value: "#16a34a", label: "Verde" },
+  { value: "#0ea5e9", label: "Azul-claro" },
+  { value: "#2563eb", label: "Azul" },
+  { value: "#7c3aed", label: "Roxo" },
+  { value: "#db2777", label: "Rosa" },
+  { value: "#dc2626", label: "Vermelho" },
+  { value: "#ea580c", label: "Laranja" },
+  { value: "#ca8a04", label: "Amarelo" },
+  { value: "#0d9488", label: "Verde-água" },
+  { value: "#475569", label: "Cinza" },
+];
+
+export const EMOJI_SUGGESTIONS = ["🏠", "💼", "❤️", "👨‍👩‍👧", "🎓", "🛒", "⭐", "🔒", "⚽", "🚀"];
+
+export function serviceColor(service: Pick<ServiceView, "kind" | "color">): string {
+  return service.color ?? KIND_META[service.kind].color;
+}
 
 export const HIBERNATE_OPTIONS = [
   { minutes: 0, label: "Nunca" },

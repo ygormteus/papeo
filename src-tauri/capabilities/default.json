@@ -10,7 +10,7 @@
     "allow-get-state",
     "allow-add-service",
     "allow-remove-service",
-    "allow-rename-service",
+    "allow-customize-service",
     "allow-move-service",
     "allow-set-hibernation",
     "allow-set-notifications",

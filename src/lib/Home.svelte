@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bell, Layers, MemoryStick, Plus, Snowflake, Timer } from "@lucide/svelte";
+  import { Bell, Layers, MemoryStick, Palette, Plus, Snowflake, Timer } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import { HIBERNATE_OPTIONS, type ServiceView, type Snapshot } from "./api";
 
@@ -11,6 +11,7 @@
     onremove,
     onsethibernation,
     onsetnotifications,
+    oncustomize,
   }: {
     snap: Snapshot;
     onadd: () => void;
@@ -19,6 +20,7 @@
     onremove: (service: ServiceView) => void;
     onsethibernation: (id: string, minutes: number) => void;
     onsetnotifications: (id: string, enabled: boolean) => void;
+    oncustomize: (service: ServiceView) => void;
   } = $props();
 
   const hour = new Date().getHours();
@@ -145,6 +147,14 @@
               <td>
                 <div class="actions">
                 <button class="btn" onclick={() => onopen(service.id)}>Abrir</button>
+                <button
+                  class="icon-btn"
+                  onclick={() => oncustomize(service)}
+                  title="Personalizar nome, cor e emoji"
+                  aria-label="Personalizar {service.name}"
+                >
+                  <Palette size={16} />
+                </button>
                 <button
                   class="icon-btn"
                   disabled={!service.loaded}

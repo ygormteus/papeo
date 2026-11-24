@@ -53,6 +53,12 @@ pub struct Service {
     /// Repassa as notificações do site como notificações nativas.
     #[serde(default = "enabled")]
     pub notifications: bool,
+    /// Cor do ícone (`#rrggbb`); sem ela, usa a cor do tipo de serviço.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Emoji (ou letra curta) mostrado no ícone no lugar do símbolo do serviço.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
     /// Sobrescreve o user-agent padrão da plataforma.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
@@ -86,6 +92,8 @@ impl Service {
             session,
             hibernate_after_minutes: 0,
             notifications: true,
+            color: None,
+            emoji: None,
             user_agent: None,
         })
     }
@@ -102,6 +110,53 @@ impl Service {
                 .unwrap_or(0);
         }
         out
+    }
+}
+
+/// Valida o nome exibido do serviço.
+pub fn normalize_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("O nome não pode ficar vazio.".into());
+    }
+    if name.chars().count() > 40 {
+        return Err("Use um nome com até 40 caracteres.".into());
+    }
+    Ok(name.to_owned())
+}
+
+/// Aceita `#rgb` ou `#rrggbb` (devolve `#rrggbb` minúsculo); vazio remove a cor.
+pub fn normalize_color(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    let hex = raw.strip_prefix('#').unwrap_or(raw);
+    let full: String = match hex.len() {
+        3 => hex.chars().flat_map(|c| [c, c]).collect(),
+        6 => hex.to_owned(),
+        _ => String::new(),
+    };
+    if full.len() == 6 && full.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(Some(format!("#{}", full.to_ascii_lowercase())))
+    } else {
+        Err("Cor inválida; use o formato #rrggbb.".into())
+    }
+}
+
+/// Aceita um emoji (inclusive compostos, como famílias e bandeiras) ou até
+/// 2 letras; vazio remove.
+pub fn normalize_emoji(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(text) = raw.map(str::trim).filter(|e| !e.is_empty()) else {
+        return Ok(None);
+    };
+    let chars = text.chars().count();
+    let has_symbol = text.chars().any(|c| !c.is_alphanumeric());
+    let ok = !text.chars().any(|c| c.is_control() || c.is_whitespace())
+        && ((has_symbol && chars <= 12) || (!has_symbol && chars <= 2));
+    if ok {
+        Ok(Some(text.to_owned()))
+    } else {
+        Err("Use um emoji ou até 2 letras.".into())
     }
 }
 
@@ -253,6 +308,34 @@ mod tests {
         second.name = unique_name("WhatsApp", std::slice::from_ref(&first));
         assert_eq!(second.name, "WhatsApp 2");
         assert_eq!(unique_name("whatsapp", &[first, second]), "whatsapp 3");
+    }
+
+    #[test]
+    fn appearance_validation() {
+        assert_eq!(
+            normalize_color(Some("#ABC")).unwrap().as_deref(),
+            Some("#aabbcc")
+        );
+        assert_eq!(
+            normalize_color(Some("25D366")).unwrap().as_deref(),
+            Some("#25d366")
+        );
+        assert_eq!(normalize_color(Some("  ")).unwrap(), None);
+        assert!(normalize_color(Some("red")).is_err());
+        assert!(normalize_color(Some("#12345g")).is_err());
+        assert!(normalize_color(Some("#fff;background:url(x)")).is_err());
+
+        assert_eq!(normalize_emoji(Some("💼")).unwrap().as_deref(), Some("💼"));
+        assert_eq!(normalize_emoji(Some("👨‍👩‍👧")).unwrap().as_deref(), Some("👨‍👩‍👧"));
+        assert_eq!(normalize_emoji(Some("🇧🇷")).unwrap().as_deref(), Some("🇧🇷"));
+        assert_eq!(normalize_emoji(Some(" P ")).unwrap().as_deref(), Some("P"));
+        assert_eq!(normalize_emoji(None).unwrap(), None);
+        assert!(normalize_emoji(Some("Pessoal")).is_err());
+        assert!(normalize_emoji(Some("a b")).is_err());
+
+        assert_eq!(normalize_name("  Pessoal ").unwrap(), "Pessoal");
+        assert!(normalize_name("   ").is_err());
+        assert!(normalize_name(&"x".repeat(41)).is_err());
     }
 
     #[test]
