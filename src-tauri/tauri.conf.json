@@ -19,6 +19,9 @@
     "active": true,
     "targets": ["app", "dmg", "nsis"],
     "category": "SocialNetworking",
+    "publisher": "Ygor Moura",
+    "copyright": "© 2026 Ygor Moura · github.com/ygormteus",
+    "homepage": "https://github.com/ygormteus/papeo",
     "shortDescription": "Mensageiros num só lugar, leve e rápido",
     "icon": [
       "icons/32x32.png",

@@ -179,6 +179,8 @@ export const api = {
   openDownloadsDir: () => invoke<void>("open_downloads_dir"),
   clearDownloads: () => invoke<Snapshot>("clear_downloads"),
   getMemory: () => invoke<MemoryReport>("get_memory"),
+  /** Abre no navegador padrão (plugin opener; só http/https). */
+  openUrl: (url: string) => invoke<void>("plugin:opener|open_url", { url }),
   exportConfig: (path: string) => invoke<void>("export_config", { path }),
   previewBackup: (path: string) => invoke<{ services: string[] }>("preview_backup", { path }),
   importConfig: (path: string) => invoke<Snapshot>("import_config", { path }),
@@ -298,6 +300,14 @@ export const LOCK_OPTIONS = [
 export function isInsecure(service: Pick<ServiceView, "url">): boolean {
   return service.url.startsWith("http://");
 }
+
+/** Créditos e links mostrados em Configurações → Sobre. */
+export const ABOUT = {
+  author: "Ygor Moura",
+  profile: "https://github.com/ygormteus",
+  repo: "https://github.com/ygormteus/papeo",
+  issues: "https://github.com/ygormteus/papeo/issues",
+};
 
 export const RELOAD_OPTIONS = [
   { mb: 0, label: "Nunca" },

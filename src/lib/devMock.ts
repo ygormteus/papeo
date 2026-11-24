@@ -67,6 +67,9 @@ export function installDevMock() {
     switch (cmd) {
       case "get_state":
         return snap();
+      case "plugin:opener|open_url":
+        window.open(String(args.url), "_blank", "noopener");
+        return null;
       case "activate_service":
         active = (args.id as string | null) ?? null;
         if (active) {

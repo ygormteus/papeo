@@ -148,6 +148,10 @@ Antes de desinstalar, remova cada conta (botão direito → **Remover…**); iss
 
 Como compilar, testar e publicar versões: veja o [guia de contribuição](CONTRIBUTING.md).
 
+## Quem fez
+
+O Papeo é criado e mantido por **[Ygor Moura](https://github.com/ygormteus)**. Achou um problema ou tem uma ideia? [Abra um relato aqui](https://github.com/ygormteus/papeo/issues).
+
 ## Licença
 
 [GPL-3.0](LICENSE): você pode usar, estudar, modificar e compartilhar o Papeo à vontade. Quem distribuir uma versão modificada precisa publicar o código dela também.

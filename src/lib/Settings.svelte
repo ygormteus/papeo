@@ -2,18 +2,23 @@
   import { onMount } from "svelte";
   import {
     BellOff,
+    Bug,
+    CodeXml,
     Download,
+    Info,
     FolderOpen,
     HardDrive,
     Monitor,
     Palette,
     ShieldCheck,
     Upload,
+    UserRound,
   } from "@lucide/svelte";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import Switch from "./Switch.svelte";
   import {
+    ABOUT,
     LOCK_OPTIONS,
     PREVIEW_OPTIONS,
     RELOAD_OPTIONS,
@@ -438,6 +443,35 @@
     </div>
     {#if backupMessage}<p class="message" role="status">{backupMessage}</p>{/if}
   </section>
+
+  <section class="card about" aria-labelledby="s-about">
+    <h2 id="s-about"><Info size={18} /> Sobre</h2>
+    <div class="about-head">
+      <img src="/favicon.svg" alt="" width="56" height="56" />
+      <div class="text">
+        <span class="about-name">Papeo</span>
+        <span class="hint">Versão {snap.appVersion}</span>
+        <span class="hint">
+          Feito por
+          <button class="link" onclick={() => run(api.openUrl(ABOUT.profile))}>{ABOUT.author}</button>
+        </span>
+      </div>
+    </div>
+    <div class="choices about-links">
+      <button class="btn" onclick={() => run(api.openUrl(ABOUT.profile))}>
+        <UserRound size={16} /> Perfil no GitHub
+      </button>
+      <button class="btn" onclick={() => run(api.openUrl(ABOUT.repo))}>
+        <CodeXml size={16} /> Código-fonte
+      </button>
+      <button class="btn" onclick={() => run(api.openUrl(ABOUT.issues))}>
+        <Bug size={16} /> Relatar um problema
+      </button>
+    </div>
+    <p class="hint about-license">
+      Software livre e gratuito, sob a licença GPL-3.0. Sem propaganda e sem coleta de dados.
+    </p>
+  </section>
 </div>
 
 {#if confirmOrphans}
@@ -574,5 +608,44 @@
   .message {
     margin: 0 0 14px;
     color: var(--text-muted);
+  }
+
+  .about-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .about-head img {
+    border-radius: 13px;
+    flex: none;
+  }
+
+  .about-name {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
+  .about-links {
+    flex-wrap: wrap;
+  }
+
+  .about-license {
+    margin: 14px 0 16px;
   }
 </style>

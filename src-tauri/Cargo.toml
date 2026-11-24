@@ -1,6 +1,7 @@
 [package]
 name = "papeo"
 version = "0.1.0"
+authors = ["Ygor Moura"]
 description = "Mensageiros num só lugar, leve e rápido"
 edition = "2021"
 rust-version = "1.85"
