@@ -21,3 +21,8 @@ Thumbs.db
 # Trabalho local
 work/
 src-tauri/gen/
+
+# Índices locais de navegação do código
+/.repowise/
+/.repowise-seed-*/
+graphify-out/

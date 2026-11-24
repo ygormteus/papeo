@@ -1,21 +1,57 @@
 <script lang="ts">
-  import { BellOff, CirclePlus, House, MemoryStick } from "@lucide/svelte";
+  import { BellOff, CirclePlus, House, MemoryStick, Settings } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { isMac, modKey, type Snapshot, type ServiceView } from "./api";
+  import { isMac, isMuted, modKey, untilLabel, type Snapshot, type ServiceView } from "./api";
 
   let {
     snap,
     collapsed,
+    page,
     onselect,
     onadd,
+    onsettings,
     onmenu,
+    onmove,
   }: {
     snap: Snapshot;
     collapsed: boolean;
+    page: "home" | "settings";
     onselect: (id: string | null) => void;
     onadd: () => void;
+    onsettings: () => void;
     onmenu: (service: ServiceView, x: number, y: number) => void;
+    onmove: (id: string, to: number) => void;
   } = $props();
+
+  // Arrastar para reordenar (drag and drop do HTML; o Tauri não intercepta na `ui`).
+  let dragId = $state<string | null>(null);
+  let overIndex = $state<number | null>(null);
+
+  function dragStart(e: DragEvent, service: ServiceView) {
+    dragId = service.id;
+    e.dataTransfer?.setData("text/plain", service.id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }
+
+  function dragOver(e: DragEvent, index: number) {
+    if (!dragId) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    overIndex = index;
+  }
+
+  function drop(e: DragEvent, index: number) {
+    e.preventDefault();
+    const id = dragId;
+    const from = snap.services.findIndex((s) => s.id === id);
+    dragEnd();
+    if (id && from !== -1 && from !== index) onmove(id, index);
+  }
+
+  function dragEnd() {
+    dragId = null;
+    overIndex = null;
+  }
 
   const loadedCount = $derived(snap.services.filter((s) => s.loaded).length);
 
@@ -49,8 +85,8 @@
   <nav class="nav" aria-label="Serviços">
     <button
       class="item"
-      class:active={snap.active === null}
-      aria-current={snap.active === null ? "page" : undefined}
+      class:active={snap.active === null && page === "home"}
+      aria-current={snap.active === null && page === "home" ? "page" : undefined}
       onclick={() => onselect(null)}
       title="Início ({modKey}0)"
     >
@@ -65,6 +101,13 @@
         class="item"
         class:active={snap.active === service.id}
         class:asleep={!service.loaded}
+        class:dragging={dragId === service.id}
+        class:drop-target={overIndex === i && dragId !== service.id}
+        draggable="true"
+        ondragstart={(e) => dragStart(e, service)}
+        ondragover={(e) => dragOver(e, i)}
+        ondrop={(e) => drop(e, i)}
+        ondragend={dragEnd}
         aria-current={snap.active === service.id ? "page" : undefined}
         onclick={() => onselect(service.id)}
         oncontextmenu={(e) => contextMenu(e, service)}
@@ -73,14 +116,22 @@
       >
         <span class="avatar-wrap">
           <ServiceAvatar {service} dimmed={!service.loaded} />
-          {#if collapsed && service.unread > 0}<span class="dot" aria-hidden="true"></span>{/if}
+          {#if collapsed && (service.status === "unresponsive" || service.status === "loggedOut")}
+            <span class="dot warn" aria-hidden="true"></span>
+          {:else if collapsed && service.unread > 0}
+            <span class="dot" aria-hidden="true"></span>
+          {/if}
         </span>
         {#if !collapsed}
           <span class="label">{service.name}</span>
-          {#if !service.notifications}
+          {#if isMuted(service)}
             <BellOff size={14} class="muted-icon" aria-label="Notificações silenciadas" />
           {/if}
-          {#if service.unread > 0}
+          {#if service.status === "unresponsive"}
+            <span class="pill pill-danger">Não responde</span>
+          {:else if service.status === "loggedOut"}
+            <span class="pill pill-warn">Desconectado</span>
+          {:else if service.unread > 0}
             <span class="pill pill-success" aria-label="{service.unread} não lidas">
               {service.unread > 99 ? "99+" : service.unread}
             </span>
@@ -98,14 +149,35 @@
     {/if}
   </nav>
 
+  <div class="footer-nav">
+    <button
+      class="item"
+      class:active={snap.active === null && page === "settings"}
+      aria-current={snap.active === null && page === "settings" ? "page" : undefined}
+      onclick={onsettings}
+      title="Configurações ({modKey},)"
+    >
+      <Settings size={18} />
+      {#if !collapsed}<span class="label">Configurações</span>{/if}
+      {#if snap.dndActive}
+        <BellOff size={14} class="muted-icon" aria-label="Não perturbe ativo" />
+      {/if}
+    </button>
+  </div>
+
   {#if !collapsed}
     <div class="tip card">
-      <div class="tip-title"><MemoryStick size={15} /> Memória</div>
-      <p>
-        {loadedCount} de {snap.services.length}
-        {snap.services.length === 1 ? "serviço" : "serviços"} em memória. Clique com o botão direito num
-        serviço para hibernar e liberar RAM.
-      </p>
+      {#if snap.dndActive}
+        <div class="tip-title"><BellOff size={15} /> Não perturbe</div>
+        <p>Notificações silenciadas {untilLabel(snap.settings.dndUntil) || "pelo horário silencioso"}.</p>
+      {:else}
+        <div class="tip-title"><MemoryStick size={15} /> Memória</div>
+        <p>
+          {loadedCount} de {snap.services.length}
+          {snap.services.length === 1 ? "serviço" : "serviços"} em memória. Clique com o botão direito num
+          serviço para hibernar e liberar RAM.
+        </p>
+      {/if}
     </div>
   {/if}
 </aside>
@@ -268,6 +340,22 @@
   .item :global(.muted-icon) {
     flex: none;
     color: var(--text-faint);
+  }
+
+  .item.dragging {
+    opacity: 0.45;
+  }
+
+  .item.drop-target {
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+
+  .dot.warn {
+    background: var(--warn);
+  }
+
+  .footer-nav {
+    padding: 0 8px 10px;
   }
 
   .empty {

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Moon, PanelLeft, RotateCw, Search, Snowflake, Sun } from "@lucide/svelte";
+  import { Lock, LockOpen, Moon, PanelLeft, RotateCw, Search, Snowflake, Sun } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { modKey, type ServiceView } from "./api";
+  import { isInsecure, modKey, type ServiceView } from "./api";
 
   let {
     active,
@@ -11,6 +11,9 @@
     ontheme,
     onreload,
     onhibernate,
+    onzoomreset,
+    lockable,
+    onlock,
   }: {
     active: ServiceView | null;
     dark: boolean;
@@ -19,6 +22,9 @@
     ontheme: () => void;
     onreload: () => void;
     onhibernate: () => void;
+    onzoomreset: () => void;
+    lockable: boolean;
+    onlock: () => void;
   } = $props();
 </script>
 
@@ -40,7 +46,34 @@
     </span>
   {/if}
 
+  {#if active && isInsecure(active)}
+    <span
+      class="alert"
+      role="status"
+      title="Este site usa http: o que você envia e recebe pode ser lido por quem estiver na mesma rede."
+    >
+      <LockOpen size={15} /> Conexão não criptografada
+    </span>
+  {/if}
+
+  {#if active?.status === "unresponsive" || active?.status === "loggedOut"}
+    <span class="alert" class:danger={active.status === "unresponsive"} role="status">
+      {active.status === "unresponsive"
+        ? `${active.name} não responde.`
+        : `${active.name} está desconectado — faça login de novo.`}
+      {#if active.status === "unresponsive"}
+        <button class="link" onclick={onreload}>Recarregar</button>
+      {/if}
+    </span>
+  {/if}
+
   <div class="spacer" data-tauri-drag-region></div>
+
+  {#if active && Math.abs(active.zoom - 1) > 0.001}
+    <button class="zoom" onclick={onzoomreset} title="Voltar ao tamanho real ({modKey}⇧0)">
+      {Math.round(active.zoom * 100)}%
+    </button>
+  {/if}
 
   {#if active}
     <button class="icon-btn" onclick={onreload} title="Recarregar ({modKey}R)" aria-label="Recarregar {active.name}">
@@ -48,6 +81,11 @@
     </button>
     <button class="icon-btn" onclick={onhibernate} title="Hibernar e liberar memória" aria-label="Hibernar {active.name}">
       <Snowflake size={17} />
+    </button>
+  {/if}
+  {#if lockable}
+    <button class="icon-btn" onclick={onlock} title="Bloquear agora ({modKey}L)" aria-label="Bloquear o Papeo">
+      <Lock size={17} />
     </button>
   {/if}
   <button class="icon-btn solid" onclick={ontheme} aria-label={dark ? "Usar tema claro" : "Usar tema escuro"}>
@@ -109,6 +147,44 @@
     padding-left: 16px;
     border-left: 1px solid var(--border);
     font-weight: 550;
+  }
+
+  .alert {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 12px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--warn-text);
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+  }
+
+  .alert.danger {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  }
+
+  .link {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+
+  .zoom {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-subtle);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
   }
 
   .spacer {

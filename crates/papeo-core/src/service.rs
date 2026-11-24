@@ -1,0 +1,425 @@
+//! Modelo de um serviço (mensageiro) e validação dos campos editáveis.
+
+use serde::{Deserialize, Serialize};
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceKind {
+    Whatsapp,
+    Telegram,
+    Custom,
+}
+
+impl ServiceKind {
+    fn default_name(self) -> Option<&'static str> {
+        match self {
+            Self::Whatsapp => Some("WhatsApp"),
+            Self::Telegram => Some("Telegram"),
+            Self::Custom => None,
+        }
+    }
+
+    fn default_url(self) -> Option<&'static str> {
+        match self {
+            Self::Whatsapp => Some("https://web.whatsapp.com/"),
+            Self::Telegram => Some("https://web.telegram.org/a/"),
+            Self::Custom => None,
+        }
+    }
+}
+
+/// O que fazer quando o site pede microfone ou câmera.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaPolicy {
+    /// O sistema/webview pergunta a cada pedido.
+    Ask,
+    Allow,
+    Block,
+}
+
+pub const ZOOM_MIN: f64 = 0.5;
+pub const ZOOM_MAX: f64 = 2.0;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Service {
+    /// Identificador estável (`svc-` + 12 hex); também é o rótulo da webview.
+    pub id: String,
+    pub kind: ServiceKind,
+    pub name: String,
+    pub url: String,
+    /// 32 caracteres hexadecimais que identificam a sessão isolada
+    /// (cookies, armazenamento local) deste serviço. Vira nome de pasta.
+    pub session: String,
+    /// Minutos sem uso até hibernar; 0 desativa a hibernação automática.
+    #[serde(default)]
+    pub hibernate_after_minutes: u32,
+    /// Repassa as notificações do site como notificações nativas.
+    #[serde(default = "enabled")]
+    pub notifications: bool,
+    /// Silencia as notificações até este instante (segundos Unix).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub muted_until: Option<u64>,
+    /// Cor do ícone (`#rrggbb`); sem ela, usa a cor do tipo de serviço.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Emoji (ou letra curta) mostrado no ícone no lugar do símbolo do serviço.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+    /// Microfone/câmera; sem valor, usa o padrão do tipo (`media_policy`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaPolicy>,
+    /// Zoom da página (1.0 = 100%).
+    #[serde(default = "one")]
+    pub zoom: f64,
+    /// Sobrescreve o user-agent padrão da plataforma.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+}
+
+fn enabled() -> bool {
+    true
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+impl Service {
+    pub fn new(
+        kind: ServiceKind,
+        name: Option<String>,
+        url: Option<String>,
+    ) -> Result<Self, String> {
+        let url = match url.map(|u| u.trim().to_owned()).filter(|u| !u.is_empty()) {
+            Some(raw) => normalize_url(&raw)?,
+            None => kind
+                .default_url()
+                .ok_or("Informe a URL do serviço.")?
+                .to_owned(),
+        };
+        let name = name
+            .map(|n| n.trim().to_owned())
+            .filter(|n| !n.is_empty())
+            .or_else(|| kind.default_name().map(str::to_owned))
+            .or_else(|| url::Url::parse(&url).ok()?.host_str().map(str::to_owned))
+            .map(|n| fit_name(&n))
+            .unwrap_or_else(|| "Serviço".to_owned());
+        let session = random_hex();
+        Ok(Self {
+            id: format!("svc-{}", &session[..12]),
+            kind,
+            name,
+            url,
+            session,
+            hibernate_after_minutes: 0,
+            notifications: true,
+            muted_until: None,
+            color: None,
+            emoji: None,
+            media: None,
+            zoom: 1.0,
+            user_agent: None,
+        })
+    }
+
+    /// Mensageiros conhecidos liberam microfone/câmera (mensagens de voz);
+    /// sites personalizados perguntam.
+    pub fn media_policy(&self) -> MediaPolicy {
+        self.media.unwrap_or(match self.kind {
+            ServiceKind::Custom => MediaPolicy::Ask,
+            _ => MediaPolicy::Allow,
+        })
+    }
+
+    /// Identificador de 16 bytes do armazenamento isolado (WKWebsiteDataStore no macOS).
+    pub fn session_bytes(&self) -> [u8; 16] {
+        let mut out = [0u8; 16];
+        for (i, byte) in out.iter_mut().enumerate() {
+            *byte = self
+                .session
+                .get(i * 2..i * 2 + 2)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .unwrap_or(0);
+        }
+        out
+    }
+
+    /// Confere e normaliza um serviço vindo de arquivo (backup ou
+    /// `services.json` editado à mão). `id` e `session` viram rótulo de
+    /// webview e nome de pasta, então só aceitam o formato gerado pelo app.
+    pub fn sanitized(mut self) -> Result<Self, String> {
+        let hex = |s: &str, len: usize| s.len() == len && s.bytes().all(|b| b.is_ascii_hexdigit());
+        if !hex(&self.session, 32) {
+            return Err(format!("sessão inválida em \"{}\"", self.name));
+        }
+        self.session.make_ascii_lowercase();
+        match self.id.strip_prefix("svc-") {
+            Some(rest) if hex(rest, 12) => self.id.make_ascii_lowercase(),
+            _ => return Err(format!("identificador inválido em \"{}\"", self.name)),
+        }
+        // Nome longo/vazio é reparado (não invalida o arquivo inteiro).
+        self.name = normalize_name(&self.name).unwrap_or_else(|_| {
+            let fallback = url::Url::parse(&self.url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_owned))
+                .unwrap_or_else(|| "Serviço".to_owned());
+            fit_name(if self.name.trim().is_empty() {
+                &fallback
+            } else {
+                &self.name
+            })
+        });
+        self.url = normalize_url(&self.url)?;
+        self.color = normalize_color(self.color.as_deref())?;
+        self.emoji = normalize_emoji(self.emoji.as_deref())?;
+        self.zoom = clamp_zoom(self.zoom);
+        self.hibernate_after_minutes = self.hibernate_after_minutes.min(24 * 60);
+        self.user_agent = self
+            .user_agent
+            .map(|ua| ua.trim().to_owned())
+            .filter(|ua| !ua.is_empty() && ua.len() <= 512 && !ua.chars().any(char::is_control));
+        Ok(self)
+    }
+}
+
+/// Valida o nome exibido do serviço.
+pub fn normalize_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("O nome não pode ficar vazio.".into());
+    }
+    if name.chars().count() > NAME_MAX {
+        return Err("Use um nome com até 40 caracteres.".into());
+    }
+    Ok(name.to_owned())
+}
+
+/// Aceita `#rgb` ou `#rrggbb` (devolve `#rrggbb` minúsculo); vazio remove a cor.
+pub fn normalize_color(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    let hex = raw.strip_prefix('#').unwrap_or(raw);
+    let full: String = match hex.len() {
+        3 => hex.chars().flat_map(|c| [c, c]).collect(),
+        6 => hex.to_owned(),
+        _ => String::new(),
+    };
+    if full.len() == 6 && full.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(Some(format!("#{}", full.to_ascii_lowercase())))
+    } else {
+        Err("Cor inválida; use o formato #rrggbb.".into())
+    }
+}
+
+/// Aceita um emoji (inclusive compostos, como famílias e bandeiras) ou até
+/// 2 letras; vazio remove.
+pub fn normalize_emoji(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(text) = raw.map(str::trim).filter(|e| !e.is_empty()) else {
+        return Ok(None);
+    };
+    let chars = text.chars().count();
+    let has_symbol = text.chars().any(|c| !c.is_alphanumeric());
+    let ok = !text.chars().any(|c| c.is_control() || c.is_whitespace())
+        && ((has_symbol && chars <= 12) || (!has_symbol && chars <= 2));
+    if ok {
+        Ok(Some(text.to_owned()))
+    } else {
+        Err("Use um emoji ou até 2 letras.".into())
+    }
+}
+
+pub const NAME_MAX: usize = 40;
+
+/// Encurta um nome para caber em `NAME_MAX` caracteres.
+pub(crate) fn fit_name(name: &str) -> String {
+    let name = name.trim();
+    if name.chars().count() <= NAME_MAX {
+        return name.to_owned();
+    }
+    let cut: String = name.chars().take(NAME_MAX - 1).collect();
+    format!("{}…", cut.trim_end())
+}
+
+/// Limita o zoom a 50–200%, em passos de 10%.
+pub fn clamp_zoom(zoom: f64) -> f64 {
+    if !zoom.is_finite() {
+        return 1.0;
+    }
+    (zoom.clamp(ZOOM_MIN, ZOOM_MAX) * 10.0).round() / 10.0
+}
+
+/// Evita dois serviços com o mesmo nome automático: "WhatsApp", "WhatsApp 2"…
+pub fn unique_name(base: &str, existing: &[Service]) -> String {
+    let taken = |name: &str| existing.iter().any(|s| s.name.eq_ignore_ascii_case(name));
+    if !taken(base) {
+        return base.to_owned();
+    }
+    (2..)
+        .map(|n| {
+            let suffix = format!(" {n}");
+            let room = NAME_MAX - suffix.chars().count();
+            let stem: String = base.chars().take(room).collect();
+            format!("{}{suffix}", stem.trim_end())
+        })
+        .find(|candidate| !taken(candidate))
+        .unwrap_or_else(|| base.to_owned())
+}
+
+pub(crate) fn normalize_url(raw: &str) -> Result<String, String> {
+    let candidate = if raw.contains("://") {
+        raw.to_owned()
+    } else {
+        format!("https://{raw}")
+    };
+    let url = url::Url::parse(&candidate).map_err(|_| "URL inválida.".to_owned())?;
+    match url.scheme() {
+        "https" | "http" if url.host_str().is_some() => Ok(url.to_string()),
+        _ => Err("Use um endereço http(s) válido.".to_owned()),
+    }
+}
+
+pub(crate) fn random_hex() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let state = RandomState::new();
+    (0..2u8)
+        .map(|salt| format!("{:016x}", state.hash_one((nanos, salt, std::process::id()))))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_service_validates_url() {
+        assert!(Service::new(ServiceKind::Custom, None, None).is_err());
+        assert!(Service::new(
+            ServiceKind::Custom,
+            None,
+            Some("javascript:alert(1)".into())
+        )
+        .is_err());
+        let s = Service::new(ServiceKind::Custom, None, Some("app.slack.com".into())).unwrap();
+        assert_eq!(s.url, "https://app.slack.com/");
+        assert_eq!(s.name, "app.slack.com");
+        assert_eq!(s.session.len(), 32);
+        assert!(s.id.starts_with("svc-"));
+    }
+
+    #[test]
+    fn second_account_gets_numbered_name() {
+        let first = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        assert_eq!(unique_name("WhatsApp", &[]), "WhatsApp");
+        let mut second = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        second.name = unique_name("WhatsApp", std::slice::from_ref(&first));
+        assert_eq!(second.name, "WhatsApp 2");
+        assert_eq!(unique_name("whatsapp", &[first, second]), "whatsapp 3");
+    }
+
+    #[test]
+    fn appearance_validation() {
+        assert_eq!(
+            normalize_color(Some("#ABC")).unwrap().as_deref(),
+            Some("#aabbcc")
+        );
+        assert_eq!(
+            normalize_color(Some("25D366")).unwrap().as_deref(),
+            Some("#25d366")
+        );
+        assert_eq!(normalize_color(Some("  ")).unwrap(), None);
+        assert!(normalize_color(Some("red")).is_err());
+        assert!(normalize_color(Some("#12345g")).is_err());
+        assert!(normalize_color(Some("#fff;background:url(x)")).is_err());
+
+        assert_eq!(normalize_emoji(Some("💼")).unwrap().as_deref(), Some("💼"));
+        assert_eq!(normalize_emoji(Some("👨‍👩‍👧")).unwrap().as_deref(), Some("👨‍👩‍👧"));
+        assert_eq!(normalize_emoji(Some("🇧🇷")).unwrap().as_deref(), Some("🇧🇷"));
+        assert_eq!(normalize_emoji(Some(" P ")).unwrap().as_deref(), Some("P"));
+        assert_eq!(normalize_emoji(None).unwrap(), None);
+        assert!(normalize_emoji(Some("Pessoal")).is_err());
+        assert!(normalize_emoji(Some("a b")).is_err());
+
+        assert_eq!(normalize_name("  Pessoal ").unwrap(), "Pessoal");
+        assert!(normalize_name("   ").is_err());
+        assert!(normalize_name(&"x".repeat(41)).is_err());
+    }
+
+    #[test]
+    fn old_record_gets_defaults() {
+        let json = r#"{"id":"svc-1","kind":"telegram","name":"T","url":"https://web.telegram.org/a/","session":"00"}"#;
+        let s: Service = serde_json::from_str(json).unwrap();
+        assert!(s.notifications);
+        assert_eq!(s.hibernate_after_minutes, 0);
+        assert_eq!(s.zoom, 1.0);
+        assert_eq!(s.media_policy(), MediaPolicy::Allow);
+    }
+
+    #[test]
+    fn media_policy_defaults_by_kind() {
+        let custom = Service::new(ServiceKind::Custom, None, Some("x.com".into())).unwrap();
+        assert_eq!(custom.media_policy(), MediaPolicy::Ask);
+        let mut wa = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        assert_eq!(wa.media_policy(), MediaPolicy::Allow);
+        wa.media = Some(MediaPolicy::Block);
+        assert_eq!(wa.media_policy(), MediaPolicy::Block);
+    }
+
+    #[test]
+    fn zoom_is_clamped_and_stepped() {
+        assert_eq!(clamp_zoom(1.04), 1.0);
+        assert_eq!(clamp_zoom(1.15), 1.2);
+        assert_eq!(clamp_zoom(9.0), ZOOM_MAX);
+        assert_eq!(clamp_zoom(0.1), ZOOM_MIN);
+        assert_eq!(clamp_zoom(f64::NAN), 1.0);
+    }
+
+    #[test]
+    fn sanitized_rejects_path_tricks() {
+        let good = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        assert!(good.clone().sanitized().is_ok());
+
+        let mut bad = good.clone();
+        bad.session = "../../../etc/passwd/aaaaaaaaaaaaa".into();
+        assert!(bad.sanitized().is_err());
+
+        let mut bad = good.clone();
+        bad.id = "ui".into();
+        assert!(bad.sanitized().is_err());
+
+        let mut bad = good;
+        bad.url = "file:///etc/passwd".into();
+        assert!(bad.sanitized().is_err());
+    }
+
+    #[test]
+    fn long_host_names_fit() {
+        let long = "mattermost.departamento.universidade.exemplo.edu.br";
+        let s = Service::new(ServiceKind::Custom, None, Some(long.into())).unwrap();
+        assert_eq!(s.name.chars().count(), NAME_MAX);
+        assert!(normalize_name(&s.name).is_ok());
+        let second = unique_name(&s.name, std::slice::from_ref(&s));
+        assert!(second.ends_with(" 2") && second.chars().count() <= NAME_MAX);
+
+        // Nome longo gravado por versão antiga é reparado, não rejeitado.
+        let mut old = s.clone();
+        old.name = "x".repeat(60);
+        assert_eq!(old.sanitized().unwrap().name.chars().count(), NAME_MAX);
+    }
+
+    #[test]
+    fn sessions_are_unique() {
+        let a = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        let b = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        assert_ne!(a.session, b.session);
+        assert_ne!(a.session_bytes(), [0u8; 16]);
+    }
+}

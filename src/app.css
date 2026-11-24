@@ -16,6 +16,10 @@
   --success-border: #bfe8cf;
   --danger: #dc2626;
   --danger-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-text: #b45309;
+  --warn-bg: #fffbeb;
+  --warn-border: #fde68a;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04);
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.06);
   --radius: 14px;
@@ -45,6 +49,10 @@
   --success-border: #1d4a30;
   --danger: #f87171;
   --danger-bg: #2a1215;
+  --warn: #f59e0b;
+  --warn-text: #fbbf24;
+  --warn-bg: #2a1f0a;
+  --warn-border: #4a3510;
   --shadow-card: none;
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.5), 0 0 0 1px var(--border);
   color-scheme: dark;
@@ -172,6 +180,18 @@ button {
   color: var(--success-text);
   background: var(--success-bg);
   border-color: var(--success-border);
+}
+
+.pill-warn {
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+
+.pill-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 .card {

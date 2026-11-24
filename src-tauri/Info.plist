@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>O Papeo usa o microfone quando você grava mensagens de voz ou faz chamadas nos seus mensageiros.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>O Papeo usa a câmera quando você faz chamadas de vídeo nos seus mensageiros.</string>
+  <key>LSFileQuarantineEnabled</key>
+  <true/>
+</dict>
+</plist>

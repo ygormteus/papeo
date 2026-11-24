@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "repowise": {
+      "type": "stdio",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        "exec \"$(git rev-parse --show-toplevel)/scripts/repowise.sh\" mcp"
+      ]
+    }
+  }
+}

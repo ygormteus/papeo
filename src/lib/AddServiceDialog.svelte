@@ -53,6 +53,12 @@
         <label for="svc-url">Endereço</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input id="svc-url" class="input" bind:value={url} placeholder="app.exemplo.com" autofocus />
+        {#if url.trim().toLowerCase().startsWith("http://")}
+          <p class="warn" role="note">
+            Endereço sem criptografia (http): mensagens e senhas podem ser lidas por quem estiver na mesma
+            rede. Prefira https.
+          </p>
+        {/if}
       </div>
     {/if}
 
@@ -150,6 +156,16 @@
   .error {
     margin: 0;
     color: var(--danger);
+  }
+
+  .warn {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--warn-text);
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
   }
 
   .actions {

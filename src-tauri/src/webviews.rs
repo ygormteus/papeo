@@ -1,0 +1,221 @@
+//! Criação, posicionamento e ciclo de vida das webviews dos serviços.
+
+use crate::state::{
+    publish, AppState, Area, DownloadState, Health, Snapshot, MAIN_WINDOW, UI_WEBVIEW,
+};
+use papeo_core::{MediaPolicy, Service};
+use std::time::Instant;
+use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse, WebviewBuilder};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl};
+use tauri_plugin_opener::OpenerExt;
+
+const SERVICE_SCRIPT: &str = include_str!("notification_shim.js");
+
+/// WKWebView (macOS) e WebKitGTK (Linux) não trazem o token "Safari" no
+/// user-agent padrão, e o WhatsApp Web recusa o navegador sem ele.
+#[cfg(not(windows))]
+const SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15";
+
+/// Decide pedidos de permissão do site conforme a política do serviço.
+/// Microfone e câmera só valem para o próprio site do serviço: uma página de
+/// outro domínio aberta dentro dele recebe "negado".
+fn permission_for(webview: &Webview, kind: PermissionKind) -> PermissionResponse {
+    match kind {
+        PermissionKind::Microphone | PermissionKind::Camera => {
+            let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
+            let state = webview.state::<AppState>();
+            let policy = state
+                .lock()
+                .service(webview.label())
+                .ok()
+                .filter(|s| papeo_core::same_site(&s.url, &page))
+                .map(|s| s.media_policy())
+                .unwrap_or(MediaPolicy::Block);
+            match policy {
+                MediaPolicy::Allow => PermissionResponse::Allow,
+                MediaPolicy::Block => PermissionResponse::Deny,
+                MediaPolicy::Ask => PermissionResponse::Default,
+            }
+        }
+        // As notificações passam pelo shim (com "não perturbe"); a notificação
+        // própria da webview furaria essas regras.
+        PermissionKind::Notifications => PermissionResponse::Deny,
+        _ => PermissionResponse::Default,
+    }
+}
+
+pub fn create_service_webview(
+    app: &AppHandle,
+    service: &Service,
+    area: Area,
+) -> Result<Webview, String> {
+    let window = app
+        .get_window(MAIN_WINDOW)
+        .ok_or("Janela principal indisponível.")?;
+    let url = service
+        .url
+        .parse()
+        .map_err(|_| "URL inválida.".to_owned())?;
+    let state = app.state::<AppState>();
+
+    let mut builder = WebviewBuilder::new(&service.id, WebviewUrl::External(url))
+        .data_directory(state.sessions_dir.join(&service.session))
+        .initialization_script(SERVICE_SCRIPT)
+        // Sem isto o Tauri captura arquivos soltos na janela e o site
+        // (WhatsApp, Telegram) nunca recebe o arrastar e soltar.
+        .disable_drag_drop_handler()
+        .on_document_title_changed(|webview, title| {
+            let app = webview.app_handle().clone();
+            let count = papeo_core::parse_unread(&title);
+            let changed = {
+                let state = app.state::<AppState>();
+                let mut inner = state.lock();
+                inner.unread.insert(webview.label().to_owned(), count) != Some(count)
+            };
+            if changed {
+                publish(&app);
+            }
+        })
+        .on_permission_request(|webview, kind| permission_for(&webview, kind))
+        .on_download(|webview, event| crate::downloads::handle(&webview, event))
+        .on_new_window({
+            let app = app.clone();
+            move |url, _features| {
+                // Links "abrir em nova janela" vão para o navegador padrão.
+                if matches!(url.scheme(), "http" | "https" | "mailto") {
+                    let _ = app.opener().open_url(url.as_str(), None::<&str>);
+                }
+                NewWindowResponse::Deny
+            }
+        });
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.data_store_identifier(service.session_bytes());
+    }
+
+    match &service.user_agent {
+        Some(ua) => builder = builder.user_agent(ua),
+        #[cfg(not(windows))]
+        None => builder = builder.user_agent(SAFARI_UA),
+        #[cfg(windows)]
+        None => {}
+    }
+
+    let webview = window
+        .add_child(
+            builder,
+            LogicalPosition::new(area.x, area.y),
+            LogicalSize::new(area.width, area.height),
+        )
+        .map_err(|e| e.to_string())?;
+    if (service.zoom - 1.0).abs() > f64::EPSILON {
+        let _ = webview.set_zoom(service.zoom);
+    }
+    state
+        .lock()
+        .health
+        .insert(service.id.clone(), Health::new());
+    Ok(webview)
+}
+
+/// Posiciona e exibe apenas o serviço ativo; os demais carregados ficam ocultos.
+pub fn apply_layout(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let (ids, active, area, overlay) = {
+        let inner = state.lock();
+        let ids: Vec<String> = inner.config.services.iter().map(|s| s.id.clone()).collect();
+        // Bloqueado: nenhuma conversa aparece.
+        (
+            ids,
+            inner.active.clone(),
+            inner.area,
+            inner.overlay || inner.locked,
+        )
+    };
+    for id in ids {
+        let Some(webview) = app.get_webview(&id) else {
+            continue;
+        };
+        if active.as_deref() == Some(id.as_str()) && !overlay {
+            let _ = webview.set_position(LogicalPosition::new(area.x, area.y));
+            let _ = webview.set_size(LogicalSize::new(area.width, area.height));
+            let _ = webview.show();
+        } else {
+            let _ = webview.hide();
+        }
+    }
+}
+
+/// Mostra um serviço (criando a webview se estiver hibernado) ou o Início.
+pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String> {
+    let state = app.state::<AppState>();
+    let (to_create, area) = {
+        let mut inner = state.lock();
+        let service = match &id {
+            Some(id) => Some(inner.service(id)?.clone()),
+            None => None,
+        };
+        let now = Instant::now();
+        if let Some(prev) = inner.active.take() {
+            inner.last_used.insert(prev, now);
+        }
+        if let Some(id) = &id {
+            inner.last_used.insert(id.clone(), now);
+            if let Some(health) = inner.health.get_mut(id) {
+                health.grace();
+            }
+        }
+        inner.active = id.clone();
+        inner.overlay = false;
+        let to_create = service.filter(|s| app.get_webview(&s.id).is_none());
+        (to_create, inner.area)
+    };
+    // Sem o lock: add_child espera a thread principal, que também usa o estado.
+    if let Some(service) = to_create {
+        create_service_webview(app, &service, area)?;
+    }
+    apply_layout(app);
+    // Bloqueado: o teclado não vai para a conversa escondida.
+    let locked = state.lock().locked;
+    let focus = if locked { None } else { id.as_deref() };
+    if let Some(webview) = focus.and_then(|id| app.get_webview(id)) {
+        let _ = webview.set_focus();
+    } else if let Some(ui) = app.get_webview(UI_WEBVIEW) {
+        let _ = ui.set_focus();
+    }
+    Ok(publish(app))
+}
+
+/// Descarrega a webview (libera a memória); a sessão continua salva.
+pub fn hibernate(app: &AppHandle, id: &str) {
+    if let Some(webview) = app.get_webview(id) {
+        let _ = webview.close();
+    }
+    let state = app.state::<AppState>();
+    let mut inner = state.lock();
+    inner.unread.remove(id);
+    inner.health.remove(id);
+    // Downloads em andamento são interrompidos junto com a webview.
+    for d in inner.downloads.iter_mut() {
+        if d.service_id == id && d.state == DownloadState::Downloading {
+            d.state = DownloadState::Failed;
+        }
+    }
+}
+
+/// Hiberna tudo e volta ao Início (usado ao restaurar um backup).
+pub fn close_all(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let ids: Vec<String> = state
+        .lock()
+        .config
+        .services
+        .iter()
+        .map(|s| s.id.clone())
+        .collect();
+    for id in ids {
+        hibernate(app, &id);
+    }
+    state.lock().active = None;
+}

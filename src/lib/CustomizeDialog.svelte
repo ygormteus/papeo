@@ -5,8 +5,11 @@
   import {
     EMOJI_SUGGESTIONS,
     KIND_META,
+    MEDIA_OPTIONS,
     SERVICE_COLORS,
     errorMessage,
+    mediaPolicy,
+    type MediaPolicy,
     type ServiceView,
   } from "./api";
 
@@ -17,7 +20,12 @@
   }: {
     service: ServiceView;
     onclose: () => void;
-    onsubmit: (name: string, color: string | null, emoji: string | null) => Promise<void>;
+    onsubmit: (
+      name: string,
+      color: string | null,
+      emoji: string | null,
+      media: MediaPolicy,
+    ) => Promise<void>;
   } = $props();
 
   // Cópia local editável; o serviço original só muda ao salvar.
@@ -27,6 +35,8 @@
   let color = $state<string | null>(service.color ?? null);
   // svelte-ignore state_referenced_locally
   let emoji = $state(service.emoji ?? "");
+  // svelte-ignore state_referenced_locally
+  let media = $state<MediaPolicy>(mediaPolicy(service));
   let error = $state("");
   let busy = $state(false);
 
@@ -42,7 +52,7 @@
     busy = true;
     error = "";
     try {
-      await onsubmit(name.trim(), color, emoji.trim() || null);
+      await onsubmit(name.trim(), color, emoji.trim() || null, media);
     } catch (err) {
       error = errorMessage(err);
       busy = false;
@@ -117,6 +127,25 @@
         placeholder="Ou cole um emoji / digite até 2 letras"
         aria-label="Emoji personalizado"
       />
+    </fieldset>
+
+    <fieldset>
+      <legend>Microfone e câmera <span class="muted">(mensagens de voz e chamadas)</span></legend>
+      <div class="segmented">
+        {#each MEDIA_OPTIONS as opt (opt.value)}
+          <label class:selected={media === opt.value}>
+            <input type="radio" name="cz-media" value={opt.value} bind:group={media} class="sr-only" />
+            {opt.label}
+          </label>
+        {/each}
+      </div>
+      <p class="muted note">
+        {media === "allow"
+          ? "O site usa o microfone sem perguntar de novo (o sistema pode pedir autorização uma vez)."
+          : media === "ask"
+            ? "O site pede permissão a cada uso."
+            : "Mensagens de voz e chamadas ficam bloqueadas neste serviço."}
+      </p>
     </fieldset>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -246,6 +275,38 @@
 
   .emoji-input {
     margin-top: 4px;
+  }
+
+  .segmented {
+    display: inline-flex;
+    align-self: flex-start;
+    padding: 3px;
+    gap: 2px;
+    border-radius: 10px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+  }
+
+  .segmented label {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .segmented label.selected {
+    background: var(--bg);
+    box-shadow: var(--shadow-card), 0 0 0 1px var(--border);
+    font-weight: 550;
+  }
+
+  .segmented label:has(:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .note {
+    margin: 0;
   }
 
   .error {

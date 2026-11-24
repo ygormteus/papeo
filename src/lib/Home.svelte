@@ -1,50 +1,104 @@
 <script lang="ts">
-  import { Bell, Layers, MemoryStick, Palette, Plus, Snowflake, Timer } from "@lucide/svelte";
+  import { onMount } from "svelte";
+  import {
+    Bell,
+    FileDown,
+    FolderOpen,
+    Layers,
+    MemoryStick,
+    Palette,
+    Plus,
+    Snowflake,
+    Trash2,
+    TriangleAlert,
+  } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { HIBERNATE_OPTIONS, type ServiceView, type Snapshot } from "./api";
+  import Switch from "./Switch.svelte";
+  import {
+    HIBERNATE_OPTIONS,
+    STATUS_LABEL,
+    api,
+    formatBytes,
+    isMuted,
+    type MemoryReport,
+    type ServiceView,
+    type Snapshot,
+  } from "./api";
 
   let {
     snap,
+    run,
     onadd,
     onopen,
-    onhibernate,
     onremove,
-    onsethibernation,
-    onsetnotifications,
     oncustomize,
   }: {
     snap: Snapshot;
+    run: (action: Promise<Snapshot | void>) => Promise<void>;
     onadd: () => void;
     onopen: (id: string) => void;
-    onhibernate: (id: string) => void;
     onremove: (service: ServiceView) => void;
-    onsethibernation: (id: string, minutes: number) => void;
-    onsetnotifications: (id: string, enabled: boolean) => void;
     oncustomize: (service: ServiceView) => void;
   } = $props();
+
+  /** Acima disso, um serviço parado vira sugestão de hibernação. */
+  const HEAVY_BYTES = 300 * 1024 ** 2;
+  const IDLE_MINUTES = 10;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
 
+  let memory = $state<MemoryReport | null>(null);
+
   const loaded = $derived(snap.services.filter((s) => s.loaded).length);
-  const auto = $derived(snap.services.filter((s) => s.hibernateAfterMinutes > 0).length);
   const withUnread = $derived(snap.services.filter((s) => s.unread > 0).length);
+  const servicesBytes = $derived(
+    memory ? Object.values(memory.services).reduce((a, b) => a + b, 0) : 0,
+  );
+  const heaviest = $derived.by(() => {
+    if (!memory) return null;
+    let best: string | null = null;
+    for (const [id, bytes] of Object.entries(memory.services)) {
+      if (best === null || bytes > memory.services[best]) best = id;
+    }
+    return best;
+  });
+
+  function suggestHibernate(service: ServiceView): boolean {
+    const bytes = memory?.services[service.id] ?? 0;
+    return (
+      service.loaded &&
+      service.id !== snap.active &&
+      bytes >= HEAVY_BYTES &&
+      (service.idleMinutes ?? Infinity) >= IDLE_MINUTES
+    );
+  }
 
   const stats = $derived([
     {
       icon: Layers,
       label: "Serviços",
-      value: snap.services.length,
-      note: snap.services.length === 1 ? "configurado" : "configurados",
+      value: String(snap.services.length),
+      note: `${loaded} em memória · ${snap.services.length - loaded} dormindo`,
     },
-    { icon: MemoryStick, label: "Em memória", value: loaded, note: `${snap.services.length - loaded} dormindo` },
     {
       icon: Bell,
       label: "Não lidas",
-      value: snap.totalUnread,
+      value: String(snap.totalUnread),
       note: withUnread ? `em ${withUnread} ${withUnread === 1 ? "serviço" : "serviços"}` : "tudo em dia",
     },
-    { icon: Timer, label: "Hibernação automática", value: auto, note: auto === 1 ? "serviço ativo" : "serviços ativos" },
+    {
+      icon: MemoryStick,
+      label: "Memória dos serviços",
+      value: memory ? formatBytes(servicesBytes) : "—",
+      note: memory ? `+ ${formatBytes(memory.app)} do Papeo` : "medindo…",
+    },
+    {
+      icon: FileDown,
+      label: "Downloads",
+      value: String(snap.downloads.filter((d) => d.state === "done").length),
+      note: snap.downloads.some((d) => d.state === "downloading") ? "baixando agora" : "nesta sessão",
+    },
   ]);
 
   function host(url: string) {
@@ -54,6 +108,21 @@
       return url;
     }
   }
+
+  function serviceOf(id: string) {
+    return snap.services.find((s) => s.id === id);
+  }
+
+  onMount(() => {
+    const refresh = () =>
+      api
+        .getMemory()
+        .then((m) => (memory = m))
+        .catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 10_000);
+    return () => clearInterval(timer);
+  });
 </script>
 
 <div class="home">
@@ -77,10 +146,10 @@
     {/each}
   </section>
 
-  <section class="card services" aria-labelledby="services-title">
-    <div class="services-head">
+  <section class="card block" aria-labelledby="services-title">
+    <div class="block-head">
       <h2 id="services-title">Serviços</h2>
-      <span class="hint">Clique para abrir · botão direito na barra lateral para mais opções</span>
+      <span class="hint">Arraste na barra lateral para reordenar · botão direito para mais opções</span>
     </div>
 
     {#if snap.services.length === 0}
@@ -94,6 +163,7 @@
           <tr>
             <th>Serviço</th>
             <th>Estado</th>
+            <th class="num">Memória</th>
             <th class="num">Não lidas</th>
             <th>Notificações</th>
             <th>Hibernar após</th>
@@ -102,7 +172,9 @@
         </thead>
         <tbody>
           {#each snap.services as service (service.id)}
-            <tr>
+            {@const bytes = memory?.services[service.id]}
+            {@const suggest = suggestHibernate(service)}
+            <tr class:suggest>
               <td>
                 <button class="svc" onclick={() => onopen(service.id)}>
                   <ServiceAvatar {service} size={30} dimmed={!service.loaded} />
@@ -113,31 +185,39 @@
                 </button>
               </td>
               <td>
-                {#if service.loaded}
-                  <span class="pill pill-success">Em memória</span>
+                <span
+                  class="pill"
+                  class:pill-success={service.status === "ok"}
+                  class:pill-warn={service.status === "loggedOut"}
+                  class:pill-danger={service.status === "unresponsive"}
+                >
+                  {STATUS_LABEL[service.status]}
+                </span>
+              </td>
+              <td class="num">
+                {#if bytes !== undefined}
+                  <span class:heavy={service.id === heaviest && bytes >= HEAVY_BYTES}>{formatBytes(bytes)}</span>
+                  {#if suggest}
+                    <span class="suggest-note">parado há {service.idleMinutes} min</span>
+                  {/if}
                 {:else}
-                  <span class="pill">Dormindo</span>
+                  <span class="muted">—</span>
                 {/if}
               </td>
               <td class="num">{service.unread || "—"}</td>
               <td>
-                <label class="switch">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={service.notifications}
-                    onchange={(e) => onsetnotifications(service.id, e.currentTarget.checked)}
-                  />
-                  <span class="track" aria-hidden="true"></span>
-                  <span class="sr-only">Notificações de {service.name}</span>
-                </label>
+                <Switch
+                  checked={!isMuted(service)}
+                  label="Notificações de {service.name}"
+                  onchange={(enabled) => run(api.setNotifications(service.id, enabled))}
+                />
               </td>
               <td>
                 <select
                   class="select"
                   aria-label="Hibernar {service.name} após"
                   value={service.hibernateAfterMinutes}
-                  onchange={(e) => onsethibernation(service.id, Number(e.currentTarget.value))}
+                  onchange={(e) => run(api.setHibernation(service.id, Number(e.currentTarget.value)))}
                 >
                   {#each HIBERNATE_OPTIONS as opt (opt.minutes)}
                     <option value={opt.minutes}>{opt.label}</option>
@@ -146,33 +226,72 @@
               </td>
               <td>
                 <div class="actions">
-                <button class="btn" onclick={() => onopen(service.id)}>Abrir</button>
-                <button
-                  class="icon-btn"
-                  onclick={() => oncustomize(service)}
-                  title="Personalizar nome, cor e emoji"
-                  aria-label="Personalizar {service.name}"
-                >
-                  <Palette size={16} />
-                </button>
-                <button
-                  class="icon-btn"
-                  disabled={!service.loaded}
-                  onclick={() => onhibernate(service.id)}
-                  title="Hibernar agora"
-                  aria-label="Hibernar {service.name} agora"
-                >
-                  <Snowflake size={16} />
-                </button>
-                <button class="btn btn-danger" onclick={() => onremove(service)}>Remover</button>
+                  <button class="btn" onclick={() => onopen(service.id)}>Abrir</button>
+                  <button
+                    class="icon-btn"
+                    onclick={() => oncustomize(service)}
+                    title="Personalizar"
+                    aria-label="Personalizar {service.name}"
+                  >
+                    <Palette size={16} />
+                  </button>
+                  <button
+                    class="icon-btn"
+                    class:attention={suggest}
+                    disabled={!service.loaded}
+                    onclick={() => run(api.hibernate(service.id))}
+                    title={suggest ? "Sugestão: hibernar para liberar memória" : "Hibernar agora"}
+                    aria-label="Hibernar {service.name} agora"
+                  >
+                    <Snowflake size={16} />
+                  </button>
+                  <button
+                    class="icon-btn danger"
+                    onclick={() => onremove(service)}
+                    title="Remover"
+                    aria-label="Remover {service.name}"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
+      {#if snap.services.some(suggestHibernate)}
+        <p class="tip"><TriangleAlert size={15} /> Serviços destacados estão pesados e parados: hiberne para liberar memória.</p>
+      {/if}
     {/if}
   </section>
+
+  {#if snap.downloads.length > 0}
+    <section class="card block" aria-labelledby="dl-title">
+      <div class="block-head">
+        <h2 id="dl-title">Downloads recentes</h2>
+        <div class="head-actions">
+          <button class="btn small" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={15} /> Abrir pasta</button>
+          <button class="btn small" onclick={() => run(api.clearDownloads())}>Limpar lista</button>
+        </div>
+      </div>
+      <ul class="downloads">
+        {#each snap.downloads as d (d.id)}
+          {@const svc = serviceOf(d.serviceId)}
+          <li>
+            {#if svc}<ServiceAvatar service={svc} size={22} />{/if}
+            <span class="file">{d.fileName}</span>
+            {#if d.state === "downloading"}
+              <span class="pill">Baixando…</span>
+            {:else if d.state === "failed"}
+              <span class="pill pill-danger">Falhou</span>
+            {:else}
+              <button class="btn small" onclick={() => run(api.revealDownload(d.id))}>Mostrar na pasta</button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -242,28 +361,35 @@
   }
 
   .stat-value {
-    font-size: 30px;
+    font-size: 28px;
     font-weight: 450;
     line-height: 1.1;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .stat-note {
-    font-size: 13px;
+    font-size: 12.5px;
     color: var(--text-muted);
     text-align: right;
   }
 
-  .services {
+  .block {
     padding: 20px 22px 8px;
+    margin-bottom: 20px;
   }
 
-  .services-head {
+  .block-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 8px;
+  }
+
+  .head-actions {
+    display: flex;
+    gap: 6px;
   }
 
   h2 {
@@ -289,6 +415,7 @@
     color: var(--text-muted);
     padding: 10px 8px;
     border-bottom: 1px solid var(--border);
+    white-space: nowrap;
   }
 
   td {
@@ -300,9 +427,33 @@
     border-bottom: 0;
   }
 
+  tr.suggest td {
+    background: color-mix(in srgb, var(--warn) 7%, transparent);
+  }
+
   .num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  td.num {
+    vertical-align: middle;
+  }
+
+  .heavy {
+    color: var(--warn-text);
+    font-weight: 600;
+  }
+
+  .suggest-note {
+    display: block;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+
+  .muted {
+    color: var(--text-faint);
   }
 
   .svc {
@@ -350,54 +501,22 @@
     cursor: default;
   }
 
-  .switch {
-    position: relative;
-    display: inline-flex;
-    cursor: pointer;
+  .icon-btn.attention {
+    border-color: var(--warn);
+    color: var(--warn-text);
   }
 
-  .switch input {
-    position: absolute;
-    opacity: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    cursor: pointer;
+  .icon-btn.danger {
+    color: var(--danger);
   }
 
-  .track {
-    width: 36px;
-    height: 20px;
-    border-radius: 999px;
-    background: var(--border-strong);
-    position: relative;
-    transition: background 0.15s;
-  }
-
-  .track::after {
-    content: "";
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
-    transition: transform 0.15s;
-  }
-
-  .switch input:checked + .track {
-    background: var(--success-text);
-  }
-
-  .switch input:checked + .track::after {
-    transform: translateX(16px);
-  }
-
-  .switch input:focus-visible + .track {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+  .tip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 12px;
+    font-size: 13px;
+    color: var(--warn-text);
   }
 
   .empty {
@@ -407,5 +526,37 @@
     gap: 12px;
     padding: 32px 0 28px;
     color: var(--text-muted);
+  }
+
+  .downloads {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .downloads li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .downloads li:first-child {
+    border-top: 0;
+  }
+
+  .file {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .btn.small {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 </style>

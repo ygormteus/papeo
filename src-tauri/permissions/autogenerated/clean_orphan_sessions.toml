@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clean-orphan-sessions"
+description = "Enables the clean_orphan_sessions command without any pre-configured scope."
+commands.allow = ["clean_orphan_sessions"]
+
+[[permission]]
+identifier = "deny-clean-orphan-sessions"
+description = "Denies the clean_orphan_sessions command without any pre-configured scope."
+commands.deny = ["clean_orphan_sessions"]

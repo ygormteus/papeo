@@ -1,18 +1,35 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Bell, BellOff, Palette, RotateCw, Snowflake, Trash2, UserPlus } from "@lucide/svelte";
+  import {
+    ArrowDown,
+    ArrowUp,
+    Bell,
+    BellOff,
+    LogOut,
+    Palette,
+    RotateCw,
+    Snowflake,
+    Trash2,
+    UserPlus,
+  } from "@lucide/svelte";
   import AddServiceDialog from "./lib/AddServiceDialog.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
   import CustomizeDialog from "./lib/CustomizeDialog.svelte";
   import Home from "./lib/Home.svelte";
+  import LockScreen from "./lib/LockScreen.svelte";
+  import Settings from "./lib/Settings.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import Topbar from "./lib/Topbar.svelte";
   import {
+    EMPTY_SNAPSHOT,
     api,
     errorMessage,
+    isMuted,
+    mediaPolicy,
     onCommand,
+    onDownload,
     onState,
     type MenuItem,
     type ServiceKind,
@@ -37,8 +54,11 @@
     },
   };
 
-  let snap = $state<Snapshot>({ services: [], active: null, totalUnread: 0 });
+  type Toast = { text: string; action?: { label: string; run: () => void } };
+
+  let snap = $state<Snapshot>(EMPTY_SNAPSHOT);
   let ready = $state(false);
+  let page = $state<"home" | "settings">("home");
   let collapsed = $state(store.get("papeo.sidebar") === "collapsed");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
   let themePref = $state(store.get("papeo.theme") ?? "system");
@@ -48,15 +68,30 @@
   let addOpen = $state(false);
   let paletteOpen = $state(false);
   let confirmRemove = $state<ServiceView | null>(null);
+  let confirmClear = $state<ServiceView | null>(null);
   let customizing = $state<ServiceView | null>(null);
+  let restoring = $state<{ path: string; services: string[] } | null>(null);
   let menu = $state<{ service: ServiceView; x: number; y: number } | null>(null);
-  let toast = $state("");
+  let toast = $state<Toast | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   let content = $state<HTMLElement>();
 
   const active = $derived(snap.services.find((s) => s.id === snap.active) ?? null);
-  const modalOpen = $derived(addOpen || paletteOpen || !!confirmRemove || !!customizing);
+  const modalOpen = $derived(
+    addOpen || paletteOpen || !!confirmRemove || !!confirmClear || !!customizing || !!restoring,
+  );
+
+  $effect(() => {
+    // Ao bloquear, fecha tudo o que estava aberto por cima.
+    if (snap.locked) {
+      menu = null;
+      addOpen = paletteOpen = false;
+      confirmRemove = confirmClear = customizing = null;
+      restoring = null;
+      toast = null;
+    }
+  });
 
   $effect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -67,11 +102,13 @@
     if (ready) api.setOverlay(modalOpen).catch(() => {});
   });
 
-  function showError(err: unknown) {
-    toast = errorMessage(err);
+  function showToast(next: Toast, ms = 5000) {
+    toast = next;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (toast = ""), 5000);
+    toastTimer = setTimeout(() => (toast = null), ms);
   }
+
+  const showError = (err: unknown) => showToast({ text: errorMessage(err) });
 
   async function run(action: Promise<Snapshot | void>) {
     try {
@@ -84,8 +121,14 @@
 
   const select = (id: string | null) => {
     paletteOpen = false;
+    if (id === null) page = "home";
     run(api.activate(id));
   };
+
+  function openSettings() {
+    page = "settings";
+    if (snap.active !== null) run(api.activate(null));
+  }
 
   function reportArea() {
     if (!content) return;
@@ -109,21 +152,54 @@
     addOpen = false;
   }
 
+  function zoom(change: { zoom?: number; delta?: number }) {
+    if (active) run(api.setZoom(active.id, change));
+  }
+
   function menuItems(service: ServiceView): MenuItem[] {
-    return [
+    const index = snap.services.findIndex((s) => s.id === service.id);
+    const items: MenuItem[] = [
       { label: "Recarregar", icon: RotateCw, run: () => run(api.reload(service.id)) },
       { label: "Hibernar agora", icon: Snowflake, run: () => run(api.hibernate(service.id)) },
-      service.notifications
-        ? { label: "Silenciar notificações", icon: BellOff, run: () => run(api.setNotifications(service.id, false)) }
-        : { label: "Ativar notificações", icon: Bell, run: () => run(api.setNotifications(service.id, true)) },
+    ];
+    if (isMuted(service)) {
+      items.push({
+        label: "Reativar notificações",
+        icon: Bell,
+        run: () => run(api.setNotifications(service.id, true)),
+      });
+    } else {
+      items.push(
+        { label: "Silenciar por 1 hora", icon: BellOff, run: () => run(api.muteService(service.id, 60)) },
+        { label: "Silenciar por 8 horas", icon: BellOff, run: () => run(api.muteService(service.id, 480)) },
+        {
+          label: "Silenciar sempre",
+          icon: BellOff,
+          run: () => run(api.setNotifications(service.id, false)),
+        },
+      );
+    }
+    if (index > 0) {
+      items.push({ label: "Mover para cima", icon: ArrowUp, run: () => run(api.moveService(service.id, index - 1)) });
+    }
+    if (index < snap.services.length - 1) {
+      items.push({
+        label: "Mover para baixo",
+        icon: ArrowDown,
+        run: () => run(api.moveService(service.id, index + 1)),
+      });
+    }
+    items.push(
       {
         label: "Adicionar outra conta",
         icon: UserPlus,
         run: () => run(api.addService(service.kind, undefined, service.kind === "custom" ? service.url : undefined)),
       },
       { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
+      { label: "Sair da conta e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },
       { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
-    ];
+    );
+    return items;
   }
 
   function openAdd() {
@@ -131,16 +207,38 @@
     addOpen = true;
   }
 
+  function handleCommand(cmd: string) {
+    if (modalOpen || snap.locked) return;
+    if (cmd === "search") paletteOpen = true;
+    else if (cmd === "settings") openSettings();
+    else if (cmd === "zoom:in") zoom({ delta: 0.1 });
+    else if (cmd === "zoom:out") zoom({ delta: -0.1 });
+    else if (cmd === "zoom:reset") zoom({ zoom: 1 });
+  }
+
   function keydown(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey;
-    if (!mod || e.altKey || modalOpen) return;
+    if (!mod || e.altKey || modalOpen || snap.locked) return;
     const key = e.key.toLowerCase();
-    if (key === "k") {
+    const commands: Record<string, string> = {
+      k: "search",
+      ",": "settings",
+      "=": "zoom:in",
+      "+": "zoom:in",
+      "-": "zoom:out",
+    };
+    if (e.shiftKey && (e.code === "Digit0" || key === ")")) {
       e.preventDefault();
-      paletteOpen = true;
+      handleCommand("zoom:reset");
+    } else if (commands[key]) {
+      e.preventDefault();
+      handleCommand(commands[key]);
     } else if (key === "n") {
       e.preventDefault();
       openAdd();
+    } else if (key === "l" && snap.settings.lock.enabled) {
+      e.preventDefault();
+      run(api.lockNow());
     } else if (/^[0-9]$/.test(key)) {
       e.preventDefault();
       const n = Number(key);
@@ -152,9 +250,19 @@
   onMount(() => {
     const unlisten = [
       onState((s) => (snap = s)),
-      onCommand((cmd) => {
-        if (cmd === "search" && !modalOpen) paletteOpen = true;
-      }),
+      onCommand(handleCommand),
+      onDownload((d) =>
+        !snap.locked &&
+        showToast(
+          d.success
+            ? {
+                text: `Download concluído: ${d.fileName}`,
+                action: { label: "Mostrar na pasta", run: () => run(api.revealDownload(d.id)) },
+              }
+            : { text: `Download falhou: ${d.fileName}` },
+          8000,
+        ),
+      ),
     ];
     api
       .getState()
@@ -182,24 +290,31 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="shell">
+<!-- Bloqueado: nada atrás da tela de desbloqueio recebe foco ou cliques. -->
+<div class="shell" inert={snap.locked}>
   <Sidebar
     {snap}
     {collapsed}
+    {page}
     onselect={select}
     onadd={openAdd}
+    onsettings={openSettings}
     onmenu={(service, x, y) => (menu = { service, x, y })}
+    onmove={(id, to) => run(api.moveService(id, to))}
   />
 
   <main class="main">
     <Topbar
       {active}
       {dark}
+      lockable={snap.settings.lock.enabled && snap.lockAvailable}
+      onlock={() => run(api.lockNow())}
       ontogglesidebar={toggleSidebar}
       onsearch={() => (paletteOpen = true)}
       ontheme={toggleTheme}
       onreload={() => active && run(api.reload(active.id))}
       onhibernate={() => active && run(api.hibernate(active.id))}
+      onzoomreset={() => zoom({ zoom: 1 })}
     />
     <section class="content" bind:this={content} aria-live="polite">
       {#if active}
@@ -210,15 +325,15 @@
             Carregando {active.name}…
           {/if}
         </div>
+      {:else if page === "settings"}
+        <Settings {snap} {run} onrestore={(path, services) => (restoring = { path, services })} />
       {:else}
         <Home
           {snap}
+          {run}
           onadd={openAdd}
           onopen={select}
-          onhibernate={(id) => run(api.hibernate(id))}
           onremove={(service) => (confirmRemove = service)}
-          onsethibernation={(id, minutes) => run(api.setHibernation(id, minutes))}
-          onsetnotifications={(id, enabled) => run(api.setNotifications(id, enabled))}
           oncustomize={(service) => (customizing = service)}
         />
       {/if}
@@ -263,21 +378,76 @@
   />
 {/if}
 
+{#if confirmClear}
+  {@const service = confirmClear}
+  <ConfirmDialog
+    title="Sair de {service.name} e apagar dados?"
+    message="Apaga deste computador os cookies, o cache e as conversas guardadas desta conta. O serviço continua na lista e pede login de novo."
+    confirmLabel="Sair e apagar"
+    onclose={() => (confirmClear = null)}
+    onconfirm={async () => {
+      confirmClear = null;
+      await run(api.clearServiceData(service.id));
+      showToast({ text: `Dados de ${service.name} apagados deste computador.` });
+    }}
+  />
+{/if}
+
+{#if restoring}
+  {@const backup = restoring}
+  <ConfirmDialog
+    title="Restaurar backup?"
+    message={`Os serviços atuais serão substituídos por: ${backup.services.join(", ") || "nenhum serviço"}. Logins que já existem neste computador continuam; os outros pedem login de novo.`}
+    confirmLabel="Restaurar"
+    onclose={() => (restoring = null)}
+    onconfirm={async () => {
+      restoring = null;
+      await run(api.importConfig(backup.path));
+      page = "home";
+      showToast({ text: "Configuração restaurada." });
+    }}
+  />
+{/if}
+
 {#if customizing}
   {@const target = customizing}
   <CustomizeDialog
     service={target}
     onclose={() => (customizing = null)}
-    onsubmit={async (name, color, emoji) => {
+    onsubmit={async (name, color, emoji, media) => {
       // Erros sobem para o diálogo, que os mostra no formulário.
       snap = await api.customizeService(target.id, name, color, emoji);
+      if (media !== mediaPolicy(target)) snap = await api.setMediaPolicy(target.id, media);
       customizing = null;
     }}
   />
 {/if}
 
+{#if snap.locked}
+  <LockScreen
+    onunlock={async () => {
+      snap = await api.unlock();
+    }}
+  />
+{/if}
+
 {#if toast}
-  <div class="toast" role="alert">{toast}</div>
+  <!-- No topo: a área de conteúdo pode estar coberta pela webview do serviço. -->
+  <div class="toast" role="status">
+    <span>{toast.text}</span>
+    {#if toast.action}
+      {@const action = toast.action}
+      <button
+        class="toast-action"
+        onclick={() => {
+          action.run();
+          toast = null;
+        }}
+      >
+        {action.label}
+      </button>
+    {/if}
+  </div>
 {/if}
 
 <style>
@@ -306,17 +476,38 @@
     color: var(--text-muted);
   }
 
-
   .toast {
     position: fixed;
+    top: 9px;
     left: 50%;
-    bottom: 20px;
     transform: translateX(-50%);
     z-index: 60;
-    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: min(560px, calc(100vw - 32px));
+    padding: 8px 10px 8px 16px;
     border-radius: 10px;
     background: var(--primary);
     color: var(--primary-text);
     box-shadow: var(--shadow-pop);
+    font-size: 13.5px;
+  }
+
+  .toast span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toast-action {
+    flex: none;
+    height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--primary-text) 16%, transparent);
+    color: inherit;
+    font-weight: 600;
   }
 </style>
