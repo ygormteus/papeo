@@ -80,34 +80,8 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: pnpm install --frozen-lockfile
       - run: cargo test -p papeo-core
-      # macOS: assina com o certificado próprio "Papeo Code Signing"
-      # (autoassinado, sem conta Apple Developer). Com a mesma assinatura em
-      # todas as versões, o macOS não pede de novo a senha das Chaves
-      # ("WebCrypto Master Key" do WebKit) a cada atualização. Importado à mão
-      # porque o `APPLE_CERTIFICATE` do Tauri só aceita certificados da Apple.
-      # Sem o secret (ex.: forks), fica a assinatura ad-hoc de tauri.conf.json.
-      # Windows: sem assinatura por enquanto.
-      - name: Importar certificado de assinatura (macOS)
-        if: runner.os == 'macOS'
-        env:
-          CERT: ${{ secrets.MACOS_CERTIFICATE }}
-          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-        run: |
-          if [ -z "$CERT" ]; then
-            echo "::warning::MACOS_CERTIFICATE ausente: assinatura ad-hoc"
-            exit 0
-          fi
-          kc="$RUNNER_TEMP/papeo-signing.keychain-db"
-          kc_pass=$(openssl rand -base64 24)
-          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security create-keychain -p "$kc_pass" "$kc"
-          security set-keychain-settings -lut 21600 "$kc"
-          security unlock-keychain -p "$kc_pass" "$kc"
-          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          rm -f "$RUNNER_TEMP/cert.p12"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$kc" > /dev/null
-          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
-          echo "APPLE_SIGNING_IDENTITY=Papeo Code Signing" >> "$GITHUB_ENV"
+      # macOS: assinatura ad-hoc (`signingIdentity: "-"` em tauri.conf.json),
+      # sem conta Apple Developer. Windows: sem assinatura por enquanto.
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

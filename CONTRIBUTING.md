@@ -72,9 +72,9 @@ Limites conhecidos: os dados das sessões não têm criptografia própria (use F
 
 ## Gerar instaladores
 
-- **Local:** `pnpm build:local` gera para o sistema em uso, sem os pacotes de atualização (no macOS, com assinatura ad-hoc). `pnpm build:mac` assina com o certificado "Papeo Code Signing", se ele estiver nas suas Chaves. `pnpm tauri build` também gera os pacotes de atualização e exige a chave privada em `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- **Local:** `pnpm build:local` gera para o sistema em uso, sem os pacotes de atualização. `pnpm tauri build` também gera os pacotes de atualização e exige a chave privada em `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 - **GitHub Actions:** rode o workflow **Build** manualmente (instaladores em **Artifacts**) ou crie uma tag `v*`, que gera um release em rascunho com `.dmg` (Apple Silicon e Intel) e `.exe` (Windows).
-- **Assinatura:** no macOS, as releases são assinadas com o certificado autoassinado "Papeo Code Signing" (secrets `MACOS_CERTIFICATE` e `MACOS_CERTIFICATE_PASSWORD`; sem eles, ad-hoc). Sem notarização, o Gatekeeper ainda avisa na primeira abertura, mas a assinatura é a mesma em todas as versões: o macOS reconhece o app atualizado e não pede de novo acesso às Chaves (a "WebCrypto Master Key" que o WebKit cria para o WhatsApp Web). Trocar ou perder o certificado faz todos os usuários verem esse pedido mais uma vez. Windows ainda sem assinatura. Com o repositório público, um job separado gera a atestação de procedência dos instaladores e dos pacotes de atualização.
+- **Assinatura:** macOS com assinatura ad-hoc (sem notarização); Windows ainda sem assinatura. Com o repositório público, um job separado gera a atestação de procedência dos instaladores e dos pacotes de atualização.
 
 Conferir um instalador baixado (com o [GitHub CLI](https://cli.github.com)):
 

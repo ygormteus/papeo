@@ -10,7 +10,6 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
     "build:local": "tauri build --config src-tauri/tauri.local.conf.json",
-    "build:mac": "APPLE_SIGNING_IDENTITY='Papeo Code Signing' tauri build --config src-tauri/tauri.local.conf.json",
     "test": "node tests/notification-shim.test.mjs"
   },
   "dependencies": {
