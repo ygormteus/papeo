@@ -14,6 +14,11 @@ pub enum ServiceKind {
 }
 
 impl ServiceKind {
+    /// Mensageiros em que o Papeo sabe abrir conversas e responder.
+    pub fn supports_chat(self) -> bool {
+        matches!(self, ServiceKind::Whatsapp | ServiceKind::Telegram)
+    }
+
     fn default_name(self) -> Option<&'static str> {
         match self {
             Self::Whatsapp => Some("WhatsApp"),

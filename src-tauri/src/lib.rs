@@ -4,7 +4,10 @@ mod lock;
 mod memory;
 #[cfg(target_os = "macos")]
 mod menu;
+mod notifications;
 mod notify;
+mod popover;
+mod reply;
 mod sessions;
 mod state;
 mod tray;
@@ -242,6 +245,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 sessions::retry_pending(&cleanup).await;
             });
+            notifications::init(handle);
             tray::install(handle)?;
             #[cfg(target_os = "macos")]
             menu::install(handle)?;
@@ -263,6 +267,9 @@ pub fn run() {
             commands::activate_service,
             commands::hibernate_service,
             commands::open_chat,
+            commands::send_reply,
+            commands::show_app,
+            commands::hide_popover,
             commands::reload_service,
             commands::set_content_area,
             commands::set_overlay,

@@ -92,20 +92,37 @@ export interface Snapshot {
   lockAvailable: boolean;
   update: UpdateStatus;
   appVersion: string;
-  /** Mensagens que chegaram como notificação, mais nova primeiro. Só na
-   * memória; vazia com o app bloqueado ou a prévia oculta. */
-  recent: RecentMessage[];
+  /** Conversas com mensagens recentes, mais nova primeiro. Só na memória;
+   * vazia com o app bloqueado ou a prévia oculta. */
+  recent: RecentChat[];
 }
 
-export interface RecentMessage {
-  serviceId: string;
-  /** Nome da conversa (contato ou grupo). */
-  title: string;
-  /** Vazio com a prévia "só remetente". */
+export interface ChatMessage {
   body: string;
   /** Segundos Unix. */
   at: number;
+  /** Enviada por você pelo Papeo (resposta rápida). */
+  mine: boolean;
 }
+
+export interface RecentChat {
+  serviceId: string;
+  /** Nome da conversa (contato ou grupo) para exibir; pode vir encurtado. */
+  title: string;
+  /** Nome completo, usado para abrir e responder. */
+  chat: string;
+  /** Última mensagem recebida; vazia com a prévia "só remetente". */
+  body: string;
+  /** Última atividade (segundos Unix). */
+  at: number;
+  /** Mais antiga primeiro; vazia com a prévia "só remetente". */
+  messages: ChatMessage[];
+  /** WhatsApp/Telegram: dá para responder pela mini janela. */
+  canReply: boolean;
+}
+
+/** Limite de texto da resposta rápida (igual ao backend). */
+export const MAX_REPLY_CHARS = 4096;
 
 export interface MemoryReport {
   /** Bytes por serviço carregado. */
@@ -172,6 +189,13 @@ export const api = {
   /** `exact`: nome inteiro da conversa; senão, abre se houver um só resultado. */
   openChat: (id: string, query: string, exact: boolean) =>
     invoke<Snapshot>("open_chat", { id, query, exact }),
+  /** Resposta rápida: o site envia sem o app vir para frente. */
+  sendReply: (id: string, chat: string, text: string) =>
+    invoke<Snapshot>("send_reply", { id, chat, text }),
+  /** Mini janela → app: mostra a janela e, se pedido, a conta/conversa. */
+  showApp: (id: string | null = null, chat: string | null = null) =>
+    invoke<Snapshot>("show_app", { id, chat }),
+  hidePopover: () => invoke<void>("hide_popover"),
   reload: (id: string) => invoke<void>("reload_service", { id }),
   setContentArea: (area: Area) => invoke<void>("set_content_area", { area }),
   setOverlay: (open: boolean) => invoke<void>("set_overlay", { open }),

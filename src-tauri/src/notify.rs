@@ -2,12 +2,11 @@
 //! O serviço é sempre identificado pelo rótulo da webview que chamou.
 
 use crate::state::{
-    local_minute_of_day, now_secs, publish, status_of, AppState, RecentMessage, MAIN_WINDOW,
+    local_minute_of_day, now_secs, publish, status_of, AppState, ChatMessage, MAIN_WINDOW,
 };
 use papeo_core::NotificationPreview;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State, Webview};
-use tauri_plugin_notification::NotificationExt;
 
 /// Intervalo mínimo entre notificações do mesmo serviço (contra excesso de alertas).
 const NOTIFY_MIN_GAP: Duration = Duration::from_millis(1500);
@@ -39,7 +38,7 @@ pub async fn service_notify(
     // Também fora do lock: a URL vem da thread principal.
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
     let (now_unix, minute) = (now_secs(), local_minute_of_day());
-    let (name, preview) = {
+    let (name, preview, target) = {
         let mut inner = state.lock();
         let Ok(service) = inner.service(&id) else {
             return Ok(());
@@ -52,6 +51,16 @@ pub async fn service_notify(
             return Ok(());
         }
         let name = service.name.clone();
+        let chat = papeo_core::clip(&title, 80);
+        // Clique abre a conversa; "Responder" só com o nome dela à mostra
+        // e num mensageiro conhecido.
+        let target = crate::notifications::Target {
+            service_id: id.clone(),
+            reply: service.kind.supports_chat()
+                && !inner.locked
+                && inner.config.settings.notification_preview != NotificationPreview::Hidden,
+            chat: (!chat.is_empty()).then(|| chat.clone()),
+        };
         // Bloqueado: nada do conteúdo aparece.
         let preview = if inner.locked {
             NotificationPreview::Hidden
@@ -63,12 +72,15 @@ pub async fn service_notify(
             return Ok(());
         }
         // Barra de menus e busca (só na memória; a prévia é aplicada ao exibir).
-        inner.push_recent(RecentMessage {
-            service_id: id.clone(),
-            title: papeo_core::clip(&title, 80),
-            body: papeo_core::clip(&body, 240),
-            at: now_unix,
-        });
+        inner.push_recent(
+            &id,
+            &chat,
+            ChatMessage {
+                body: papeo_core::clip(&body, 240),
+                at: now_unix,
+                mine: false,
+            },
+        );
         let now = Instant::now();
         if inner
             .last_notified
@@ -83,16 +95,13 @@ pub async fn service_notify(
         if !focused {
             inner.last_notification = Some((id, now));
         }
-        (name, preview)
+        (name, preview, target)
     };
 
     publish(&app);
     let (heading, text) = papeo_core::notification_text(preview, &name, &title, &body);
-    let mut notification = app.notification().builder().title(heading).body(text);
-    if !silent.unwrap_or(false) {
-        notification = notification.sound(DEFAULT_SOUND);
-    }
-    notification.show().map_err(|e| e.to_string())
+    let sound = (!silent.unwrap_or(false)).then_some(DEFAULT_SOUND);
+    crate::notifications::show(&app, &heading, &text, sound, target)
 }
 
 /// Sinal de vida periódico do site, com a detecção de "deslogado".

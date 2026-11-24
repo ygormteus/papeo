@@ -38,10 +38,10 @@ pnpm build                      # build da interface
 
 | Caminho | Conteúdo |
 |---|---|
-| `src/` | Interface (Svelte 5 + Vite): barra lateral, topbar, Início, Configurações, diálogos |
-| `src-tauri/src/` | App nativo: `webviews` (serviços), `commands` (interface), `notify` (sites), `downloads`, `memory`, `tray`, `menu` (macOS), `lock`, `updater`, `sessions`, `state` |
-| `src-tauri/src/notification_shim.js` | Script injetado nos sites: notificações e sinal de vida |
-| `src-tauri/capabilities/` | Permissões da interface (`default`) e dos sites (`services`) |
+| `src/` | Interface (Svelte 5 + Vite): barra lateral, topbar, Início, Configurações, diálogos; `Popover.svelte` é a mini janela da barra de menus/bandeja |
+| `src-tauri/src/` | App nativo: `webviews` (serviços), `commands` (interface), `notify` (sites), `downloads`, `memory`, `tray`, `popover` (mini janela), `reply` (resposta rápida), `notifications` (notificações nativas com "Responder"), `menu` (macOS), `lock`, `updater`, `sessions`, `state` |
+| `src-tauri/src/notification_shim.js` | Script injetado nos sites: notificações, sinal de vida, abrir conversa e resposta rápida |
+| `src-tauri/capabilities/` | Permissões da interface (`default`), da mini janela (`popover`) e dos sites (`services`) |
 | `crates/papeo-core/` | Modelo, configurações, `services.json`, backup e regras puras, sem dependência do Tauri |
 
 ## Regras importantes
@@ -54,12 +54,13 @@ pnpm build                      # build da interface
 
 ## Modelo de segurança
 
-- **ACL de comandos.** Todos os comandos passam pelo manifesto de `src-tauri/build.rs`. A interface (`ui`) recebe os comandos pela capability `default`. Os sites recebem **apenas** `service_notify` e `service_status`, então um site não fala em nome de outro nem aciona outros comandos.
+- **ACL de comandos.** Todos os comandos passam pelo manifesto de `src-tauri/build.rs`. A interface (`ui`) recebe os comandos pela capability `default`; a mini janela (`popover`), só ler o estado, responder, abrir o app, não perturbe e bloquear. Os sites recebem **apenas** `service_notify` e `service_status`, então um site não fala em nome de outro nem aciona outros comandos.
+- **Resposta rápida.** O Papeo pede ao script injetado (`__papeoReply`) para abrir a conversa exata, conferir o nome no cabeçalho, escrever no campo do próprio site e enviar; nunca escreve por cima de um rascunho, recusa nomes de conversa repetidos e tem prazo: depois dele (ou se o Papeo cancelar) nada é escrito nem enviado, para uma nova tentativa não duplicar a mensagem. Como o site roda no mesmo contexto do script, ele poderia forjar o resultado "enviado" (efeito: só uma entrada errada nas conversas recentes, na memória); o texto só é entregue se a página aberta for do próprio site do serviço. O andamento é lido da página (`eval_with_callback`), sem comando novo para os sites. Só WhatsApp e Telegram, só desbloqueado e, na notificação, só se a prévia não estiver oculta. As conversas recentes ficam só na memória.
 - **Origem.** Notificações, "desconectado" e microfone/câmera só valem quando a página aberta é do próprio site do serviço (`same_site`, comparação aproximada de domínio).
 - **Arquivos.** Nomes de download passam por `safe_file_name` e nunca sobrescrevem arquivos existentes.
 - **CSP** da interface em `src-tauri/tauri.conf.json`: só recursos locais e IPC.
 
-Limites conhecidos: os dados das sessões não têm criptografia própria (use FileVault/BitLocker); o backup é um JSON legível (sem logins nem conversas); notificações disparadas pelo service worker do site (push) não passam pelo Papeo; o clique na notificação só traz o app para frente.
+Limites conhecidos: os dados das sessões não têm criptografia própria (use FileVault/BitLocker); o backup é um JSON legível (sem logins nem conversas); notificações disparadas pelo service worker do site (push) não passam pelo Papeo; a resposta rápida depende dos seletores do WhatsApp Web/Telegram Web (se o site mudar, o Papeo avisa e oferece abrir a conversa). No macOS, "Responder" na notificação só existe no app instalado (`.app`); fora dele as notificações usam o plugin, sem resposta.
 
 ## Onde ficam os dados
 

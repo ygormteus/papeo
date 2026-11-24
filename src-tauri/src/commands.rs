@@ -216,6 +216,36 @@ pub async fn activate_service(app: AppHandle, id: Option<String>) -> CmdResult {
     activate(&app, id)
 }
 
+/// Resposta rápida (mini janela): envia sem trazer o app para frente.
+#[tauri::command]
+pub async fn send_reply(app: AppHandle, id: String, chat: String, text: String) -> CmdResult {
+    // Espera o site enviar: fora da thread principal e do executor.
+    tauri::async_runtime::spawn_blocking(move || crate::reply::send(&app, &id, &chat, &text))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Da mini janela para o app: mostra a janela principal e, se pedido, a
+/// conta ou a conversa. Bloqueado, mostra só a tela de desbloqueio.
+#[tauri::command]
+pub async fn show_app(app: AppHandle, id: Option<String>, chat: Option<String>) -> CmdResult {
+    crate::popover::hide(&app);
+    crate::tray::show_main(&app);
+    if app.state::<AppState>().lock().locked {
+        return Ok(snapshot(&app));
+    }
+    match (id, chat) {
+        (Some(id), Some(chat)) => crate::webviews::open_chat(&app, &id, &chat, true),
+        (Some(id), None) => activate(&app, Some(id)),
+        _ => Ok(snapshot(&app)),
+    }
+}
+
+#[tauri::command]
+pub async fn hide_popover(app: AppHandle) {
+    crate::popover::hide(&app);
+}
+
 /// Abre o serviço e procura a conversa pelo nome (busca do próprio site).
 #[tauri::command]
 pub async fn open_chat(app: AppHandle, id: String, query: String, exact: bool) -> CmdResult {

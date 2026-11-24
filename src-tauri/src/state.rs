@@ -24,8 +24,10 @@ pub const DOWNLOAD_EVENT: &str = "papeo://download";
 /// Sem sinal de vida do serviço visível por este tempo = "não responde".
 pub const UNRESPONSIVE_AFTER: Duration = Duration::from_secs(75);
 const MAX_DOWNLOADS: usize = 20;
-/// Mensagens recentes guardadas (só na memória, somem ao fechar o app).
+/// Conversas recentes guardadas (só na memória, somem ao fechar o app).
 const MAX_RECENT: usize = 8;
+/// Mensagens guardadas por conversa.
+const MAX_MESSAGES: usize = 6;
 
 /// Área (em pixels lógicos, relativa à janela) onde o serviço ativo aparece.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -94,26 +96,52 @@ pub struct DownloadEntry {
     pub at: u64,
 }
 
-/// Mensagem que chegou como notificação. Só na memória: nunca vai para o
-/// disco e some ao fechar o app.
+/// Mensagem de uma conversa recente: recebida (notificação) ou enviada pelo
+/// Papeo (resposta rápida). Só na memória: nunca vai para o disco.
 #[derive(Debug, Clone)]
-pub struct RecentMessage {
-    pub service_id: String,
-    pub title: String,
+pub struct ChatMessage {
     pub body: String,
     /// Segundos Unix.
     pub at: u64,
+    /// Enviada por você pelo Papeo.
+    pub mine: bool,
 }
 
-/// Mensagem recente como a interface e a barra de menus a veem, já com a
+#[derive(Debug, Clone)]
+pub struct RecentChat {
+    pub service_id: String,
+    /// Nome da conversa (contato ou grupo), como veio na notificação.
+    pub title: String,
+    /// Mais antiga primeiro.
+    pub messages: VecDeque<ChatMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageView {
+    pub body: String,
+    pub at: u64,
+    pub mine: bool,
+}
+
+/// Conversa recente como a interface e a barra de menus a veem, já com a
 /// prévia escolhida aplicada.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentView {
     pub service_id: String,
+    /// Nome para exibir (pode vir encurtado).
     pub title: String,
+    /// Nome completo da conversa, para abrir e responder.
+    pub chat: String,
+    /// Última mensagem recebida (vazia com a prévia "só remetente").
     pub body: String,
+    /// Última atividade.
     pub at: u64,
+    /// Mensagens recentes, mais antiga primeiro (vazia com "só remetente").
+    pub messages: Vec<MessageView>,
+    /// Dá para responder daqui (WhatsApp/Telegram).
+    pub can_reply: bool,
 }
 
 pub struct Inner {
@@ -134,7 +162,7 @@ pub struct Inner {
     pub last_reload: HashMap<String, Instant>,
     pub downloads: VecDeque<DownloadEntry>,
     pub next_download_id: u64,
-    pub recent: VecDeque<RecentMessage>,
+    pub recent: VecDeque<RecentChat>,
     /// Conversa a abrir assim que a página do serviço der sinal de vida
     /// (o serviço estava dormindo ou ainda carregando).
     pub pending_chat: HashMap<String, (String, bool)>,
@@ -199,11 +227,25 @@ impl Inner {
             .ok_or_else(|| "Serviço não encontrado.".to_owned())
     }
 
-    pub fn push_recent(&mut self, message: RecentMessage) {
-        // A mesma conversa aparece uma vez só, com a mensagem mais nova.
-        self.recent
-            .retain(|m| !(m.service_id == message.service_id && m.title == message.title));
-        self.recent.push_front(message);
+    /// Acrescenta uma mensagem à conversa (que sobe para o topo).
+    pub fn push_recent(&mut self, service_id: &str, title: &str, message: ChatMessage) {
+        let pos = self
+            .recent
+            .iter()
+            .position(|c| c.service_id == service_id && c.title == title);
+        let mut chat = match pos.and_then(|i| self.recent.remove(i)) {
+            Some(chat) => chat,
+            None => RecentChat {
+                service_id: service_id.to_owned(),
+                title: title.to_owned(),
+                messages: VecDeque::new(),
+            },
+        };
+        chat.messages.push_back(message);
+        while chat.messages.len() > MAX_MESSAGES {
+            chat.messages.pop_front();
+        }
+        self.recent.push_front(chat);
         self.recent.truncate(MAX_RECENT);
     }
 
@@ -217,15 +259,33 @@ impl Inner {
         let preview = self.config.settings.notification_preview;
         self.recent
             .iter()
-            .filter(|m| self.service(&m.service_id).is_ok())
-            .filter_map(|m| {
+            .filter_map(|chat| {
+                let service = self.service(&chat.service_id).ok()?;
+                let last = chat.messages.back()?;
+                let last_in = chat.messages.iter().rev().find(|m| !m.mine).unwrap_or(last);
                 let (title, body) =
-                    papeo_core::recent_text(preview, self.locked, &m.title, &m.body)?;
+                    papeo_core::recent_text(preview, self.locked, &chat.title, &last_in.body)?;
+                let full = preview == papeo_core::NotificationPreview::Full;
+                let messages = if full {
+                    chat.messages
+                        .iter()
+                        .map(|m| MessageView {
+                            body: papeo_core::clip(&m.body, 240),
+                            at: m.at,
+                            mine: m.mine,
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 Some(RecentView {
-                    service_id: m.service_id.clone(),
+                    service_id: chat.service_id.clone(),
                     title,
-                    body,
-                    at: m.at,
+                    chat: chat.title.clone(),
+                    body: if last_in.mine { String::new() } else { body },
+                    at: last.at,
+                    messages,
+                    can_reply: service.kind.supports_chat(),
                 })
             })
             .collect()
@@ -422,6 +482,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
 pub fn publish(app: &AppHandle) -> Snapshot {
     let snap = snapshot(app);
     let _ = app.emit_to(UI_WEBVIEW, STATE_EVENT, snap.clone());
+    let _ = app.emit_to(crate::popover::POPOVER, STATE_EVENT, snap.clone());
     if let Some(window) = app.get_window(MAIN_WINDOW) {
         let count = (snap.total_unread > 0).then_some(i64::from(snap.total_unread));
         let _ = window.set_badge_count(count);

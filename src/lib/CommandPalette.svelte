@@ -2,7 +2,7 @@
   import { CirclePlus, House, MessageCircle, Search } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { searchable, type RecentMessage, type ServiceView } from "./api";
+  import { searchable, type RecentChat, type ServiceView } from "./api";
 
   let {
     services,
@@ -13,7 +13,7 @@
     onchat,
   }: {
     services: ServiceView[];
-    recent: RecentMessage[];
+    recent: RecentChat[];
     onclose: () => void;
     onselect: (id: string | null) => void;
     onadd: () => void;
@@ -69,7 +69,7 @@
           label: m.title,
           detail: m.body ? `${service.name} · ${clip(m.body, 36)}` : service.name,
           service,
-          run: () => onchat(m.serviceId, m.title, true),
+          run: () => onchat(m.serviceId, m.chat, true),
         };
       });
 

@@ -37,11 +37,41 @@ export function installDevMock() {
   let update: Snapshot["update"] = { state: "idle" };
   let active: string | null = null;
   const minutesAgo = (m: number) => Math.round(Date.now() / 1000 - m * 60);
+  const msg = (body: string, ago: number, mine = false) => ({ body, at: minutesAgo(ago), mine });
+  const chat = (serviceId: string, title: string, messages: Snapshot["recent"][number]["messages"]) => {
+    const lastIn = [...messages].reverse().find((m) => !m.mine);
+    return {
+      serviceId,
+      title,
+      chat: title,
+      body: lastIn && !messages[messages.length - 1].mine ? lastIn.body : "",
+      at: messages[messages.length - 1].at,
+      messages,
+      canReply: !serviceId.endsWith("x"),
+    };
+  };
   const recent: Snapshot["recent"] = [
-    { serviceId: "svc-a", title: "Ana Souza", body: "Chego às 19h, beleza?", at: minutesAgo(2) },
-    { serviceId: "svc-c", title: "Equipe Vendas", body: "Proposta aprovada! 🎉", at: minutesAgo(6) },
-    { serviceId: "svc-b", title: "Grupo da família", body: "Foto", at: minutesAgo(15) },
+    chat("svc-a", "Ana Souza", [
+      msg("Oi! Tudo certo pra hoje?", 9),
+      msg("Tudo sim 😊", 8, true),
+      msg("Chego às 19h, beleza?", 2),
+    ]),
+    chat("svc-c", "Equipe Vendas", [
+      msg("Carlos: Enviei a proposta revisada", 12),
+      msg("Marina: Proposta aprovada! 🎉", 6),
+    ]),
+    chat("svc-b", "Grupo da família", [msg("Mãe: Foto", 15)]),
   ];
+  const sendReply = (id: string, title: string, text: string) => {
+    const i = recent.findIndex((c) => c.serviceId === id && c.chat === title);
+    if (i < 0) throw "Conversa não encontrada.";
+    if (/erro/i.test(text)) throw "Não encontrei essa conversa. Abra a conversa para responder.";
+    const [c] = recent.splice(i, 1);
+    c.messages = [...c.messages, msg(text, 0, true)].slice(-6);
+    c.at = minutesAgo(0);
+    c.body = "";
+    recent.unshift(c);
+  };
   const downloads: DownloadEntry[] = [
     { id: 1, serviceId: "svc-a", fileName: "orçamento-2026.pdf", state: "done", at: 0 },
     { id: 2, serviceId: "svc-a", fileName: "foto-praia.jpg", state: "downloading", at: 0 },
@@ -81,6 +111,22 @@ export function installDevMock() {
         s.status = "ok";
         return snap();
       }
+      case "send_reply":
+        return new Promise((resolve, reject) =>
+          setTimeout(() => {
+            try {
+              sendReply(String(args.id), String(args.chat), String(args.text));
+              resolve(snap());
+            } catch (e) {
+              reject(e);
+            }
+          }, 900),
+        );
+      case "show_app":
+        if (args.id) active = String(args.id);
+        return snap();
+      case "hide_popover":
+        return null;
       case "plugin:opener|open_url":
         window.open(String(args.url), "_blank", "noopener");
         return null;

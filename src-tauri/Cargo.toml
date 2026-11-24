@@ -34,9 +34,10 @@ block2 = "0.6"
 base64 = "0.21"
 security-framework = "3"
 libc = "0.2"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError", "NSData"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError", "NSData", "NSArray", "NSSet", "NSBundle"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "bitflags", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationCategory", "UNNotificationAction", "UNNotificationSound", "UNNotification", "UNNotificationTrigger", "UNNotificationSettings"] }
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Security_Credentials_UI", "Win32_Foundation", "Win32_System_WinRT"] }
+windows = { version = "0.62", features = ["Security_Credentials_UI", "Win32_Foundation", "Win32_System_WinRT", "Foundation", "Foundation_Collections", "Data_Xml_Dom", "UI_Notifications"] }
 windows-future = "0.3"

@@ -122,6 +122,154 @@
   };
   Object.defineProperty(window, "__papeoOpenChat", { value: openChat });
 
+  // Resposta rápida (mini janela, notificação): abre a conversa exata,
+  // confere o nome no cabeçalho, escreve no campo do próprio site e envia.
+  // Nunca envia para outra conversa nem por cima de um rascunho. O Papeo
+  // acompanha pelo `__papeoReplyStatus`; nada além disso volta ao app.
+  const CHAT_HEADER = {
+    "web.whatsapp.com": '#main header span[title], #main header span[dir="auto"]',
+    "web.telegram.org": ".MiddleHeader .fullName, .chat-info .peer-title, .ChatInfo .fullName",
+  };
+  const COMPOSER = {
+    "web.whatsapp.com": ['#main footer [contenteditable="true"][role="textbox"]', '#main footer [contenteditable="true"]'],
+    "web.telegram.org": ["#editable-message-text", '.input-message-input[contenteditable="true"]'],
+  };
+  const SEND_BUTTON = {
+    "web.whatsapp.com": [
+      '#main footer button[aria-label="Send"]',
+      '#main footer button[aria-label="Enviar"]',
+      '#main footer [data-icon*="send"]',
+    ],
+    "web.telegram.org": [".Composer button.send", "button.btn-send", ".btn-send"],
+  };
+  const first = (sels) => {
+    for (const sel of sels || []) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (fn, ms) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      const v = fn();
+      if (v || Date.now() > end) return v;
+      await sleep(250);
+    }
+  };
+  const headerIs = (name) => {
+    const sel = CHAT_HEADER[location.hostname];
+    if (!sel) return false;
+    return [...document.querySelectorAll(sel)].some(
+      (el) => (el.getAttribute("title") || el.textContent || "").trim() === name,
+    );
+  };
+  const textOf = (el) => (el.isContentEditable ? el.innerText : el.value || "").trim();
+  const insertLines = (el, text) => {
+    el.focus();
+    text.split("\n").forEach((line, i) => {
+      if (i) document.execCommand("insertLineBreak", false);
+      if (line) document.execCommand("insertText", false, line);
+    });
+  };
+  const replyStatus = new Map();
+  const cancelled = new Set();
+  let replyQueue = Promise.resolve();
+  const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  // Desfaz só o texto que o Papeo escreveu (nunca um rascunho seu).
+  const clearOurs = (box, text) => {
+    if (norm(textOf(box)) !== norm(text)) return;
+    box.focus();
+    document.execCommand("selectAll", false);
+    document.execCommand("delete", false);
+  };
+  // Mais de uma conversa com o mesmo nome na lista: não dá para ter certeza.
+  // Só antes de buscar: nos resultados da busca, mensagens também trazem o
+  // nome da conversa e dariam falso "repetido".
+  const ambiguous = (name) => chatTitles().filter((c) => c.title === name).length > 1;
+  // Cada pedido tem prazo (contado desde que entrou na fila) e pode ser
+  // cancelado pelo Papeo: depois disso nada é escrito nem enviado, e um
+  // novo pedido não duplica a mensagem.
+  const deliver = async (job) => {
+    const { key, name, text, deadline } = job;
+    const host = location.hostname;
+    const stop = () => cancelled.has(key) || Date.now() > deadline;
+    const left = () => Math.max(0, deadline - Date.now());
+    if (!COMPOSER[host]) return "unsupported";
+    if (stop()) return "timeout";
+    if (ambiguous(name)) return "ambiguous";
+    if (!headerIs(name)) {
+      openChat(name, true);
+      if (!(await waitFor(() => headerIs(name), Math.min(15000, left())))) {
+        return stop() ? "timeout" : "chat";
+      }
+    }
+    const box = await waitFor(() => first(COMPOSER[host]), Math.min(5000, left()));
+    if (!box) return stop() ? "timeout" : "composer";
+    if (textOf(box)) return "draft";
+    if (stop()) return "timeout";
+    insertLines(box, text);
+    if (!(await waitFor(() => textOf(box), 2000))) return "type";
+    // O botão pode trocar de lugar enquanto o texto entra.
+    await sleep(150);
+    if (!headerIs(name)) {
+      clearOurs(box, text);
+      return "chat";
+    }
+    if (stop()) {
+      clearOurs(box, text);
+      return "timeout";
+    }
+    const button = first(SEND_BUTTON[host]);
+    if (button) {
+      press(button.closest("button") || button);
+    } else {
+      const k = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      box.dispatchEvent(new KeyboardEvent("keydown", k));
+      box.dispatchEvent(new KeyboardEvent("keyup", k));
+    }
+    const current = () => first(COMPOSER[host]) || box;
+    if (await waitFor(() => !textOf(current()), 8000)) return "ok";
+    // O texto continua no campo: não foi enviado. Limpa para não virar
+    // "rascunho" e travar a próxima resposta.
+    if (norm(textOf(current())) === norm(text)) {
+      clearOurs(current(), text);
+      return "send";
+    }
+    return "unsure";
+  };
+  const reply = (id, chat, text, timeoutMs) => {
+    const key = String(id);
+    const name = String(chat || "").trim();
+    const body = String(text || "").trim();
+    if (!name || !body) {
+      replyStatus.set(key, "empty");
+      return;
+    }
+    const ms = Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 60000);
+    const job = { key, name, text: body, deadline: Date.now() + ms };
+    replyStatus.set(key, "pending");
+    replyQueue = replyQueue
+      .then(() => deliver(job))
+      .catch(() => "error")
+      .then((result) => {
+        replyStatus.set(key, result);
+        cancelled.delete(key);
+        // Não acumula: o Papeo lê o resultado em segundos.
+        setTimeout(() => replyStatus.delete(key), 120000);
+      });
+  };
+  Object.defineProperty(window, "__papeoReply", { value: reply });
+  Object.defineProperty(window, "__papeoReplyStatus", {
+    value: (id) => replyStatus.get(String(id)) || "unknown",
+  });
+  Object.defineProperty(window, "__papeoReplyCancel", {
+    value: (id) => {
+      if (replyStatus.get(String(id)) === "pending") cancelled.add(String(id));
+    },
+  });
+
   const send = (title, options) => {
     const o = options || {};
     invoke("service_notify", {

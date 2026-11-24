@@ -13,6 +13,15 @@ window.setInterval = (fn) => timers.push(fn);
 window.addEventListener = (type, fn) => (listeners[type] = fn);
 globalThis.location = { hostname: "web.whatsapp.com" };
 const docListeners = {};
+const composer = { isContentEditable: true, innerText: "", focus() {} };
+const sendButton = {
+  closest: () => sendButton,
+  dispatchEvent: (e) => e.type === "click" && (composer.innerText = ""),
+};
+const dom = {
+  '#main footer [contenteditable="true"][role="textbox"]': composer,
+  '#main footer button[aria-label="Send"]': sendButton,
+};
 const pressed = [];
 const chatTitles = [{ getAttribute: () => "Ana Souza", dispatchEvent: (e) => pressed.push(e.type) }];
 globalThis.MouseEvent = class {
@@ -22,7 +31,12 @@ globalThis.MouseEvent = class {
 };
 globalThis.document = {
   visibilityState: "visible",
-  querySelector: (sel) => (qrVisible && sel.includes("canvas") ? {} : null),
+  querySelector: (sel) => (qrVisible && sel.includes("canvas") ? {} : (dom[sel] ?? null)),
+  execCommand: (cmd, _ui, text) => {
+    if (cmd === "insertText") composer.innerText += text;
+    if (cmd === "insertLineBreak") composer.innerText += "\n";
+    if (cmd === "delete") composer.innerText = "";
+  },
   querySelectorAll: () => chatTitles,
   addEventListener: (type, fn) => (docListeners[type] = fn),
 };
@@ -86,6 +100,43 @@ window.__papeoOpenChat("Ana Souza", true);
 check(pressed.join() === "mousedown,mouseup,click", `abre a conversa exata: ${pressed}`);
 window.__papeoOpenChat("   ", true);
 check(pressed.length === 3, "nome vazio não faz nada");
+
+// Resposta rápida: conversa certa no cabeçalho, escreve e envia.
+const replyResult = async (id, tries = 40) => {
+  for (let i = 0; i < tries; i++) {
+    const s = window.__papeoReplyStatus(id);
+    if (s !== "pending") return s;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return "timeout";
+};
+check(window.__papeoReplyStatus("nada") === "unknown", "status desconhecido");
+window.__papeoReply(1, "Ana Souza", "Oi\nTudo bem?");
+check((await replyResult(1)) === "ok", "resposta enviada");
+composer.innerText = "rascunho meu";
+window.__papeoReply(2, "Ana Souza", "Oi");
+check((await replyResult(2)) === "draft", "não envia por cima de rascunho");
+check(composer.innerText === "rascunho meu", "rascunho intacto");
+// Botão que não envia: o texto escrito pelo Papeo é desfeito.
+composer.innerText = "";
+const realDispatch = sendButton.dispatchEvent;
+sendButton.dispatchEvent = () => true;
+window.__papeoReply(4, "Ana Souza", "Oi", 30000);
+check((await replyResult(4, 120)) === "send", "não enviado");
+check(composer.innerText === "", "texto do Papeo desfeito");
+sendButton.dispatchEvent = realDispatch;
+// Prazo vencido: nada é escrito.
+window.__papeoReply(5, "Ana Souza", "Oi", 1000);
+window.__papeoReplyCancel(5);
+check((await replyResult(5)) === "timeout", "cancelado não envia");
+check(composer.innerText === "", "cancelado não escreve");
+// Duas conversas com o mesmo nome: recusa.
+chatTitles.push({ getAttribute: () => "Ana Souza", dispatchEvent: () => {} });
+window.__papeoReply(6, "Ana Souza", "Oi");
+check((await replyResult(6)) === "ambiguous", "nome repetido");
+chatTitles.pop();
+window.__papeoReply(3, "Ana Souza", "   ");
+check((await replyResult(3)) === "empty", "texto vazio");
 
 if (failures.length) {
   console.error("FALHOU:", failures.join("; "));

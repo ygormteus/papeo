@@ -21,7 +21,8 @@ Em vez de deixar várias abas abertas no navegador, você junta tudo numa janela
 
 - 💬 **WhatsApp e Telegram** prontos para usar — e qualquer outro site que você quiser.
 - 👥 **Mais de uma conta** do mesmo aplicativo, por exemplo um WhatsApp **Pessoal** e outro do **Trabalho**, cada um com seu login.
-- 🔔 **Notificações** do próprio computador, com contador de mensagens não lidas.
+- 🔔 **Notificações** do próprio computador, com contador de mensagens não lidas — e dá para **responder direto na notificação**.
+- 💭 **Mini janela** no ícone da barra (Mac) ou da bandeja (Windows): leia as últimas conversas e responda sem abrir o app.
 - 🌙 **Não perturbe**: silencia tudo por 1 hora, 8 horas ou num horário fixo (ex.: das 22h às 7h).
 - 🔒 **Bloqueio com Touch ID** (Mac) ou **Windows Hello**, para ninguém ler suas conversas.
 - 🧊 **Economia de memória**: contas que você não está usando podem "dormir".
@@ -88,6 +89,14 @@ Clique com o **botão direito** numa conta da barra lateral para mudar nome, cor
 Em **Configurações** você escolhe o tema (claro, escuro ou preto total), o não perturbe, o bloqueio com senha, a pasta de downloads e se o Papeo abre junto com o computador.
 
 ![Tela de configurações](assets/screenshots/configuracoes.png)
+
+### Responda sem abrir o app
+
+Clique no ícone do Papeo na **barra de menus** (Mac, lá em cima) ou na **bandeja** (Windows, perto do relógio). Abre uma janelinha com as últimas conversas: escreva a resposta e aperte **Enter**. Com o botão direito no ícone aparece o menu com contas, não perturbe e bloqueio.
+
+![Mini janela com as conversas recentes](assets/screenshots/mini-janela.png)
+
+Nas notificações do WhatsApp e do Telegram também aparece **Responder**: digite ali mesmo e envie.
 
 ### Tema escuro
 

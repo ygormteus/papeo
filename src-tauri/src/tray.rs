@@ -119,7 +119,7 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
                 label.push_str(&format!("  ({})", name_of(&m.service_id)));
             }
             items.push(Box::new(item(app, &format!("tray:chat:{i}"), &label)?));
-            chats.push((m.service_id.clone(), m.title.clone()));
+            chats.push((m.service_id.clone(), m.chat.clone()));
         }
     }
 
@@ -244,19 +244,18 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Papeo")
         .menu(&menu)
-        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        // Clique esquerdo: mini janela com as conversas; direito: o menu.
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
         .on_tray_icon_event(|tray: &TrayIcon, event| {
-            // No Windows, clique esquerdo abre a janela; o direito mostra o menu.
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
+                rect,
                 ..
             } = event
             {
-                if !cfg!(target_os = "macos") {
-                    show_main(tray.app_handle());
-                }
+                crate::popover::toggle(tray.app_handle(), rect);
             }
         });
     // macOS: silhueta "template", que o sistema pinta conforme o tema da
@@ -333,6 +332,14 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                     }
                 });
             }
+        }
+        // A mini janela nunca fecha de verdade (Alt+F4, Cmd+W): só esconde.
+        WindowEvent::CloseRequested { api, .. } if window.label() == crate::popover::POPOVER => {
+            api.prevent_close();
+            let _ = window.hide();
+        }
+        WindowEvent::Focused(false) if window.label() == crate::popover::POPOVER => {
+            crate::popover::on_blur(window);
         }
         WindowEvent::Focused(focused) if window.label() == MAIN_WINDOW => {
             crate::notify::on_window_focus(window.app_handle(), *focused);

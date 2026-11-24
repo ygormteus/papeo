@@ -219,12 +219,15 @@
 
     <div class="row">
       <div class="text">
-        <span class="label">Abrir o serviço ao voltar após uma notificação</span>
-        <span class="hint">Ao clicar na notificação (ou voltar ao Papeo em até 20 s), abre a conversa daquele serviço.</span>
+        <span class="label">Trocar para a conta da notificação ao voltar</span>
+        <span class="hint">
+          Ao voltar ao Papeo até 20 s depois de uma notificação, mostra a conta que a enviou. Desligado, você
+          continua na conversa em que estava. Clicar na própria notificação sempre abre a conversa dela.
+        </span>
       </div>
       <Switch
         checked={settings.openOnNotificationFocus}
-        label="Abrir o serviço da última notificação"
+        label="Trocar para a conta da notificação ao voltar"
         onchange={(v) => run(api.setPreferences({ openOnNotificationFocus: v }))}
       />
     </div>
