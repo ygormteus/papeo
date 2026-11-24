@@ -36,6 +36,9 @@ const COMMANDS: &[&str] = &[
     "lock_now",
     "unlock",
     "set_appearance",
+    "check_update",
+    "install_update",
+    "set_updates",
     "service_notify",
     "service_status",
 ];

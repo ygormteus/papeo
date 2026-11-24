@@ -42,6 +42,9 @@
     "allow-set-lock",
     "allow-lock-now",
     "allow-unlock",
-    "allow-set-appearance"
+    "allow-set-appearance",
+    "allow-check-update",
+    "allow-install-update",
+    "allow-set-updates"
   ]
 }

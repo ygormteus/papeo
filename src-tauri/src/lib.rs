@@ -8,6 +8,7 @@ mod notify;
 mod sessions;
 mod state;
 mod tray;
+mod updater;
 mod webviews;
 
 use state::{publish, status_of, AppState, Inner, MAIN_WINDOW, UI_WEBVIEW};
@@ -21,10 +22,11 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 /// Argumento usado pelo início automático com o sistema.
 const HIDDEN_ARG: &str = "--hidden";
 
-/// A cada 15 s: hiberna serviços parados, reavalia "não responde" e aplica o
-/// bloqueio automático.
+/// A cada 15 s: hiberna serviços parados, reavalia "não responde", aplica o
+/// bloqueio automático e agenda a verificação de atualizações.
 fn spawn_maintenance(app: AppHandle) {
     std::thread::spawn(move || {
+        let started = std::time::Instant::now();
         let mut last_status = HashMap::new();
         loop {
             std::thread::sleep(Duration::from_secs(15));
@@ -84,6 +86,7 @@ fn spawn_maintenance(app: AppHandle) {
             if lock_due {
                 lock::lock_app(&app);
             }
+            updater::tick(&app, started);
         }
     });
 }
@@ -139,6 +142,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![HIDDEN_ARG]),
@@ -215,6 +219,9 @@ pub fn run() {
             commands::lock_now,
             commands::unlock,
             commands::set_appearance,
+            commands::check_update,
+            commands::install_update,
+            commands::set_updates,
             notify::service_notify,
             notify::service_status,
         ])

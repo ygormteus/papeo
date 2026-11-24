@@ -116,6 +116,10 @@ pub struct Inner {
     pub authenticating: bool,
     /// Desde quando a janela está sem foco (para o bloqueio automático).
     pub unfocused_since: Option<Instant>,
+    pub update: UpdateStatus,
+    /// Última verificação de atualização (manual ou automática), em
+    /// segundos Unix.
+    pub update_checked: Option<u64>,
 }
 
 impl Inner {
@@ -141,6 +145,8 @@ impl Inner {
             lock_available: cfg!(any(target_os = "macos", windows)),
             authenticating: false,
             unfocused_since: None,
+            update: UpdateStatus::Idle,
+            update_checked: None,
         }
     }
 
@@ -207,6 +213,33 @@ pub fn local_minute_of_day() -> u16 {
     (now.hour() * 60 + now.minute()) as u16
 }
 
+/// Situação da atualização do app, mostrada na interface.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "state")]
+pub enum UpdateStatus {
+    #[default]
+    Idle,
+    Checking,
+    UpToDate,
+    Available {
+        version: String,
+        notes: Option<String>,
+    },
+    /// Baixando e instalando; `percent` sem valor se o tamanho é desconhecido.
+    Installing {
+        percent: Option<u8>,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+impl UpdateStatus {
+    pub fn busy(&self) -> bool {
+        matches!(self, Self::Checking | Self::Installing { .. })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ServiceStatus {
@@ -241,6 +274,8 @@ pub struct Snapshot {
     pub downloads_dir: String,
     pub locked: bool,
     pub lock_available: bool,
+    pub update: UpdateStatus,
+    pub app_version: String,
 }
 
 pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
@@ -310,6 +345,8 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         downloads_dir: downloads_dir.to_string_lossy().into_owned(),
         locked: inner.locked,
         lock_available: inner.lock_available,
+        update: inner.update.clone(),
+        app_version: app.package_info().version.to_string(),
     }
 }
 

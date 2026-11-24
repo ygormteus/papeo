@@ -1,6 +1,7 @@
 {
   "name": "papeo",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -8,6 +9,7 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
+    "build:local": "tauri build --config src-tauri/tauri.local.conf.json",
     "test": "node tests/notification-shim.test.mjs"
   },
   "dependencies": {

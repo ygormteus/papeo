@@ -21,6 +21,7 @@ export function installDevMock() {
   let autostart = false;
   let locked = false;
   let orphans = 2;
+  let update: Snapshot["update"] = { state: "idle" };
   let active: string | null = null;
   const downloads: DownloadEntry[] = [
     { id: 1, serviceId: "svc-a", fileName: "orçamento-2026.pdf", state: "done", at: 0 },
@@ -39,6 +40,8 @@ export function installDevMock() {
     downloadsDir: settings.downloadsDir ?? "/Users/voce/Downloads",
     locked,
     lockAvailable: true,
+    update: structuredClone(update),
+    appVersion: "0.1.0",
   });
 
   mockIPC((cmd, payload) => {
@@ -166,6 +169,17 @@ export function installDevMock() {
         return snap();
       case "unlock":
         locked = false;
+        return snap();
+      case "check_update":
+        update = { state: "available", version: "0.2.0", notes: "Correções e melhorias." };
+        return snap();
+      case "install_update":
+        if (locked) throw "Desbloqueie o Papeo primeiro.";
+        update = { state: "installing", percent: 40 };
+        return snap();
+      case "set_updates":
+        if (locked) throw "Desbloqueie o Papeo primeiro.";
+        settings.updates = { check: Boolean(args.check), noticeSeen: true };
         return snap();
       case "preview_backup":
         return { services: services.map((s) => s.name) };

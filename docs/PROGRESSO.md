@@ -1,5 +1,27 @@
 # Progresso
 
+## 2026-11-24 — Atualização com um clique (tauri-plugin-updater)
+
+- **Objetivo (decisões do usuário):** atualizador do Tauri; verificação ligada por padrão com aviso na primeira abertura; instalação só com clique.
+- **Raiz/branch:** `/srv/projetos/papeo`, `main`, base `3e54ac8`; sem commit (junto da entrega de README/licença abaixo).
+- **Feito:** `Settings.updates` (core, compatível com arquivos antigos, teste `updates_wait_for_notice`); `updater.rs`; comandos `check_update`, `install_update`, `set_updates` (ACL + capability `default`); `Snapshot.update`/`appVersion`; aviso em `App.svelte` (`ConfirmDialog` ganhou `cancelLabel`, `danger`, `oncancel`); Configurações → Sistema (interruptor, versão, "Verificar agora"/"Atualizar e reiniciar"); cartão e ponto na barra lateral; mock. `tauri.conf.json`: `createUpdaterArtifacts`, `plugins.updater`, `targets` `app/dmg/nsis`. Workflow: job `create-release` (idempotente) → builds com `releaseId` → `check-updater-json` (3 plataformas) e `attest` separado (único com `id-token`); cache do Rust fora de tags. README: atualização, publicação de versão, chave.
+- **Consulta de impacto:** RepoWise e Graphify atualizados (saída 0) e consultados para `settings.rs`, `state.rs`, `build.rs`, `api.ts`, `devMock.ts`.
+- **Revisão independente:** sem bloqueante; corrigidos timeout (estado preso), MSI×NSIS (MSI removido), corrida de rascunhos, `id-token` só no job de atestação, `.app.tar.gz` na atestação, nova tentativa após falha com relógio de parede, backup não traz `updates`, textos de IP. Re-checagem ok. Mantidos: Esc = manter ligada (decisão do usuário); ícone da bandeja pode ficar "fantasma" no Windows após o `exit(0)` do instalador.
+- **Evidência (LXC, estado final):** `cargo fmt --all -- --check` 0; `cargo test -p papeo-core` 0 (29); clippy `-D warnings` core 0, Windows 0, macOS 0; `pnpm check` 0; `pnpm build` 0; `pnpm test` 0; YAML válido; `git diff --check` 0. Visual no mock (ui-checker, conferido nas capturas): aviso, Esc/Desligar/Manter ligada, Sistema, disponível, baixando 40%, ponto com barra recolhida, 960×600, tema escuro; console sem erros. Tab após o último botão do `<dialog>` vai ao navegador e volta (nativo do `showModal`, igual aos outros diálogos).
+- **Não verificado:** app nativo (consulta, download, instalação e reinício em macOS e Windows); workflow no Actions (execução manual sem release com `releaseId` vazio na `tauri-action` do SHA fixado; tag gerando `latest.json` com as 3 plataformas); dark do passo "baixando".
+- **Secrets:** `TAURI_SIGNING_PRIVATE_KEY` e `_PASSWORD` cadastrados no GitHub em 2026-11-24 (autorizado pelo usuário); chave pública do `tauri.conf.json` conferida contra `~/.tauri/papeo-updater.key.pub`. Licença: usuário confirmou GPL-3.0-or-later.
+- **Pendente:** cópia de segurança da chave e da senha fora da LXC (o usuário fará no computador); repositório público (as atualizações dependem disso). Commit "feat: atualização com um clique, GPL e release endurecido" na `main` com push (pedido pelo usuário).
+
+## 2026-11-24 — README para usuários e revisão de segurança do repositório
+
+- **Objetivo:** README com instalação (incl. app sem assinatura), primeiros passos, atalhos, dados, problemas comuns; conferir segurança.
+- **Raiz/branch:** `/srv/projetos/papeo`, `main`, base `3e54ac8`; no mesmo commit da atualização com um clique.
+- **Feito:** README reescrito e conferido contra o código (atalhos em `App.svelte`/`menu.rs`, pastas em `lib.rs`, seções de `Settings.svelte`); removida a limitação antiga "remover no macOS não apaga o `WKWebsiteDataStore`" (`sessions.rs` chama `remove_data_store`). `scripts/__pycache__/*.pyc` saiu do Git e entrou no `.gitignore`.
+- **Assinatura e publicação (decisões do usuário):** sem conta Apple Developer por ora → macOS com assinatura ad-hoc (`signingIdentity: "-"`); Windows pela SignPath Foundation (grátis, exige repositório público). O repositório vai ser público só depois de o usuário testar tudo. Licença GPL-3.0-or-later (`LICENSE`, `Cargo.toml`, `package.json`). Workflow: `permissions: {}` no topo e só o necessário no job, actions fixadas por SHA nas mesmas majors, `persist-credentials: false`, atestação `attest-build-provenance` que só roda com o repositório público.
+- **Evidência:** YAML e `tauri.conf.json` válidos; `cargo test -p papeo-core` 0 (28 testes); `pnpm build` 0; `cargo metadata` com a licença nova.
+- **Não verificado:** build no Actions; app com assinatura ad-hoc + Hardened Runtime abrindo e pedindo microfone/câmera num Mac (se falhar, testar `hardenedRuntime: false`); nomes dos instaladores citados no README.
+- **Pendente:** inscrição na SignPath (após tornar o repositório público) e `signCommand`/integração no workflow; revisar antes de publicar o que hoje é interno (`AGENTS.md`, `CLAUDE.md`, `docs/PROGRESSO.md`, `.codex/config.toml`, `.mcp.json`, `scripts/repowise*`); actions em majors antigas (Node 20).
+
 ## 2026-11-24 — Logo "Balão P" e temas (claro, escuro, OLED)
 
 - **Objetivo:** logo nova em todo o app; tema OLED; tema aplicado também aos sites; voltar a "seguir o sistema"; contraste e menu de contexto.

@@ -463,8 +463,11 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
     state.update(|inner| {
         // A limpeza pendente é deste computador; o backup não a traz.
         let pending = std::mem::take(&mut inner.config.pending_removal);
+        // O aviso e a escolha sobre atualizações valem para este computador.
+        let updates = inner.config.settings.updates;
         inner.config = config;
         inner.config.pending_removal = pending;
+        inner.config.settings.updates = updates;
         inner.last_used.clear();
         inner.unread.clear();
         Ok(())
@@ -596,5 +599,34 @@ pub async fn set_appearance(
             .set_theme(crate::window_theme(appearance))
             .map_err(|e| e.to_string())?;
     }
+    Ok(publish(&app))
+}
+
+/// Verificação manual (vale mesmo com a automática desligada).
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> CmdResult {
+    crate::updater::check(&app).await?;
+    Ok(snapshot(&app))
+}
+
+/// Instala a versão nova e reinicia o app. Só por clique na interface.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> CmdResult {
+    ensure_unlocked(&app)?;
+    crate::updater::install(&app).await?;
+    Ok(snapshot(&app))
+}
+
+/// Liga/desliga a verificação automática; também registra que o aviso foi visto.
+#[tauri::command]
+pub async fn set_updates(app: AppHandle, state: State<'_, AppState>, check: bool) -> CmdResult {
+    ensure_unlocked(&app)?;
+    state.update(|inner| {
+        inner.config.settings.updates = papeo_core::UpdatePrefs {
+            check,
+            notice_seen: true,
+        };
+        Ok(())
+    })?;
     Ok(publish(&app))
 }

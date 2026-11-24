@@ -57,7 +57,15 @@ export interface Settings {
   /** `afterMinutes` 0 = ao esconder a janela. */
   lock: { enabled: boolean; afterMinutes: number };
   appearance: Appearance;
+  /** `noticeSeen` falso: o aviso da verificação ainda não foi mostrado. */
+  updates: { check: boolean; noticeSeen: boolean };
 }
+
+export type UpdateStatus =
+  | { state: "idle" | "checking" | "upToDate" }
+  | { state: "available"; version: string; notes?: string | null }
+  | { state: "installing"; percent?: number | null }
+  | { state: "failed"; message: string };
 
 export interface DownloadEntry {
   id: number;
@@ -80,6 +88,8 @@ export interface Snapshot {
   locked: boolean;
   /** Touch ID/senha do Mac ou Windows Hello disponíveis. */
   lockAvailable: boolean;
+  update: UpdateStatus;
+  appVersion: string;
 }
 
 export interface MemoryReport {
@@ -110,6 +120,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     protectScreen: false,
     lock: { enabled: false, afterMinutes: 5 },
     appearance: "system",
+    updates: { check: true, noticeSeen: false },
   },
   dndActive: false,
   autostart: false,
@@ -117,6 +128,8 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   downloadsDir: "",
   locked: false,
   lockAvailable: false,
+  update: { state: "idle" },
+  appVersion: "",
 };
 
 export const api = {
@@ -170,6 +183,11 @@ export const api = {
   lockNow: () => invoke<Snapshot>("lock_now"),
   unlock: () => invoke<Snapshot>("unlock"),
   setAppearance: (appearance: Appearance) => invoke<Snapshot>("set_appearance", { appearance }),
+  checkUpdate: () => invoke<Snapshot>("check_update"),
+  /** Baixa, instala e reinicia o app. */
+  installUpdate: () => invoke<Snapshot>("install_update"),
+  /** Liga/desliga a verificação automática e marca o aviso como visto. */
+  setUpdates: (check: boolean) => invoke<Snapshot>("set_updates", { check }),
 };
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
@@ -186,6 +204,26 @@ export function onDownload(
   return listen<{ id: number; fileName: string; success: boolean }>("papeo://download", (e) =>
     cb(e.payload),
   );
+}
+
+/** Texto curto da situação da atualização. */
+export function updateLabel(update: UpdateStatus): string {
+  switch (update.state) {
+    case "checking":
+      return "Verificando…";
+    case "upToDate":
+      return "Você está na versão mais recente.";
+    case "available":
+      return `Versão ${update.version} disponível.`;
+    case "installing":
+      return update.percent != null
+        ? `Baixando atualização… ${update.percent}%`
+        : "Baixando atualização…";
+    case "failed":
+      return update.message;
+    default:
+      return "";
+  }
 }
 
 export const isMac = navigator.userAgent.includes("Mac");

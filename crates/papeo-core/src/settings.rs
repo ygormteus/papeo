@@ -29,6 +29,34 @@ pub struct Settings {
     /// Tema da interface; também define o tema claro/escuro da janela, que
     /// os sites dos serviços enxergam como `prefers-color-scheme`.
     pub appearance: Appearance,
+    pub updates: UpdatePrefs,
+}
+
+/// Verificação de atualizações no GitHub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UpdatePrefs {
+    /// Consulta uma vez por dia se há versão nova (só depois do aviso).
+    pub check: bool,
+    /// A pessoa já viu o aviso de que a verificação consulta o GitHub.
+    /// Até lá, nenhuma consulta automática é feita.
+    pub notice_seen: bool,
+}
+
+impl Default for UpdatePrefs {
+    fn default() -> Self {
+        Self {
+            check: true,
+            notice_seen: false,
+        }
+    }
+}
+
+impl UpdatePrefs {
+    /// A verificação automática pode rodar.
+    pub fn auto_check(self) -> bool {
+        self.check && self.notice_seen
+    }
 }
 
 /// Tema escolhido. `Oled` é o escuro com preto puro.
@@ -83,6 +111,7 @@ impl Default for Settings {
                 after_minutes: 5,
             },
             appearance: Appearance::System,
+            updates: UpdatePrefs::default(),
         }
     }
 }
@@ -229,5 +258,23 @@ mod tests {
         assert_eq!(old.appearance, Appearance::System);
         let oled: Settings = serde_json::from_str(r#"{"appearance":"oled"}"#).unwrap();
         assert_eq!(oled.appearance, Appearance::Oled);
+    }
+
+    #[test]
+    fn updates_wait_for_notice() {
+        let fresh: Settings = serde_json::from_str("{}").unwrap();
+        assert!(fresh.updates.check);
+        assert!(!fresh.updates.notice_seen);
+        assert!(!fresh.updates.auto_check());
+        let seen = UpdatePrefs {
+            check: true,
+            notice_seen: true,
+        };
+        assert!(seen.auto_check());
+        assert!(!UpdatePrefs {
+            check: false,
+            ..seen
+        }
+        .auto_check());
     }
 }

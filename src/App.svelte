@@ -90,8 +90,17 @@
   let content = $state<HTMLElement>();
 
   const active = $derived(snap.services.find((s) => s.id === snap.active) ?? null);
+  // Aviso único de que a verificação de atualizações consulta o GitHub;
+  // até a resposta, nada é consultado automaticamente.
+  const updateNotice = $derived(ready && !snap.locked && !snap.settings.updates.noticeSeen);
   const modalOpen = $derived(
-    addOpen || paletteOpen || !!confirmRemove || !!confirmClear || !!customizing || !!restoring,
+    addOpen ||
+      paletteOpen ||
+      !!confirmRemove ||
+      !!confirmClear ||
+      !!customizing ||
+      !!restoring ||
+      updateNotice,
   );
 
   $effect(() => {
@@ -320,6 +329,7 @@
     onsettings={openSettings}
     onmenu={(service, x, y) => (menu = { service, x, y })}
     onmove={(id, to) => run(api.moveService(id, to))}
+    onupdate={() => run(api.installUpdate())}
   />
 
   <main class="main">
@@ -439,6 +449,19 @@
       if (media !== mediaPolicy(target)) snap = await api.setMediaPolicy(target.id, media);
       customizing = null;
     }}
+  />
+{/if}
+
+{#if updateNotice && !addOpen && !paletteOpen && !confirmRemove && !confirmClear && !customizing && !restoring}
+  <ConfirmDialog
+    title="Verificar atualizações?"
+    message="Uma vez por dia, o Papeo consulta o GitHub para saber se há versão nova. O GitHub vê o seu endereço IP; nada mais é enviado. A instalação só acontece quando você clica em Atualizar. Dá para mudar em Configurações → Sistema."
+    confirmLabel="Manter ligada"
+    cancelLabel="Desligar"
+    danger={false}
+    onclose={() => run(api.setUpdates(true))}
+    oncancel={() => run(api.setUpdates(false))}
+    onconfirm={() => run(api.setUpdates(true))}
   />
 {/if}
 

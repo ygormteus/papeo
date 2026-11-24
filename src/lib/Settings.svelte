@@ -23,6 +23,7 @@
     formatClock,
     parseClock,
     untilLabel,
+    updateLabel,
     type Snapshot,
   } from "./api";
 
@@ -343,6 +344,41 @@
         label="Manter na bandeja ao fechar"
         onchange={(v) => run(api.setPreferences({ closeToTray: v }))}
       />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Verificar atualizações</span>
+        <span class="hint">
+          Uma vez por dia, o Papeo consulta o GitHub (que vê o seu endereço IP). A instalação só
+          acontece quando você clica.
+        </span>
+      </div>
+      <Switch
+        checked={settings.updates.check}
+        label="Verificar atualizações"
+        onchange={(v) => run(api.setUpdates(v))}
+      />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Papeo {snap.appVersion}</span>
+        {#if updateLabel(snap.update)}
+          <span class="hint" role="status">{updateLabel(snap.update)}</span>
+        {/if}
+      </div>
+      {#if snap.update.state === "available"}
+        <button class="btn btn-primary" onclick={() => run(api.installUpdate())}>Atualizar e reiniciar</button>
+      {:else}
+        <button
+          class="btn"
+          onclick={() => run(api.checkUpdate())}
+          disabled={snap.update.state === "checking" || snap.update.state === "installing"}
+        >
+          Verificar agora
+        </button>
+      {/if}
     </div>
   </section>
 

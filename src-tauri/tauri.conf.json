@@ -17,7 +17,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "nsis"],
     "category": "SocialNetworking",
     "shortDescription": "Mensageiros num só lugar, leve e rápido",
     "icon": [
@@ -29,7 +29,20 @@
     ],
     "macOS": {
       "minimumSystemVersion": "14.0",
+      "signingIdentity": "-",
       "entitlements": "./Entitlements.plist"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI5NjAzNDM5NTFFNTUyMDUKUldRRlV1VlJPVFJnS1RTTFlzR2dYT1ZDRDhvWVFRdnVWQkJaZnpIM0ZuRnEzUzBsTzdtR253bTAK",
+      "endpoints": [
+        "https://github.com/ygormteus/papeo/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

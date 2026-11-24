@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { BellOff, CirclePlus, House, MemoryStick, Settings } from "@lucide/svelte";
+  import { BellOff, CirclePlus, Download, House, MemoryStick, Settings } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { isMac, isMuted, modKey, untilLabel, type Snapshot, type ServiceView } from "./api";
+  import { isMac, isMuted, modKey, untilLabel, updateLabel, type Snapshot, type ServiceView } from "./api";
 
   let {
     snap,
@@ -12,6 +12,7 @@
     onsettings,
     onmenu,
     onmove,
+    onupdate,
   }: {
     snap: Snapshot;
     collapsed: boolean;
@@ -21,7 +22,12 @@
     onsettings: () => void;
     onmenu: (service: ServiceView, x: number, y: number) => void;
     onmove: (id: string, to: number) => void;
+    onupdate: () => void;
   } = $props();
+
+  const updating = $derived(
+    snap.update.state === "available" || snap.update.state === "installing",
+  );
 
   // Arrastar para reordenar (drag and drop do HTML; o Tauri não intercepta na `ui`).
   let dragId = $state<string | null>(null);
@@ -162,7 +168,12 @@
       onclick={onsettings}
       title="Configurações ({modKey},)"
     >
-      <Settings size={18} />
+      <span class="avatar-wrap">
+        <Settings size={18} />
+        {#if collapsed && snap.update.state === "available"}
+          <span class="dot" aria-label="Atualização disponível"></span>
+        {/if}
+      </span>
       {#if !collapsed}<span class="label">Configurações</span>{/if}
       {#if snap.dndActive}
         <BellOff size={14} class="muted-icon" aria-label="Não perturbe ativo" />
@@ -172,7 +183,13 @@
 
   {#if !collapsed}
     <div class="tip card">
-      {#if snap.dndActive}
+      {#if updating}
+        <div class="tip-title"><Download size={15} /> Atualização</div>
+        <p role="status">{updateLabel(snap.update)}</p>
+        {#if snap.update.state === "available"}
+          <button class="btn btn-primary tip-action" onclick={onupdate}>Atualizar e reiniciar</button>
+        {/if}
+      {:else if snap.dndActive}
         <div class="tip-title"><BellOff size={15} /> Não perturbe</div>
         <p>Notificações silenciadas {untilLabel(snap.settings.dndUntil) || "pelo horário silencioso"}.</p>
       {:else}
@@ -385,6 +402,11 @@
     gap: 6px;
     font-weight: 550;
     margin-bottom: 4px;
+  }
+
+  .tip-action {
+    margin-top: 10px;
+    width: 100%;
   }
 
   .tip p {

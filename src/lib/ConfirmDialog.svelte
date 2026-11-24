@@ -5,13 +5,22 @@
     title,
     message,
     confirmLabel,
+    cancelLabel = "Cancelar",
+    danger = true,
     onclose,
+    oncancel,
     onconfirm,
   }: {
     title: string;
     message: string;
     confirmLabel: string;
+    cancelLabel?: string;
+    /** Botão de confirmar em vermelho (ação destrutiva). */
+    danger?: boolean;
+    /** Esc, clique fora e, sem `oncancel`, o botão secundário. */
     onclose: () => void;
+    /** Botão secundário, quando ele não equivale a só fechar. */
+    oncancel?: () => void;
     onconfirm: () => void;
   } = $props();
 </script>
@@ -21,8 +30,8 @@
   <p>{message}</p>
   <div class="actions">
     <!-- svelte-ignore a11y_autofocus -->
-    <button class="btn" onclick={onclose} autofocus>Cancelar</button>
-    <button class="btn btn-primary danger" onclick={onconfirm}>{confirmLabel}</button>
+    <button class="btn" onclick={oncancel ?? onclose} autofocus>{cancelLabel}</button>
+    <button class="btn btn-primary" class:danger onclick={onconfirm}>{confirmLabel}</button>
   </div>
 </Modal>
 
