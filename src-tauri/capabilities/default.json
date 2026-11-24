@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões da interface do Papeo. As webviews dos serviços (sites remotos) não recebem nenhuma.",
+  "windows": ["main"],
+  "webviews": ["ui"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "opener:default"
+  ]
+}
