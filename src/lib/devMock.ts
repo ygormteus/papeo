@@ -2,13 +2,15 @@
 // desenvolver a interface sem o app nativo. Nunca entra no app empacotado.
 // Mantém os mesmos padrões do backend (URLs, nomes numerados, validações).
 import { mockIPC } from "@tauri-apps/api/mocks";
+import notes020 from "../../release-notes/0.2.0.md?raw";
 import { EMPTY_SNAPSHOT, type DownloadEntry, type ServiceView, type Settings, type Snapshot } from "./api";
 
 const DEFAULT_URL: Record<string, string> = {
   whatsapp: "https://web.whatsapp.com/",
   telegram: "https://web.telegram.org/a/",
+  discord: "https://discord.com/app",
 };
-const DEFAULT_NAME: Record<string, string> = { whatsapp: "WhatsApp", telegram: "Telegram" };
+const DEFAULT_NAME: Record<string, string> = { whatsapp: "WhatsApp", telegram: "Telegram", discord: "Discord" };
 const MB = 1024 ** 2;
 
 export function installDevMock() {
@@ -34,7 +36,12 @@ export function installDevMock() {
   let autostart = false;
   let locked = false;
   let orphans = 2;
-  let update: Snapshot["update"] = { state: "idle" };
+  // `?update`: versão nova disponível; `?v=0.2.0`: simula o app já atualizado.
+  const params = new URLSearchParams(location.search);
+  const appVersion = params.get("v") ?? "0.1.0";
+  let update: Snapshot["update"] = params.has("update")
+    ? { state: "available", version: "0.2.0", notes: notes020 }
+    : { state: "idle" };
   let active: string | null = null;
   const minutesAgo = (m: number) => Math.round(Date.now() / 1000 - m * 60);
   const msg = (body: string, ago: number, mine = false) => ({ body, at: minutesAgo(ago), mine });
@@ -90,7 +97,7 @@ export function installDevMock() {
     locked,
     lockAvailable: true,
     update: structuredClone(update),
-    appVersion: "0.1.0",
+    appVersion,
     recent: locked || settings.notificationPreview === "hidden" ? [] : structuredClone(recent),
   });
 
@@ -247,7 +254,7 @@ export function installDevMock() {
         locked = false;
         return snap();
       case "check_update":
-        update = { state: "available", version: "0.2.0", notes: "Correções e melhorias." };
+        update = { state: "available", version: "0.2.0", notes: notes020 };
         return snap();
       case "install_update":
         if (locked) throw "Desbloqueie o Papeo primeiro.";

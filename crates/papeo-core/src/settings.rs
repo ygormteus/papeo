@@ -44,7 +44,7 @@ pub const RELOAD_MAX_MB: u32 = 16 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct UpdatePrefs {
-    /// Consulta uma vez por dia se há versão nova (só depois do aviso).
+    /// Consulta a cada 2 horas se há versão nova (só depois do aviso).
     pub check: bool,
     /// A pessoa já viu o aviso de que a verificação consulta o GitHub.
     /// Até lá, nenhuma consulta automática é feita.

@@ -50,7 +50,7 @@ pnpm build                      # build da interface
 - **Comando novo** precisa entrar em `COMMANDS` (`src-tauri/build.rs`), na capability certa e no mock (`src/lib/devMock.ts`).
 - **Webviews `svc-*` são sites remotos:** só `service_notify` e `service_status` na capability `services`; o backend identifica o serviço pelo rótulo da webview.
 - **`id`/`session` de serviço** só no formato gerado pelo app (viram rótulo de webview e nome de pasta).
-- Mudanças em `services.json` (`crates/papeo-core/src/store.rs`, `settings.rs`) precisam continuar lendo arquivos antigos; cubra com teste.
+- Mudanças em `services.json` (`crates/papeo-core/src/store.rs`, `settings.rs`) precisam continuar lendo arquivos antigos; cubra com teste. Um tipo de serviço novo (ex.: Discord na 0.2.0) não é lido por versões anteriores: quem voltar de versão perde a lista (o arquivo fica salvo como `.corrompido`).
 
 ## Modelo de segurança
 
@@ -88,8 +88,9 @@ gh attestation verify Papeo_0.1.0_aarch64.dmg -R ygormteus/papeo
 ## Publicar uma versão
 
 1. Atualize `version` em `package.json`, `src-tauri/tauri.conf.json` e nos dois `Cargo.toml`.
-2. Crie e envie a tag: `git tag v0.2.0 && git push origin v0.2.0`.
-3. O workflow **Build** cria o release em rascunho com os instaladores, os pacotes de atualização e o `latest.json`, e confere se o `latest.json` tem as três plataformas. Se a conferência falhar, use **Re-run** só no job da plataforma que faltou e depois reexecute `check-updater-json`.
-4. Revise e **publique** o rascunho. Só então os apps instalados enxergam a versão nova.
+2. Escreva `release-notes/<versão>.md` (obrigatório) com as seções `## Novidades`, `## Melhorias` e `## Correções` e itens `- texto` (aceita `**negrito**` e `` `código` ``). Escreva para quem usa, não para quem programa. O app mostra essas notas antes de atualizar (pelo `latest.json`) e uma vez depois de atualizar (embutidas no build); o workflow também as coloca no texto do release, junto com `.github/release-template.md`.
+3. Crie e envie a tag: `git tag v0.2.0 && git push origin v0.2.0`.
+4. O workflow **Build** cria o release em rascunho com os instaladores, os pacotes de atualização e o `latest.json`, e confere se o `latest.json` tem as três plataformas. Se a conferência falhar, use **Re-run** só no job da plataforma que faltou e depois reexecute `check-updater-json`.
+5. Revise e **publique** o rascunho. Só então os apps instalados enxergam a versão nova.
 
 A chave privada das atualizações fica nos secrets do repositório; a pública, em `plugins.updater.pubkey` de `tauri.conf.json`. Sem a chave privada, os apps instalados deixam de aceitar atualizações.

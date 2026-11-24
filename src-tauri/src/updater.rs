@@ -15,8 +15,9 @@ use tauri_plugin_updater::UpdaterExt;
 /// Primeira verificação automática após abrir o app.
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(60);
 /// Intervalo entre verificações automáticas (relógio de parede: conta o
-/// tempo com o computador dormindo).
-const CHECK_EVERY_SECS: u64 = 24 * 60 * 60;
+/// tempo com o computador dormindo, então ao acordar já confere). Cada
+/// consulta baixa só o `latest.json` (uns 2 KB).
+const CHECK_EVERY_SECS: u64 = 2 * 60 * 60;
 /// Nova tentativa depois de uma falha (ex.: rede ainda fora ao abrir).
 const RETRY_AFTER_SECS: u64 = 60 * 60;
 /// Limite da consulta ao `latest.json`.
@@ -134,8 +135,12 @@ pub fn tick(app: &AppHandle, started: Instant) {
     let due = {
         let state = app.state::<AppState>();
         let inner = state.lock();
+        // Com versão nova já avisada, não consulta de novo: uma falha de rede
+        // (comum ao acordar o computador) trocaria o aviso por um erro e
+        // esconderia o botão de atualizar.
         inner.config.settings.updates.auto_check()
             && !inner.update.busy()
+            && !matches!(inner.update, UpdateStatus::Available { .. })
             && match inner.update_checked {
                 Some(at) => {
                     let wait = if matches!(inner.update, UpdateStatus::Failed { .. }) {

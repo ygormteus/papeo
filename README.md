@@ -5,7 +5,7 @@
 <h1 align="center">Papeo</h1>
 
 <p align="center">
-  <b>WhatsApp, Telegram e outros sites num só aplicativo.</b><br>
+  <b>WhatsApp, Telegram, Discord e outros sites num só aplicativo.</b><br>
   Para Mac e Windows. Grátis e de código aberto.
 </p>
 
@@ -19,7 +19,7 @@
 
 Em vez de deixar várias abas abertas no navegador, você junta tudo numa janela só:
 
-- 💬 **WhatsApp e Telegram** prontos para usar — e qualquer outro site que você quiser.
+- 💬 **WhatsApp, Telegram e Discord** prontos para usar — e qualquer outro site que você quiser.
 - 👥 **Mais de uma conta** do mesmo aplicativo, por exemplo um WhatsApp **Pessoal** e outro do **Trabalho**, cada um com seu login.
 - 🔔 **Notificações** do próprio computador, com contador de mensagens não lidas — e dá para **responder direto na notificação**.
 - 💭 **Mini janela** no ícone da barra (Mac) ou da bandeja (Windows): leia as últimas conversas e responda sem abrir o app.
@@ -72,7 +72,7 @@ Mac: macOS 14 (Sonoma) ou mais novo. Windows: 10 ou 11.
 
 ### Adicione suas contas
 
-Clique em **Adicionar serviço**, escolha WhatsApp, Telegram ou **Outro site**, e faça login como faria no navegador (no WhatsApp, leia o QR code com o celular).
+Clique em **Adicionar serviço**, escolha WhatsApp, Telegram, Discord ou **Outro site**, e faça login como faria no navegador (no WhatsApp, leia o QR code com o celular).
 
 ![Janela de adicionar serviço](assets/screenshots/adicionar.png)
 
@@ -128,7 +128,7 @@ Para economizar:
 Não. O Papeo só abre os sites oficiais (como o WhatsApp Web) dentro dele. Não existe servidor do Papeo, não há propaganda nem coleta de dados. A única coisa que ele consulta por conta própria é se existe versão nova — e dá para desligar em **Configurações → Sistema**.
 
 **Como atualizo?**
-Quando houver versão nova, aparece **Atualizar e reiniciar** na barra lateral. É só clicar; seus logins continuam.
+O Papeo confere a cada 2 horas se há versão nova. Quando houver, aparece **Atualizar e reiniciar** na barra lateral, com **Ver o que mudou** para conhecer as novidades antes. É só clicar; seus logins continuam. Depois de atualizar, o Papeo mostra uma vez o que mudou.
 
 **Não chegam notificações. O que faço?**
 Confira se a conta não está dormindo, se as notificações dela estão ligadas, se o **não perturbe** está desligado e se o computador permite notificações do Papeo.

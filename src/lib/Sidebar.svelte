@@ -13,6 +13,7 @@
     onmenu,
     onmove,
     onupdate,
+    onnotes,
   }: {
     snap: Snapshot;
     collapsed: boolean;
@@ -23,6 +24,7 @@
     onmenu: (service: ServiceView, x: number, y: number) => void;
     onmove: (id: string, to: number) => void;
     onupdate: () => void;
+    onnotes: () => void;
   } = $props();
 
   const updating = $derived(
@@ -188,6 +190,9 @@
         <p role="status">{updateLabel(snap.update)}</p>
         {#if snap.update.state === "available"}
           <button class="btn btn-primary tip-action" onclick={onupdate}>Atualizar e reiniciar</button>
+          {#if snap.update.notes}
+            <button class="tip-link" onclick={onnotes}>Ver o que mudou</button>
+          {/if}
         {/if}
       {:else if snap.dndActive}
         <div class="tip-title"><BellOff size={15} /> Não perturbe</div>
@@ -407,6 +412,22 @@
   .tip-action {
     margin-top: 10px;
     width: 100%;
+  }
+
+  .tip-link {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 12.5px;
+    text-align: center;
+  }
+
+  .tip-link:hover {
+    text-decoration: underline;
   }
 
   .tip p {

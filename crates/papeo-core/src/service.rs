@@ -10,11 +10,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum ServiceKind {
     Whatsapp,
     Telegram,
+    Discord,
     Custom,
 }
 
 impl ServiceKind {
     /// Mensageiros em que o Papeo sabe abrir conversas e responder.
+    /// Discord fica de fora: as regras dele proíbem automatizar contas
+    /// pessoais, e a resposta rápida escreve e envia pela página.
     pub fn supports_chat(self) -> bool {
         matches!(self, ServiceKind::Whatsapp | ServiceKind::Telegram)
     }
@@ -23,6 +26,7 @@ impl ServiceKind {
         match self {
             Self::Whatsapp => Some("WhatsApp"),
             Self::Telegram => Some("Telegram"),
+            Self::Discord => Some("Discord"),
             Self::Custom => None,
         }
     }
@@ -31,6 +35,7 @@ impl ServiceKind {
         match self {
             Self::Whatsapp => Some("https://web.whatsapp.com/"),
             Self::Telegram => Some("https://web.telegram.org/a/"),
+            Self::Discord => Some("https://discord.com/app"),
             Self::Custom => None,
         }
     }
@@ -318,6 +323,17 @@ mod tests {
         assert_eq!(s.name, "app.slack.com");
         assert_eq!(s.session.len(), 32);
         assert!(s.id.starts_with("svc-"));
+    }
+
+    #[test]
+    fn discord_defaults_without_quick_reply() {
+        let svc = Service::new(ServiceKind::Discord, None, None).unwrap();
+        assert_eq!(svc.name, "Discord");
+        assert_eq!(svc.url, "https://discord.com/app");
+        assert!(!ServiceKind::Discord.supports_chat());
+        assert!(ServiceKind::Telegram.supports_chat());
+        let kind: ServiceKind = serde_json::from_str(r#""discord""#).unwrap();
+        assert_eq!(kind, ServiceKind::Discord);
     }
 
     #[test]

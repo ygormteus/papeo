@@ -17,6 +17,7 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import Switch from "./Switch.svelte";
+  import { bundledNotes } from "./bundledNotes";
   import {
     ABOUT,
     LOCK_OPTIONS,
@@ -37,11 +38,14 @@
     snap,
     run,
     onrestore,
+    onnotes,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
     onrestore: (path: string, services: string[]) => void;
+    onnotes: (mode: "available" | "installed") => void;
   } = $props();
+  const hasNotes = $derived(!!bundledNotes(snap.appVersion));
 
   const settings = $derived(snap.settings);
   const dndManual = $derived((settings.dndUntil ?? 0) > Date.now() / 1000);
@@ -380,7 +384,7 @@
       <div class="text">
         <span class="label">Verificar atualizações</span>
         <span class="hint">
-          Uma vez por dia, o Papeo consulta o GitHub (que vê o seu endereço IP). A instalação só
+          A cada 2 horas, o Papeo consulta o GitHub (que vê o seu endereço IP). A instalação só
           acontece quando você clica.
         </span>
       </div>
@@ -396,6 +400,11 @@
         <span class="label">Papeo {snap.appVersion}</span>
         {#if updateLabel(snap.update)}
           <span class="hint" role="status">{updateLabel(snap.update)}</span>
+        {/if}
+        {#if snap.update.state === "available" && snap.update.notes}
+          <button class="inline-link" onclick={() => onnotes("available")}>Ver o que mudou</button>
+        {:else if hasNotes}
+          <button class="inline-link" onclick={() => onnotes("installed")}>O que mudou nesta versão</button>
         {/if}
       </div>
       {#if snap.update.state === "available"}
@@ -650,5 +659,19 @@
 
   .about-license {
     margin: 14px 0 16px;
+  }
+
+  .inline-link {
+    align-self: flex-start;
+    margin-top: 2px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 13px;
+  }
+
+  .inline-link:hover {
+    text-decoration: underline;
   }
 </style>

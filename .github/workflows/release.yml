@@ -26,6 +26,17 @@ jobs:
     outputs:
       release_id: ${{ steps.create.outputs.id }}
     steps:
+      # Sem as notas desta versão o release não sai: confere antes dos builds.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: release-notes
+          sparse-checkout-cone-mode: false
+      - env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="release-notes/${TAG#v}.md"
+          test -s "$notes" || { echo "::error::falta $notes com as notas desta versão (o que mudou, para quem usa)"; exit 1; }
       - id: create
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -112,14 +123,40 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
-      contents: write # ler os arquivos de um rascunho
+      contents: write # ler e atualizar os arquivos de um rascunho
     steps:
+      # Só as notas de versão e o modelo do texto do release.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            release-notes
+            .github/release-template.md
+          sparse-checkout-cone-mode: false
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          TAG: ${{ github.ref_name }}
         run: |
-          asset=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --jq '.[] | select(.name == "latest.json") | .id')
+          # Falha da API para o job (não vira "arquivo não existe").
+          id_of() {
+            local ids
+            ids=$(gh api --paginate "repos/$REPO/releases/$RELEASE_ID/assets" \
+              --jq ".[] | select(.name == \"$1\") | .id") || return 1
+            echo "${ids%%$'\n'*}"
+          }
+          rename() { gh api -X PATCH "repos/$REPO/releases/assets/$1" -f name="$2" --jq .name; }
+          # Uma execução anterior interrompida no meio da troca: desfaz.
+          old=$(id_of latest.old.json)
+          cur=$(id_of latest.json)
+          if [ -z "$cur" ] && [ -n "$old" ]; then rename "$old" latest.json; fi
+          for leftover in latest.next.json latest.old.json; do
+            id=$(id_of "$leftover")
+            if [ -n "$id" ]; then gh api -X DELETE "repos/$REPO/releases/assets/$id"; fi
+          done
+
+          asset=$(id_of latest.json)
           test -n "$asset" || { echo "::error::latest.json não foi enviado ao rascunho"; exit 1; }
           gh api -H "Accept: application/octet-stream" "repos/$REPO/releases/assets/$asset" > latest.json
           for p in darwin-aarch64 darwin-x86_64 windows-x86_64; do
@@ -127,6 +164,30 @@ jobs:
               || { echo "::error::latest.json sem a plataforma $p"; exit 1; }
           done
           jq '.version, (.platforms | keys)' latest.json
+
+          # "O que mudou": as notas da versão vão para o `latest.json` (o app
+          # mostra antes de atualizar) e para o texto do release.
+          version=$(jq -r .version latest.json)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::versão inválida: $version"; exit 1; }
+          test "v$version" = "$TAG" || { echo "::error::latest.json é da versão $version, a tag é $TAG"; exit 1; }
+          notes="release-notes/$version.md"
+          test -s "$notes" || { echo "::error::falta $notes com as notas desta versão"; exit 1; }
+          jq --rawfile notes "$notes" '.notes = $notes' latest.json > latest.new.json
+          # Troca sem nunca ficar sem `latest.json`: envia o novo com outro
+          # nome, renomeia o antigo, dá o nome certo ao novo e só então apaga
+          # o antigo. Se a troca falhar, o antigo volta.
+          next=$(gh api -X POST -H "Content-Type: application/json" --input latest.new.json \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=latest.next.json" --jq .id)
+          rename "$asset" latest.old.json
+          if rename "$next" latest.json; then
+            gh api -X DELETE "repos/$REPO/releases/assets/$asset"
+          else
+            rename "$asset" latest.json
+            echo "::error::não consegui gravar as notas no latest.json"
+            exit 1
+          fi
+          { cat "$notes"; sed "s/{{VERSION}}/$version/g" .github/release-template.md; } > body.md
+          gh api -X PATCH "repos/$REPO/releases/$RELEASE_ID" -F body=@body.md --jq .html_url
 
   # Prova de que os arquivos saíram deste repositório e deste workflow
   # (`gh attestation verify`). Só este job tem permissão de emitir a

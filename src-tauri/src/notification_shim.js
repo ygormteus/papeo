@@ -18,6 +18,7 @@
   const LOGGED_OUT_SELECTORS = {
     "web.whatsapp.com": '[data-ref] canvas, canvas[aria-label*="QR" i], canvas[aria-label*="scan" i]',
     "web.telegram.org": "#auth-qr-form, #auth-phone-number-form, #auth-code-form, #auth-password-form",
+    "discord.com": '[class*="authBox"]',
   };
   const loggedOut = () => {
     const selector = LOGGED_OUT_SELECTORS[location.hostname];

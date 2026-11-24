@@ -7,7 +7,7 @@
     onsubmit,
   }: { onclose: () => void; onsubmit: (kind: ServiceKind, name: string, url: string) => Promise<void> } = $props();
 
-  const kinds: ServiceKind[] = ["whatsapp", "telegram", "custom"];
+  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "custom"];
   let kind = $state<ServiceKind>("whatsapp");
   let name = $state("");
   let url = $state("");
@@ -106,7 +106,7 @@
 
   .kinds {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
     margin: 0;
     padding: 0;

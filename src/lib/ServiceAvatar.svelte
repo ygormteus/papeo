@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Globe, MessageCircle, Send } from "@lucide/svelte";
+  import { Globe, Headphones, MessageCircle, Send } from "@lucide/svelte";
   import { serviceColor, type ServiceView } from "./api";
 
   let {
@@ -9,7 +9,13 @@
   }: { service: Pick<ServiceView, "kind" | "color" | "emoji">; size?: number; dimmed?: boolean } = $props();
 
   const Icon = $derived(
-    service.kind === "whatsapp" ? MessageCircle : service.kind === "telegram" ? Send : Globe,
+    service.kind === "whatsapp"
+      ? MessageCircle
+      : service.kind === "telegram"
+        ? Send
+        : service.kind === "discord"
+          ? Headphones
+          : Globe,
   );
 </script>
 

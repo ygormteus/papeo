@@ -22,6 +22,8 @@
   import Settings from "./lib/Settings.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import Topbar from "./lib/Topbar.svelte";
+  import WhatsNew from "./lib/WhatsNew.svelte";
+  import { bundledNotes } from "./lib/bundledNotes";
   import {
     EMPTY_SNAPSHOT,
     THEME_OPTIONS,
@@ -85,6 +87,18 @@
   let restoring = $state<{ path: string; services: string[] } | null>(null);
   let menu = $state<{ service: ServiceView; x: number; y: number } | null>(null);
   let toast = $state<Toast | null>(null);
+  // "O que mudou": da versão disponível ou da que acabou de ser instalada.
+  let whatsNew = $state<{ version: string; notes: string | null; mode: "available" | "installed" } | null>(
+    null,
+  );
+
+  function showNotes(mode: "available" | "installed") {
+    if (mode === "available" && snap.update.state === "available") {
+      whatsNew = { version: snap.update.version, notes: snap.update.notes ?? null, mode };
+    } else if (mode === "installed") {
+      whatsNew = { version: snap.appVersion, notes: bundledNotes(snap.appVersion), mode };
+    }
+  }
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   let content = $state<HTMLElement>();
@@ -100,6 +114,7 @@
       !!confirmClear ||
       !!customizing ||
       !!restoring ||
+      (!!whatsNew && !snap.locked) ||
       updateNotice,
   );
 
@@ -303,6 +318,16 @@
           run(api.setAppearance(legacy));
         }
         store.remove("papeo.theme");
+        // Primeira abertura depois de atualizar: mostra o que mudou (uma vez
+        // por versão). Instalação nova não mostra: ainda não viu o aviso das
+        // atualizações.
+        if (s.appVersion && store.get("papeo.notesSeen") !== s.appVersion) {
+          const notes = bundledNotes(s.appVersion);
+          if (notes && s.settings.updates.noticeSeen) {
+            whatsNew = { version: s.appVersion, notes, mode: "installed" };
+          }
+          store.set("papeo.notesSeen", s.appVersion);
+        }
       })
       .catch(showError);
 
@@ -336,6 +361,7 @@
     onmenu={(service, x, y) => (menu = { service, x, y })}
     onmove={(id, to) => run(api.moveService(id, to))}
     onupdate={() => run(api.installUpdate())}
+    onnotes={() => showNotes("available")}
   />
 
   <main class="main">
@@ -361,7 +387,12 @@
           {/if}
         </div>
       {:else if page === "settings"}
-        <Settings {snap} {run} onrestore={(path, services) => (restoring = { path, services })} />
+        <Settings
+          {snap}
+          {run}
+          onrestore={(path, services) => (restoring = { path, services })}
+          onnotes={showNotes}
+        />
       {:else}
         <Home
           {snap}
@@ -467,13 +498,26 @@
 {#if updateNotice && !addOpen && !paletteOpen && !confirmRemove && !confirmClear && !customizing && !restoring}
   <ConfirmDialog
     title="Verificar atualizações?"
-    message="Uma vez por dia, o Papeo consulta o GitHub para saber se há versão nova. O GitHub vê o seu endereço IP; nada mais é enviado. A instalação só acontece quando você clica em Atualizar. Dá para mudar em Configurações → Sistema."
+    message="A cada 2 horas, o Papeo consulta o GitHub para saber se há versão nova. O GitHub vê o seu endereço IP; nada mais é enviado. A instalação só acontece quando você clica em Atualizar. Dá para mudar em Configurações → Sistema."
     confirmLabel="Manter ligada"
     cancelLabel="Desligar"
     danger={false}
     onclose={() => run(api.setUpdates(true))}
     oncancel={() => run(api.setUpdates(false))}
     onconfirm={() => run(api.setUpdates(true))}
+  />
+{/if}
+
+{#if whatsNew && !snap.locked}
+  <WhatsNew
+    version={whatsNew.version}
+    notes={whatsNew.notes}
+    mode={whatsNew.mode}
+    onclose={() => (whatsNew = null)}
+    onupdate={() => {
+      whatsNew = null;
+      run(api.installUpdate());
+    }}
   />
 {/if}
 
