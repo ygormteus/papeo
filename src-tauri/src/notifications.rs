@@ -33,8 +33,25 @@ static APP: OnceLock<AppHandle> = OnceLock::new();
 static TARGETS: Mutex<VecDeque<(String, Target)>> = Mutex::new(VecDeque::new());
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Marca desta execução no identificador. Notificações de execuções
+/// anteriores continuam na Central; com o mesmo identificador, o macOS só
+/// atualiza a antiga, sem banner nem som.
+fn run_mark() -> u64 {
+    static RUN: OnceLock<u64> = OnceLock::new();
+    *RUN.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    })
+}
+
 fn remember(target: Target) -> String {
-    let id = format!("papeo-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
+    let id = format!(
+        "papeo-{}-{}",
+        run_mark(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
+    );
     let mut targets = TARGETS.lock().unwrap_or_else(|e| e.into_inner());
     targets.push_back((id.clone(), target));
     while targets.len() > MAX_TARGETS {
