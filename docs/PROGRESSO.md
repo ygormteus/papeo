@@ -3,7 +3,7 @@
 ## 2026-11-24 — Atualização com um clique (tauri-plugin-updater)
 
 - **Objetivo (decisões do usuário):** atualizador do Tauri; verificação ligada por padrão com aviso na primeira abertura; instalação só com clique.
-- **Raiz/branch:** `/srv/projetos/papeo`, `main`, base `3e54ac8`; sem commit (junto da entrega de README/licença abaixo).
+- **Raiz/branch:** `/srv/projetos/papeo`, `main`, base `3e54ac8`; commit `67f815c` com push (junto da entrega de README/licença abaixo).
 - **Feito:** `Settings.updates` (core, compatível com arquivos antigos, teste `updates_wait_for_notice`); `updater.rs`; comandos `check_update`, `install_update`, `set_updates` (ACL + capability `default`); `Snapshot.update`/`appVersion`; aviso em `App.svelte` (`ConfirmDialog` ganhou `cancelLabel`, `danger`, `oncancel`); Configurações → Sistema (interruptor, versão, "Verificar agora"/"Atualizar e reiniciar"); cartão e ponto na barra lateral; mock. `tauri.conf.json`: `createUpdaterArtifacts`, `plugins.updater`, `targets` `app/dmg/nsis`. Workflow: job `create-release` (idempotente) → builds com `releaseId` → `check-updater-json` (3 plataformas) e `attest` separado (único com `id-token`); cache do Rust fora de tags. README: atualização, publicação de versão, chave.
 - **Consulta de impacto:** RepoWise e Graphify atualizados (saída 0) e consultados para `settings.rs`, `state.rs`, `build.rs`, `api.ts`, `devMock.ts`.
 - **Revisão independente:** sem bloqueante; corrigidos timeout (estado preso), MSI×NSIS (MSI removido), corrida de rascunhos, `id-token` só no job de atestação, `.app.tar.gz` na atestação, nova tentativa após falha com relógio de parede, backup não traz `updates`, textos de IP. Re-checagem ok. Mantidos: Esc = manter ligada (decisão do usuário); ícone da bandeja pode ficar "fantasma" no Windows após o `exit(0)` do instalador.
@@ -11,7 +11,9 @@
 - **Não verificado:** app nativo (consulta, download, instalação e reinício em macOS e Windows); workflow no Actions (execução manual sem release com `releaseId` vazio na `tauri-action` do SHA fixado; tag gerando `latest.json` com as 3 plataformas); dark do passo "baixando".
 - **Secrets:** `TAURI_SIGNING_PRIVATE_KEY` e `_PASSWORD` cadastrados no GitHub em 2026-11-24 (autorizado pelo usuário); chave pública do `tauri.conf.json` conferida contra `~/.tauri/papeo-updater.key.pub`. Licença: usuário confirmou GPL-3.0-or-later.
 - **Backup:** chave e senha copiadas pelo usuário para o computador dele em 2026-11-24 (cópia temporária apagada da LXC).
-- **Pendente:** teste no Mac com `pnpm build:local`; repositório público (as atualizações dependem disso). Commit "feat: atualização com um clique, GPL e release endurecido" na `main` com push (pedido pelo usuário).
+- **Mac (2026-11-24, clone em `~/Developer/PROJETOS - GIT/papeo`):** `pnpm build:local` 0 (~147 s; Rust 1.99.1, Node 24.13.1, pnpm 10.29.3); `codesign` `Signature=adhoc`, `flags=0x10002(adhoc,runtime)`, `--verify --deep --strict` válido; entitlements de microfone e câmera presentes; `spctl` rejeita (esperado sem notarização); app abriu e ficou de pé ~20 s, sem crash. Interface, microfone, câmera e notificações ainda não testados à mão.
+- **Pendente:** teste manual no Mac (lista acima); repositório público (as atualizações dependem disso).
+- **Próximo passo:** o desenvolvimento continua no Mac (o app nativo roda lá). Na LXC, `git pull` antes de retomar; clippy cruzado para Windows só aqui ou no Actions.
 
 ## 2026-11-24 — README para usuários e revisão de segurança do repositório
 
