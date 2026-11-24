@@ -116,6 +116,7 @@ jobs:
           fi
           kc="$RUNNER_TEMP/papeo-signing.keychain-db"
           kc_pass=$(openssl rand -hex 24)
+          trap 'rm -f "$RUNNER_TEMP/papeo-signing.p12"' EXIT
           echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/papeo-signing.p12"
           security create-keychain -p "$kc_pass" "$kc"
           security set-keychain-settings -lut 3600 "$kc"
@@ -139,21 +140,25 @@ jobs:
           # mistura instalação por usuário com instalação por máquina.
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
-      # O rascunho só é publicado se o app saiu com o certificado esperado
-      # (impressão SHA-1, pública: aparece em qualquer app assinado).
+      # Confere o certificado (impressão SHA-1, pública: aparece em qualquer
+      # app assinado) no app e no pacote de atualização. O tauri-action já
+      # enviou os arquivos ao rascunho: se falhar, o job fica vermelho, o
+      # check-updater-json não roda e o rascunho NÃO deve ser publicado.
       - name: Conferir assinatura (macOS)
         if: ${{ runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != '' }}
         env:
-          EXPECTED: certificate root = H"b7af2634cde08f1ab39d8648aaaa86138e8a1826"
+          REQUIREMENT: identifier "io.github.ygormteus.papeo" and certificate root = H"b7af2634cde08f1ab39d8648aaaa86138e8a1826"
         run: |
           app=$(ls -d target/*/release/bundle/macos/Papeo.app)
-          codesign --verify --deep --strict "$app"
-          req=$(codesign -d -r- "$app" 2>&1)
-          echo "$req"
-          case "$req" in
-            *"$EXPECTED"*) ;;
-            *) echo "::error::Papeo.app não foi assinado com o certificado do Papeo."; exit 1 ;;
-          esac
+          pkg=$(ls target/*/release/bundle/macos/*.app.tar.gz)
+          out="$RUNNER_TEMP/updater-check"
+          mkdir -p "$out"
+          tar -xzf "$pkg" -C "$out"
+          for a in "$app" "$out/Papeo.app"; do
+            codesign --verify --deep --strict -R="$REQUIREMENT" "$a" \
+              || { echo "::error::$a não foi assinado com o certificado do Papeo."; exit 1; }
+          done
+          codesign -d -r- "$app"
       - name: Remover keychain temporário
         if: ${{ always() && runner.os == 'macOS' }}
         run: security delete-keychain "$RUNNER_TEMP/papeo-signing.keychain-db" 2>/dev/null || true
