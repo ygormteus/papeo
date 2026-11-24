@@ -218,9 +218,9 @@ pub async fn activate_service(app: AppHandle, id: Option<String>) -> CmdResult {
 
 /// Abre o serviço e procura a conversa pelo nome (busca do próprio site).
 #[tauri::command]
-pub async fn open_chat(app: AppHandle, id: String, query: String) -> CmdResult {
+pub async fn open_chat(app: AppHandle, id: String, query: String, exact: bool) -> CmdResult {
     ensure_unlocked(&app)?;
-    crate::webviews::open_chat(&app, &id, &query)
+    crate::webviews::open_chat(&app, &id, &query, exact)
 }
 
 #[tauri::command]

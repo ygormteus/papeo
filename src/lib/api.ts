@@ -169,7 +169,9 @@ export const api = {
   activate: (id: string | null) => invoke<Snapshot>("activate_service", { id }),
   hibernate: (id: string) => invoke<Snapshot>("hibernate_service", { id }),
   /** Abre o serviço e procura a conversa pelo nome na busca do próprio site. */
-  openChat: (id: string, query: string) => invoke<Snapshot>("open_chat", { id, query }),
+  /** `exact`: nome inteiro da conversa; senão, abre se houver um só resultado. */
+  openChat: (id: string, query: string, exact: boolean) =>
+    invoke<Snapshot>("open_chat", { id, query, exact }),
   reload: (id: string) => invoke<void>("reload_service", { id }),
   setContentArea: (area: Area) => invoke<void>("set_content_area", { area }),
   setOverlay: (open: boolean) => invoke<void>("set_overlay", { open }),

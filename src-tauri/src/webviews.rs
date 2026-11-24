@@ -232,7 +232,9 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
 /// Mostra o serviço e procura uma conversa nele (busca do próprio site).
 /// Se a página ainda não está pronta, a busca espera o primeiro sinal de vida
 /// dela (`service_status`).
-pub fn open_chat(app: &AppHandle, id: &str, query: &str) -> Result<Snapshot, String> {
+/// `exact`: o nome inteiro da conversa (mensagens recentes); senão, abre só
+/// se a busca achar uma única conversa.
+pub fn open_chat(app: &AppHandle, id: &str, query: &str, exact: bool) -> Result<Snapshot, String> {
     let query: String = query.chars().filter(|c| !c.is_control()).collect();
     let query = papeo_core::clip(&query, 100);
     let snap = activate(app, Some(id.to_owned()))?;
@@ -244,13 +246,15 @@ pub fn open_chat(app: &AppHandle, id: &str, query: &str) -> Result<Snapshot, Str
         let mut inner = state.lock();
         let ready = inner.health.get(id).is_some_and(|h| h.last_beat.is_some());
         if !ready {
-            inner.pending_chat.insert(id.to_owned(), query.clone());
+            inner
+                .pending_chat
+                .insert(id.to_owned(), (query.clone(), exact));
         }
         ready
     };
     if ready {
         if let Some(webview) = app.get_webview(id) {
-            run_open_chat(&webview, &query);
+            run_open_chat(&webview, &query, exact);
         }
     }
     Ok(snap)
@@ -258,12 +262,12 @@ pub fn open_chat(app: &AppHandle, id: &str, query: &str) -> Result<Snapshot, Str
 
 /// Pede ao script do serviço (`notification_shim.js`) para buscar a conversa.
 /// O texto vai como JSON: não é interpretado como código.
-pub fn run_open_chat(webview: &Webview, query: &str) {
+pub fn run_open_chat(webview: &Webview, query: &str, exact: bool) {
     let Ok(arg) = serde_json::to_string(query) else {
         return;
     };
     let _ = webview.eval(format!(
-        "window.__papeoOpenChat && window.__papeoOpenChat({arg})"
+        "window.__papeoOpenChat && window.__papeoOpenChat({arg}, {exact})"
     ));
 }
 

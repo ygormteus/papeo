@@ -18,7 +18,7 @@
     onselect: (id: string | null) => void;
     onadd: () => void;
     /** Abre o serviço e procura a conversa pelo nome. */
-    onchat: (serviceId: string, query: string) => void;
+    onchat: (serviceId: string, query: string, exact: boolean) => void;
   } = $props();
 
   type Kind = "service" | "chat" | "search" | "home" | "add";
@@ -69,7 +69,7 @@
           label: m.title,
           detail: m.body ? `${service.name} · ${clip(m.body, 36)}` : service.name,
           service,
-          run: () => onchat(m.serviceId, m.title),
+          run: () => onchat(m.serviceId, m.title, true),
         };
       });
 
@@ -81,7 +81,7 @@
           label: `Buscar “${clip(raw, 40)}” em ${s.name}`,
           detail: s.loaded ? "" : "vai acordar",
           service: s,
-          run: () => onchat(s.id, raw),
+          run: () => onchat(s.id, raw, false),
         }))
       : [];
 
@@ -118,6 +118,10 @@
       onkeydown={keydown}
       placeholder="Ir para uma conta ou buscar um contato…"
       autofocus
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      spellcheck="false"
       role="combobox"
       aria-expanded="true"
       aria-controls="palette-list"

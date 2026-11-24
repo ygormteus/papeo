@@ -225,7 +225,7 @@ fn on_menu(app: &AppHandle, id: &str) {
                     return;
                 }
                 let _ = match chat {
-                    Some(title) => crate::webviews::open_chat(&app, &service, &title),
+                    Some(title) => crate::webviews::open_chat(&app, &service, &title, true),
                     None => crate::webviews::activate(&app, Some(service)),
                 };
             });

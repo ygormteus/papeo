@@ -137,7 +137,7 @@ pub struct Inner {
     pub recent: VecDeque<RecentMessage>,
     /// Conversa a abrir assim que a página do serviço der sinal de vida
     /// (o serviço estava dormindo ou ainda carregando).
-    pub pending_chat: HashMap<String, String>,
+    pub pending_chat: HashMap<String, (String, bool)>,
     /// App bloqueado: webviews dos serviços ocultas até autenticar.
     pub locked: bool,
     /// O sistema oferece Touch ID/senha ou Windows Hello.

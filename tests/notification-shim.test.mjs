@@ -14,8 +14,7 @@ window.addEventListener = (type, fn) => (listeners[type] = fn);
 globalThis.location = { hostname: "web.whatsapp.com" };
 const docListeners = {};
 const pressed = [];
-const chatRow = { dispatchEvent: (e) => pressed.push(e.type) };
-const chatTitles = [{ getAttribute: () => "Ana Souza", closest: () => chatRow }];
+const chatTitles = [{ getAttribute: () => "Ana Souza", dispatchEvent: (e) => pressed.push(e.type) }];
 globalThis.MouseEvent = class {
   constructor(type) {
     this.type = type;
@@ -83,9 +82,9 @@ try {
   /* modo estrito: a atribuição falha, como deve */
 }
 check(typeof window.__papeoOpenChat === "function", "abrir conversa não pode ser trocada pelo site");
-window.__papeoOpenChat("Ana Souza");
+window.__papeoOpenChat("Ana Souza", true);
 check(pressed.join() === "mousedown,mouseup,click", `abre a conversa exata: ${pressed}`);
-window.__papeoOpenChat("   ");
+window.__papeoOpenChat("   ", true);
 check(pressed.length === 3, "nome vazio não faz nada");
 
 if (failures.length) {

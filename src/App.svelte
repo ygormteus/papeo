@@ -147,9 +147,9 @@
   };
 
   /** Abre a conta e procura a conversa na busca do próprio WhatsApp/Telegram. */
-  function openChat(serviceId: string, query: string) {
+  function openChat(serviceId: string, query: string, exact: boolean) {
     paletteOpen = false;
-    run(api.openChat(serviceId, query));
+    run(api.openChat(serviceId, query, exact));
   }
 
   function openSettings() {

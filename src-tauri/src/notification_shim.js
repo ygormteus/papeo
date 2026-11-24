@@ -33,7 +33,8 @@
   });
 
   // Abrir conversa a pedido do Papeo (barra de menus, busca ⌘K): preenche a
-  // busca do próprio site e, se o nome bater exatamente, abre a conversa.
+  // busca do próprio site e abre a conversa quando não há dúvida: nome exato
+  // (mensagens recentes) ou um único resultado (nome digitado na busca).
   // Só age nos mensageiros conhecidos; nada é enviado de volta ao app.
   const SEARCH_BOX = {
     "web.whatsapp.com": [
@@ -66,29 +67,43 @@
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }
   };
+  // O clique vai no próprio nome: o evento sobe até o elemento da lista que
+  // o site escuta (disparado na linha, não desceria até ele).
   const press = (el) => {
     for (const type of ["mousedown", "mouseup", "click"]) {
       el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
     }
   };
-  const openExact = (name) => {
+  const fold = (s) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const chatTitles = () => {
     const sel = CHAT_TITLES[location.hostname];
-    if (!sel) return false;
-    for (const el of document.querySelectorAll(sel)) {
-      const title = (el.getAttribute("title") || el.textContent || "").trim();
-      if (title === name) {
-        press(el.closest('[role="listitem"], [role="row"], .ListItem-button, .ListItem, a') || el);
-        return true;
-      }
-    }
-    return false;
+    if (!sel) return [];
+    return [...document.querySelectorAll(sel)].map((el) => ({
+      el,
+      title: (el.getAttribute("title") || el.textContent || "").trim(),
+    }));
   };
-  const openChat = (query) => {
+  // Exato: o nome inteiro. Senão: só se uma única conversa contém o texto.
+  const openMatch = (name, exact) => {
+    const all = chatTitles();
+    let hit;
+    if (exact) {
+      hit = all.find((c) => c.title === name);
+    } else {
+      const q = fold(name);
+      const found = all.filter((c) => fold(c.title).includes(q));
+      if (new Set(found.map((c) => c.title)).size === 1) hit = found[0];
+    }
+    if (!hit) return false;
+    press(hit.el);
+    return true;
+  };
+  const openChat = (query, exact) => {
     const name = String(query || "").trim();
     if (!name || !SEARCH_BOX[location.hostname]) return;
     let tries = 0;
     const step = () => {
-      if (openExact(name)) return;
+      if (exact && openMatch(name, true)) return;
       const box = findSearchBox();
       // O site ainda carregando: tenta por até ~20 s.
       if (!box) {
@@ -96,11 +111,12 @@
         return;
       }
       typeInto(box, name);
+      // Espera a lista filtrar antes de decidir; desiste em ~4 s.
       let picks = 0;
       const pick = () => {
-        if (!openExact(name) && ++picks < 10) setTimeout(pick, 300);
+        if (!openMatch(name, Boolean(exact)) && ++picks < 12) setTimeout(pick, 300);
       };
-      setTimeout(pick, 300);
+      setTimeout(pick, 700);
     };
     step();
   };

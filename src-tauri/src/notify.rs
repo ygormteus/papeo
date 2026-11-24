@@ -121,8 +121,8 @@ pub async fn service_status(
         let chat = own_site.then(|| inner.pending_chat.remove(&id)).flatten();
         (before != status_of(&inner, &id, true), chat)
     };
-    if let Some(query) = chat {
-        crate::webviews::run_open_chat(&webview, &query);
+    if let Some((query, exact)) = chat {
+        crate::webviews::run_open_chat(&webview, &query, exact);
     }
     if changed {
         publish(&app);
