@@ -91,8 +91,40 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: pnpm install --frozen-lockfile
       - run: cargo test -p papeo-core
-      # macOS: assinatura ad-hoc (`signingIdentity: "-"` em tauri.conf.json),
-      # sem conta Apple Developer. Windows: sem assinatura por enquanto.
+      # macOS: certificado autoassinado próprio, sem conta Apple Developer.
+      # Com a mesma identidade em todas as versões, o macOS mantém as
+      # permissões (microfone, câmera) depois de atualizar; com a assinatura
+      # ad-hoc cada versão seria um app novo. O import do Tauri
+      # (`APPLE_CERTIFICATE`) só aceita certificados da Apple, então o
+      # certificado entra num keychain temporário e o Tauri o usa pelo nome
+      # (`APPLE_SIGNING_IDENTITY`). Na tag ele é obrigatório: voltar ao ad-hoc
+      # trocaria a identidade de novo. Windows: sem assinatura por enquanto.
+      - name: Importar certificado de assinatura (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        env:
+          CERT_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            if [ "$IS_TAG" = true ]; then
+              echo "::error::Secret MACOS_SIGNING_CERTIFICATE ausente: o release precisa do certificado."
+              exit 1
+            fi
+            echo "Sem certificado: build manual com assinatura ad-hoc."
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/papeo-signing.keychain-db"
+          kc_pass=$(openssl rand -hex 24)
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/papeo-signing.p12"
+          security create-keychain -p "$kc_pass" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kc_pass" "$kc"
+          security import "$RUNNER_TEMP/papeo-signing.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/papeo-signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          echo "APPLE_SIGNING_IDENTITY=Papeo Self-Signed" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -107,6 +139,24 @@ jobs:
           # mistura instalação por usuário com instalação por máquina.
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+      # O rascunho só é publicado se o app saiu com o certificado esperado
+      # (impressão SHA-1, pública: aparece em qualquer app assinado).
+      - name: Conferir assinatura (macOS)
+        if: ${{ runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != '' }}
+        env:
+          EXPECTED: certificate root = H"b7af2634cde08f1ab39d8648aaaa86138e8a1826"
+        run: |
+          app=$(ls -d target/*/release/bundle/macos/Papeo.app)
+          codesign --verify --deep --strict "$app"
+          req=$(codesign -d -r- "$app" 2>&1)
+          echo "$req"
+          case "$req" in
+            *"$EXPECTED"*) ;;
+            *) echo "::error::Papeo.app não foi assinado com o certificado do Papeo."; exit 1 ;;
+          esac
+      - name: Remover keychain temporário
+        if: ${{ always() && runner.os == 'macOS' }}
+        run: security delete-keychain "$RUNNER_TEMP/papeo-signing.keychain-db" 2>/dev/null || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: papeo-${{ matrix.platform }}-${{ matrix.rust_targets || 'x64' }}

@@ -77,7 +77,7 @@ No macOS, `webcrypto-master.key` (permissão 0600) guarda a chave com que o WebK
 
 - **Local:** `pnpm build:local` gera para o sistema em uso, sem os pacotes de atualização. `pnpm tauri build` também gera os pacotes de atualização e exige a chave privada em `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 - **GitHub Actions:** rode o workflow **Build** manualmente (instaladores em **Artifacts**) ou crie uma tag `v*`, que gera um release em rascunho com `.dmg` (Apple Silicon e Intel) e `.exe` (Windows).
-- **Assinatura:** macOS com assinatura ad-hoc (sem notarização); Windows ainda sem assinatura. Com o repositório público, um job separado gera a atestação de procedência dos instaladores e dos pacotes de atualização.
+- **Assinatura:** macOS com um certificado autoassinado próprio do Papeo (sem notarização), o mesmo em todas as versões, para o macOS manter as permissões (microfone, câmera) depois de atualizar. Ele fica nos secrets `MACOS_SIGNING_CERTIFICATE` (.p12 em base64) e `MACOS_SIGNING_CERTIFICATE_PASSWORD`; a tag falha sem ele, e o workflow confere a impressão do certificado no app. Trocar de certificado faz o macOS pedir as permissões de novo uma vez. Builds locais e manuais sem o secret usam assinatura ad-hoc. Windows ainda sem assinatura. Com o repositório público, um job separado gera a atestação de procedência dos instaladores e dos pacotes de atualização.
 
 Conferir um instalador baixado (com o [GitHub CLI](https://cli.github.com)):
 
