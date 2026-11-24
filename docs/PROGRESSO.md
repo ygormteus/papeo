@@ -10,7 +10,8 @@
 - **Evidência (LXC, estado final):** `cargo fmt --all -- --check` 0; `cargo test -p papeo-core` 0 (29); clippy `-D warnings` core 0, Windows 0, macOS 0; `pnpm check` 0; `pnpm build` 0; `pnpm test` 0; YAML válido; `git diff --check` 0. Visual no mock (ui-checker, conferido nas capturas): aviso, Esc/Desligar/Manter ligada, Sistema, disponível, baixando 40%, ponto com barra recolhida, 960×600, tema escuro; console sem erros. Tab após o último botão do `<dialog>` vai ao navegador e volta (nativo do `showModal`, igual aos outros diálogos).
 - **Não verificado:** app nativo (consulta, download, instalação e reinício em macOS e Windows); workflow no Actions (execução manual sem release com `releaseId` vazio na `tauri-action` do SHA fixado; tag gerando `latest.json` com as 3 plataformas); dark do passo "baixando".
 - **Secrets:** `TAURI_SIGNING_PRIVATE_KEY` e `_PASSWORD` cadastrados no GitHub em 2026-11-24 (autorizado pelo usuário); chave pública do `tauri.conf.json` conferida contra `~/.tauri/papeo-updater.key.pub`. Licença: usuário confirmou GPL-3.0-or-later.
-- **Pendente:** cópia de segurança da chave e da senha fora da LXC (o usuário fará no computador); repositório público (as atualizações dependem disso). Commit "feat: atualização com um clique, GPL e release endurecido" na `main` com push (pedido pelo usuário).
+- **Backup:** chave e senha copiadas pelo usuário para o computador dele em 2026-11-24 (cópia temporária apagada da LXC).
+- **Pendente:** teste no Mac com `pnpm build:local`; repositório público (as atualizações dependem disso). Commit "feat: atualização com um clique, GPL e release endurecido" na `main` com push (pedido pelo usuário).
 
 ## 2026-11-24 — README para usuários e revisão de segurança do repositório
 
