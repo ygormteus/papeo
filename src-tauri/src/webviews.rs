@@ -109,6 +109,8 @@ pub fn create_service_webview(
             LogicalSize::new(area.width, area.height),
         )
         .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    crate::webcrypto::attach(&webview);
     if (service.zoom - 1.0).abs() > f64::EPSILON {
         let _ = webview.set_zoom(service.zoom);
     }

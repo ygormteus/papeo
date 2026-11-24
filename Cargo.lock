@@ -2870,6 +2870,7 @@ dependencies = [
 name = "papeo"
 version = "0.1.0"
 dependencies = [
+ "base64 0.21.7",
  "block2",
  "chrono",
  "libc",
@@ -2877,6 +2878,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-local-authentication",
  "papeo-core",
+ "security-framework",
  "serde",
  "serde_json",
  "sysinfo",

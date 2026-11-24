@@ -70,6 +70,8 @@ Limites conhecidos: os dados das sessões não têm criptografia própria (use F
 
 `services.json` guarda serviços e configurações; `sessions/<id>/`, logins, cookies e cache de cada conta.
 
+No macOS, `webcrypto-master.key` (permissão 0600) guarda a chave com que o WebKit cifra as chaves criptográficas dos sites (o login do WhatsApp Web). Por padrão o WebKit a guardaria nas Chaves, liberada só para o build exato do app: sem assinatura com ID de equipe da Apple, cada atualização pediria a senha das Chaves. O Papeo a entrega pelo delegate privado `webCryptoMasterKey:` do `WKWebsiteDataStore` (macOS 15+; `src-tauri/src/webcrypto.rs`). Na primeira abertura com esse recurso, a chave antiga é lida uma vez das Chaves, para os logins continuarem valendo.
+
 ## Gerar instaladores
 
 - **Local:** `pnpm build:local` gera para o sistema em uso, sem os pacotes de atualização. `pnpm tauri build` também gera os pacotes de atualização e exige a chave privada em `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.

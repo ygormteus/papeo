@@ -9,6 +9,8 @@ mod sessions;
 mod state;
 mod tray;
 mod updater;
+#[cfg(target_os = "macos")]
+mod webcrypto;
 mod webviews;
 
 use state::{publish, status_of, AppState, Inner, MAIN_WINDOW, UI_WEBVIEW};
@@ -228,6 +230,10 @@ pub fn run() {
             }
             app.manage(state);
             build_main_window(handle, !started_hidden, protected, appearance)?;
+            // Chave do WebCrypto fora das Chaves do macOS (antes de qualquer
+            // webview de serviço): sem pedido de senha a cada atualização.
+            #[cfg(target_os = "macos")]
+            webcrypto::init(&app.path().app_data_dir()?, &app.config().identifier);
             // Contas que estavam carregadas ao fechar voltam carregadas.
             webviews::restore_open(handle);
             lock::check_availability(handle);
