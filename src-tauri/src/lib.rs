@@ -336,6 +336,9 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             menu::install(handle)?;
             spawn_maintenance(handle.clone());
+            // Marca deixada por uma atualização: sem ela, a próxima abertura
+            // não cai na cópia temporária do Gatekeeper.
+            std::thread::spawn(updater::clear_quarantine);
             Ok(())
         })
         .on_window_event(tray::on_window_event)

@@ -95,6 +95,31 @@ fn blocked_location(exe: &str) -> Option<&'static str> {
     }
 }
 
+/// `.app` do executável atual, se ele não estiver na cópia temporária.
+#[cfg(target_os = "macos")]
+fn app_bundle() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    if blocked_location(&exe.to_string_lossy()).is_some() {
+        return None;
+    }
+    // Papeo.app/Contents/MacOS/papeo
+    let bundle = exe.parent()?.parent()?.parent()?.to_path_buf();
+    (bundle.extension()? == "app").then_some(bundle)
+}
+
+/// Tira do app a marca de "baixado da internet". O Papeo instalado com ela
+/// grava a versão nova também marcada, e o Mac passa a abri-lo de uma cópia
+/// temporária, só de leitura, onde a próxima atualização falha.
+pub fn clear_quarantine() {
+    #[cfg(target_os = "macos")]
+    if let Some(bundle) = app_bundle() {
+        let _ = std::process::Command::new("/usr/bin/xattr")
+            .args(["-dr", "com.apple.quarantine"])
+            .arg(&bundle)
+            .status();
+    }
+}
+
 /// Baixa, confere a assinatura, instala e reinicia o app.
 pub async fn install(app: &AppHandle) -> Result<(), String> {
     if !begin(app, UpdateStatus::Installing { percent: None }) {
@@ -143,7 +168,10 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
         )
         .await;
     match result {
-        Ok(()) => app.restart(),
+        Ok(()) => {
+            clear_quarantine();
+            app.restart()
+        }
         Err(e) => fail(format!("Não foi possível instalar a atualização: {e}")),
     }
 }
