@@ -1,7 +1,7 @@
 // Cada comando que uma interface chama precisa estar liberado na capability
 // dela (src-tauri/capabilities/), senão falha só no app: "not allowed by ACL".
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -20,7 +20,8 @@ for (const entry of entries) {
 
 const files = (dir) =>
   readdirSync(join(root, dir)).flatMap((f) => {
-    const p = join(dir, f);
+    // Sempre com "/": é como os caminhos aparecem abaixo (também no Windows).
+    const p = posix.join(dir, f);
     return statSync(join(root, p)).isDirectory() ? files(p) : /\.(svelte|ts)$/.test(f) ? [p] : [];
   });
 const used = (paths) => {

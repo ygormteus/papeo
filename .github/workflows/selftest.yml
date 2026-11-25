@@ -20,6 +20,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 45
     steps:
+      # Arquivos com fim de linha "\n" também no Windows (os testes leem fontes).
+      - run: git config --global core.autocrlf false
       # Actions fixadas por SHA de commit (a tag ao lado é só referência).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
