@@ -3,9 +3,11 @@
     Circle,
     Lock,
     LockOpen,
+    Minus,
     Monitor,
     Moon,
     PanelLeft,
+    Plus,
     RotateCw,
     Search,
     Snowflake,
@@ -23,7 +25,7 @@
     ontheme,
     onreload,
     onhibernate,
-    onzoomreset,
+    onzoom,
     lockable,
     onlock,
     extra,
@@ -35,13 +37,16 @@
     ontheme: () => void;
     onreload: () => void;
     onhibernate: () => void;
-    onzoomreset: () => void;
+    /** Zoom absoluto (`zoom`) ou relativo (`delta`). */
+    onzoom: (change: { zoom?: number; delta?: number }) => void;
     lockable: boolean;
     onlock: () => void;
     /** Conteúdo ao lado da busca (o resumo, no Início). */
     extra?: Snippet;
   } = $props();
 
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 2;
   const THEME_ICON = { system: Monitor, light: Sun, dark: Moon, oled: Circle };
   const ThemeIcon = $derived(THEME_ICON[appearance]);
   const themeLabel = $derived(THEME_OPTIONS.find((o) => o.value === appearance)?.label ?? "");
@@ -96,13 +101,34 @@
 
   <div class="spacer" data-tauri-drag-region></div>
 
-  {#if active && Math.abs(active.zoom - 1) > 0.001}
-    <button class="zoom" onclick={onzoomreset} title="Voltar ao tamanho real ({modKey}⇧0)">
-      {Math.round(active.zoom * 100)}%
-    </button>
-  {/if}
-
   {#if active}
+    <div class="zoom" role="group" aria-label="Zoom de {active.name}">
+      <button
+        onclick={() => onzoom({ delta: -0.1 })}
+        disabled={active.zoom <= ZOOM_MIN + 0.001}
+        title="Diminuir ({modKey}−)"
+        aria-label="Diminuir o zoom"
+      >
+        <Minus size={15} />
+      </button>
+      <button
+        class="level"
+        class:changed={Math.abs(active.zoom - 1) > 0.001}
+        onclick={() => onzoom({ zoom: 1 })}
+        title="Voltar ao tamanho real ({modKey}⇧0)"
+        aria-label="Zoom em {Math.round(active.zoom * 100)}%. Voltar ao tamanho real"
+      >
+        {Math.round(active.zoom * 100)}%
+      </button>
+      <button
+        onclick={() => onzoom({ delta: 0.1 })}
+        disabled={active.zoom >= ZOOM_MAX - 0.001}
+        title="Aumentar ({modKey}+)"
+        aria-label="Aumentar o zoom"
+      >
+        <Plus size={15} />
+      </button>
+    </div>
     <button class="icon-btn" onclick={onreload} title="Recarregar ({modKey}R)" aria-label="Recarregar {active.name}">
       <RotateCw size={17} />
     </button>
@@ -210,13 +236,45 @@
   }
 
   .zoom {
+    display: inline-flex;
+    align-items: center;
     height: 30px;
-    padding: 0 10px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--bg-subtle);
+    overflow: hidden;
+  }
+
+  .zoom button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-width: 28px;
+    padding: 0 6px;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .zoom button:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .zoom button:disabled {
+    opacity: 0.4;
+  }
+
+  .zoom .level {
+    min-width: 46px;
     font-size: 13px;
     font-variant-numeric: tabular-nums;
+  }
+
+  .zoom .level.changed {
+    color: var(--text);
+    font-weight: 600;
   }
 
   .spacer {

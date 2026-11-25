@@ -40,6 +40,38 @@ const AWAY_RELOAD_FLOOR: u64 = 1024 * 1024 * 1024;
 /// Chamada ou áudio/vídeo há menos que isto: não recarrega. O sinal de vida
 /// vem a cada 20 s (mais devagar com o serviço escondido).
 const MEDIA_GRACE: Duration = Duration::from_secs(3 * 60);
+/// Relógio de parede andou mais que isto entre duas voltas de 15 s: o
+/// computador dormiu. Sites que ficam tanto tempo congelados (o WhatsApp
+/// Web, por exemplo) costumam não conseguir reconectar sozinhos.
+const SLEPT_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// O computador dormiu entre `before` e `now`? Usa o relógio de parede:
+/// no macOS o `Instant` para durante o repouso. Relógio que volta (ajuste
+/// manual ou NTP) não conta.
+fn slept(before: std::time::SystemTime, now: std::time::SystemTime) -> bool {
+    now.duration_since(before)
+        .is_ok_and(|gap| gap >= SLEPT_AFTER)
+}
+
+/// Contas carregadas que podem ser recarregadas na volta do repouso: todas,
+/// menos as com download em curso.
+fn resume_due(app: &AppHandle) -> Vec<String> {
+    let state = app.state::<AppState>();
+    let inner = state.lock();
+    inner
+        .config
+        .services
+        .iter()
+        .map(|s| s.id.clone())
+        .filter(|id| app.get_webview(id).is_some())
+        .filter(|id| {
+            !inner
+                .downloads
+                .iter()
+                .any(|d| &d.service_id == id && d.state == state::DownloadState::Downloading)
+        })
+        .collect()
+}
 
 /// Serviços acima do limite de memória que podem ser recarregados sem
 /// atrapalhar: fora de vista, parados há um tempo e sem download em curso.
@@ -93,15 +125,30 @@ fn reload_due(app: &AppHandle, window_visible: bool, away: bool) -> Vec<String> 
 
 /// A cada 15 s: hiberna serviços parados, reavalia "não responde", aplica o
 /// bloqueio automático e agenda a verificação de atualizações. A cada
-/// minuto, recarrega serviços que passaram do limite de memória.
+/// minuto, recarrega serviços que passaram do limite de memória. Na volta
+/// do repouso do computador, recarrega as contas abertas (uma volta depois,
+/// para a rede ter tempo de voltar).
 fn spawn_maintenance(app: AppHandle) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
         let mut last_status = HashMap::new();
         let mut tick: u64 = 0;
+        let mut wall = std::time::SystemTime::now();
+        let mut resume_pending = false;
         loop {
             std::thread::sleep(Duration::from_secs(15));
             tick += 1;
+            let now = std::time::SystemTime::now();
+            if resume_pending {
+                resume_pending = false;
+                for id in resume_due(&app) {
+                    let _ = webviews::reload(&app, &id);
+                }
+            }
+            if slept(wall, now) {
+                resume_pending = true;
+            }
+            wall = now;
             let state = app.state::<AppState>();
             let (due, status) = {
                 let inner = state.lock();
@@ -329,4 +376,21 @@ pub fn run() {
             tray::show_main(_app);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slept;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn detects_sleep_by_wall_clock_gap() {
+        let t = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        assert!(!slept(t, t + Duration::from_secs(15)));
+        assert!(!slept(t, t + Duration::from_secs(4 * 60)));
+        assert!(slept(t, t + Duration::from_secs(5 * 60)));
+        assert!(slept(t, t + Duration::from_secs(6 * 60 * 60)));
+        // Relógio voltou: não é repouso.
+        assert!(!slept(t, t - Duration::from_secs(60 * 60)));
+    }
 }

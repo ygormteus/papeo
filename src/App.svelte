@@ -376,7 +376,7 @@
       ontheme={cycleTheme}
       onreload={() => active && run(api.reload(active.id))}
       onhibernate={() => active && run(api.hibernate(active.id))}
-      onzoomreset={() => zoom({ zoom: 1 })}
+      onzoom={zoom}
       extra={!active && page === "home" && snap.services.length ? homeStats : undefined}
     />
     {#snippet homeStats()}
