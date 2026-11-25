@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    ChevronRight,
     LogIn,
     MessagesSquare,
     RotateCw,
@@ -55,6 +56,38 @@
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
 
   const memory = $derived(home.memory);
+
+  // Tabela de serviços recolhida por padrão; a escolha fica neste computador.
+  const SERVICES_KEY = "papeo.homeServicesOpen";
+  let servicesOpen = $state(readServicesOpen());
+  function readServicesOpen(): boolean {
+    try {
+      return localStorage.getItem(SERVICES_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  function toggleServices() {
+    servicesOpen = !servicesOpen;
+    try {
+      if (servicesOpen) localStorage.setItem(SERVICES_KEY, "1");
+      else localStorage.removeItem(SERVICES_KEY);
+    } catch {
+      /* preferência local apenas */
+    }
+  }
+  const servicesSummary = $derived.by(() => {
+    const n = snap.services.length;
+    const parts = [`${n} ${n === 1 ? "conta" : "contas"}`];
+    if (memory) {
+      const total = Object.values(memory.services).reduce((a, b) => a + b, 0);
+      if (total > 0) parts.push(formatBytes(total));
+    }
+    const unread = snap.services.reduce((a, s) => a + s.unread, 0);
+    if (unread > 0) parts.push(`${unread} ${unread === 1 ? "não lida" : "não lidas"}`);
+    return parts.join(" · ");
+  });
+  const servicesShown = $derived(servicesOpen || snap.services.length === 0);
   const reloading = $derived(home.reloading);
   const freeMemory = (ids: string[]) => freeMemoryOf(ids, run);
 
@@ -190,19 +223,39 @@
     </section>
   {/if}
 
-  <section class="card block services" aria-labelledby="services-title">
+  <section class="card block services" class:collapsed={!servicesShown} aria-labelledby="services-title">
     <div class="block-head">
-      <h2 id="services-title">Serviços</h2>
-      <span class="hint">Arraste na barra lateral para reordenar · botão direito para mais opções</span>
+      {#if snap.services.length === 0}
+        <h2 id="services-title">Serviços</h2>
+      {:else}
+        <h2 id="services-title">
+          <button
+            class="collapse"
+            aria-expanded={servicesOpen}
+            aria-controls="services-body"
+            onclick={toggleServices}
+          >
+            <span class="chevron" class:open={servicesOpen}><ChevronRight size={18} /></span>
+            Serviços
+          </button>
+        </h2>
+      {/if}
+      {#if servicesShown}
+        <span class="hint">Arraste na barra lateral para reordenar · botão direito para mais opções</span>
+      {:else}
+        <span class="hint">{servicesSummary}</span>
+      {/if}
     </div>
 
-    {#if snap.services.length === 0}
+    {#if !servicesShown}
+      <!-- Recolhido: só o resumo no cabeçalho. -->
+    {:else if snap.services.length === 0}
       <div class="empty">
         <p>Nenhum serviço configurado.</p>
         <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> Adicionar o primeiro</button>
       </div>
     {:else}
-      <div class="table-wrap">
+      <div class="table-wrap" id="services-body">
       <table>
         <thead>
           <tr>
@@ -427,6 +480,43 @@
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 8px;
+  }
+
+  .block.collapsed {
+    padding-bottom: 20px;
+  }
+
+  .block.collapsed .block-head {
+    margin-bottom: 0;
+  }
+
+  .collapse {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: -4px 0 -4px -6px;
+    padding: 4px 8px 4px 4px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .collapse:hover {
+    background: var(--bg-hover);
+  }
+
+  .chevron {
+    display: inline-grid;
+    place-items: center;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+  }
+
+  .chevron.open {
+    transform: rotate(90deg);
   }
 
   .head-actions {
