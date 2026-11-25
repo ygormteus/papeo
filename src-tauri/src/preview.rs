@@ -204,7 +204,7 @@ fn create(
         LogicalSize::new(size.width, BAR_HEIGHT),
     )?;
 
-    let mut page = WebviewBuilder::new(PAGE, WebviewUrl::External(url))
+    let page = WebviewBuilder::new(PAGE, WebviewUrl::External(url))
         // Sem dados em disco: a prévia não guarda login, cookies nem cache.
         .incognito(true)
         .initialization_script(PAGE_SCRIPT)
@@ -241,9 +241,7 @@ fn create(
             update(webview.app_handle(), |info| info.title = title);
         });
     #[cfg(not(windows))]
-    {
-        page = page.user_agent(crate::webviews::SAFARI_UA);
-    }
+    let page = page.user_agent(crate::webviews::SAFARI_UA);
     window.add_child(
         page,
         LogicalPosition::new(0.0, BAR_HEIGHT),
