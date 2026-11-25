@@ -1,7 +1,8 @@
 /// Comandos do app. Com o manifesto, cada um só fica disponível para quem a
 /// capability liberar: a interface recebe todos os outros; os sites dos
 /// serviços, só `service_notify` e `service_status`; a barra da prévia de
-/// links, só os `preview_*` (ver `capabilities/`).
+/// links, só os `preview_*`; a do anexo, só os `attachment_*` (ver
+/// `capabilities/`).
 const COMMANDS: &[&str] = &[
     "get_state",
     "add_service",
@@ -63,6 +64,11 @@ const COMMANDS: &[&str] = &[
     "preview_state",
     "preview_open_browser",
     "preview_close",
+    "attachment_state",
+    "attachment_save",
+    "attachment_open_app",
+    "attachment_reveal",
+    "attachment_close",
 ];
 
 fn main() {

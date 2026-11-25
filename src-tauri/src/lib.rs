@@ -1,6 +1,7 @@
 // Autoteste: bandeja, manutenção e sincronização ficam de fora (sem uso).
 #![cfg_attr(feature = "selftest", allow(dead_code, unused_imports))]
 
+mod attachment;
 mod commands;
 mod downloads;
 mod drive;
@@ -349,6 +350,8 @@ pub fn run() {
                 // Contas que estavam carregadas ao fechar voltam carregadas.
                 webviews::restore_open(handle);
                 lock::check_availability(handle);
+                // Anexos visualizados numa sessão anterior (pasta temporária).
+                attachment::clear_temp(handle);
                 // Termina de apagar sessões de serviços removidos (nada está aberto ainda).
                 let cleanup = handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -428,6 +431,11 @@ pub fn run() {
             preview::preview_state,
             preview::preview_open_browser,
             preview::preview_close,
+            attachment::attachment_state,
+            attachment::attachment_save,
+            attachment::attachment_open_app,
+            attachment::attachment_reveal,
+            attachment::attachment_close,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Papeo");

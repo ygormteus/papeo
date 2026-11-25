@@ -110,9 +110,62 @@ pub fn unique_path(dir: &Path, file_name: &str, reserved: &[PathBuf]) -> PathBuf
         .unwrap_or(candidate)
 }
 
+/// Como um anexo aparece na visualização do Papeo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AttachmentView {
+    /// Quick Look do macOS (PDF, Office, imagens, vídeo).
+    QuickLook,
+    /// Webview só com o arquivo (Windows: PDF, imagem, áudio e vídeo).
+    Web,
+    /// Sem visualização aqui: só salvar ou abrir no app padrão.
+    External,
+}
+
+/// Abrem na página (visualizador do navegador do sistema). Sem HTML nem SVG:
+/// um anexo nunca roda script.
+const WEB_EXT: &[&str] = &[
+    "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "mp3", "m4a", "wav", "txt",
+];
+/// Documentos e mídias que o Quick Look mostra; no Windows, "abrir no app".
+const DOC_EXT: &[&str] = &[
+    "doc", "docx", "xls", "xlsx", "xlsm", "ppt", "pptx", "odt", "ods", "odp", "rtf", "csv",
+    "pages", "numbers", "key", "heic", "heif", "tif", "tiff", "mov",
+];
+
+/// Visualização de um anexo pelo nome; `None` = tipo sem visualização (o
+/// arquivo é salvo direto, como antes).
+pub fn attachment_view(file_name: &str, quick_look: bool) -> Option<AttachmentView> {
+    let ext = file_name.rsplit_once('.')?.1.to_ascii_lowercase();
+    let web = WEB_EXT.contains(&ext.as_str());
+    if !web && !DOC_EXT.contains(&ext.as_str()) {
+        return None;
+    }
+    Some(if quick_look {
+        AttachmentView::QuickLook
+    } else if web {
+        AttachmentView::Web
+    } else {
+        AttachmentView::External
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attachment_views() {
+        use AttachmentView::*;
+        assert_eq!(attachment_view("Planilha.XLSX", true), Some(QuickLook));
+        assert_eq!(attachment_view("Planilha.xlsx", false), Some(External));
+        assert_eq!(attachment_view("nota.pdf", false), Some(Web));
+        assert_eq!(attachment_view("foto.jpeg", true), Some(QuickLook));
+        assert_eq!(attachment_view("pagina.html", true), None);
+        assert_eq!(attachment_view("desenho.svg", false), None);
+        assert_eq!(attachment_view("app.exe", false), None);
+        assert_eq!(attachment_view("sem-extensao", true), None);
+    }
 
     #[test]
     fn unread_from_titles() {

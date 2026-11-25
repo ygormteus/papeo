@@ -3,6 +3,7 @@ import "./app.css";
 import App from "./App.svelte";
 import Popover from "./lib/Popover.svelte";
 import PreviewBar from "./lib/PreviewBar.svelte";
+import AttachmentBar from "./lib/AttachmentBar.svelte";
 
 if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
   const { installDevMock } = await import("./lib/devMock");
@@ -15,7 +16,9 @@ const view = (window as { __PAPEO_VIEW?: string }).__PAPEO_VIEW;
 // A barra da prévia de links também (`src-tauri/src/preview.rs`); `#preview` no navegador.
 const popover = view === "popover" || location.hash === "#popover";
 const preview = view === "preview" || location.hash === "#preview";
-const app = mount(popover ? Popover : preview ? PreviewBar : App, {
+// E a barra da visualização de anexos (`src-tauri/src/attachment.rs`); `#attachment`.
+const attachment = view === "attachment" || location.hash === "#attachment";
+const app = mount(popover ? Popover : preview ? PreviewBar : attachment ? AttachmentBar : App, {
   target: document.getElementById("app")!,
 });
 

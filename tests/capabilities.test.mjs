@@ -26,18 +26,23 @@ const files = (dir) =>
   });
 const used = (paths) => {
   const names = new Set();
-  for (const p of paths) for (const m of read(p).matchAll(/\b(?:api|syncApi)\.(\w+)\(/g)) names.add(m[1]);
+  for (const p of paths) for (const m of read(p).matchAll(/\b(?:api|syncApi)\.(\w+)\b/g)) names.add(m[1]);
   return names;
 };
 const allowed = (cap) => new Set(JSON.parse(read(`src-tauri/capabilities/${cap}.json`)).permissions);
 
 // Cada interface: arquivos que montam só ela; o resto é a janela principal.
-const own = { popover: ["src/lib/Popover.svelte"], preview: ["src/lib/PreviewBar.svelte"] };
+const own = {
+  popover: ["src/lib/Popover.svelte"],
+  preview: ["src/lib/PreviewBar.svelte"],
+  attachment: ["src/lib/AttachmentBar.svelte"],
+};
 const skip = new Set(["src/lib/api.ts", "src/lib/devMock.ts", ...Object.values(own).flat()]);
 const views = {
   default: [...files("src"), "src/App.svelte"].filter((p) => !skip.has(p)),
   popover: [...own.popover, "src/lib/RecentChats.svelte"],
   preview: own.preview,
+  attachment: own.attachment,
 };
 
 const failures = [];

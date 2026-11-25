@@ -359,6 +359,7 @@ pub struct Preferences {
     protect_screen: Option<bool>,
     reload_above_mb: Option<u32>,
     open_links: Option<papeo_core::LinkTarget>,
+    attachments: Option<papeo_core::AttachmentMode>,
 }
 
 #[tauri::command]
@@ -388,6 +389,9 @@ pub async fn set_preferences(
         if let Some(v) = prefs.open_links {
             s.open_links = v;
         }
+        if let Some(v) = prefs.attachments {
+            s.attachments = v;
+        }
         if let Some(v) = prefs.reload_above_mb {
             s.reload_above_mb = v;
             *s = std::mem::take(s).sanitized();
@@ -398,8 +402,10 @@ pub async fn set_preferences(
         if let Some(window) = app.get_window(crate::state::MAIN_WINDOW) {
             window.set_content_protected(v).map_err(|e| e.to_string())?;
         }
-        if let Some(window) = app.get_window(crate::preview::PREVIEW) {
-            let _ = window.set_content_protected(v);
+        for label in [crate::preview::PREVIEW, crate::attachment::ATTACHMENT] {
+            if let Some(window) = app.get_window(label) {
+                let _ = window.set_content_protected(v);
+            }
         }
     }
     if prefs.open_links == Some(papeo_core::LinkTarget::Browser) {
@@ -699,8 +705,10 @@ pub async fn set_appearance(
             .set_theme(crate::window_theme(appearance))
             .map_err(|e| e.to_string())?;
     }
-    if let Some(window) = app.get_window(crate::preview::PREVIEW) {
-        let _ = window.set_theme(crate::window_theme(appearance));
+    for label in [crate::preview::PREVIEW, crate::attachment::ATTACHMENT] {
+        if let Some(window) = app.get_window(label) {
+            let _ = window.set_theme(crate::window_theme(appearance));
+        }
     }
     Ok(publish(&app))
 }

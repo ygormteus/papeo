@@ -83,7 +83,7 @@ fn screen_area(app: &AppHandle) -> Option<(f64, f64)> {
 
 /// Último tamanho usado ou, na primeira vez, ~70% × 85% da tela; sempre
 /// cabendo na tela atual.
-fn initial_size(app: &AppHandle) -> (f64, f64) {
+pub(crate) fn initial_size(app: &AppHandle) -> (f64, f64) {
     let (screen_w, screen_h) = screen_area(app).unwrap_or((1440.0, 900.0));
     let max_w = (screen_w - SCREEN_GAP).max(MIN_WIDTH);
     let max_h = (screen_h - SCREEN_GAP).max(MIN_HEIGHT);

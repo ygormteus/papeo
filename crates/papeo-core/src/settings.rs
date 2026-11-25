@@ -35,6 +35,8 @@ pub struct Settings {
     pub reload_above_mb: u32,
     /// Onde abrem os links que os sites mandam abrir fora.
     pub open_links: LinkTarget,
+    /// O que fazer com os anexos baixados nos serviços.
+    pub attachments: AttachmentMode,
     /// Textos salvos para a resposta rápida (chamados com "/").
     pub quick_replies: Vec<QuickReply>,
 }
@@ -89,6 +91,17 @@ pub enum LinkTarget {
     #[default]
     Browser,
     /// Janela pequena do Papeo, sem login nem dados guardados.
+    Preview,
+}
+
+/// Anexos (arquivos baixados pelos sites dos serviços).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AttachmentMode {
+    /// Salva direto na pasta de downloads.
+    #[default]
+    Save,
+    /// Mostra antes numa janela do Papeo (pasta temporária); salvar é escolha.
     Preview,
 }
 
@@ -179,6 +192,7 @@ impl Default for Settings {
             updates: UpdatePrefs::default(),
             reload_above_mb: RELOAD_DEFAULT_MB,
             open_links: LinkTarget::Browser,
+            attachments: AttachmentMode::Save,
             quick_replies: Vec::new(),
         }
     }
@@ -399,6 +413,14 @@ mod tests {
         assert_eq!(old.open_links, LinkTarget::Browser);
         let preview: Settings = serde_json::from_str(r#"{"openLinks":"preview"}"#).unwrap();
         assert_eq!(preview.open_links, LinkTarget::Preview);
+    }
+
+    #[test]
+    fn attachments_saved_by_default() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.attachments, AttachmentMode::Save);
+        let shown: Settings = serde_json::from_str(r#"{"attachments":"preview"}"#).unwrap();
+        assert_eq!(shown.attachments, AttachmentMode::Preview);
     }
 
     #[test]

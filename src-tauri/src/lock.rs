@@ -135,6 +135,7 @@ pub fn lock_app(app: &AppHandle) {
     }
     // Bloqueado: nenhum conteúdo fica à vista, nem a prévia de um link.
     crate::preview::close(app);
+    crate::attachment::close_for_lock(app);
     crate::webviews::apply_layout(app);
     crate::state::publish(app);
 }

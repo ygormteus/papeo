@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-attachment-state"
+description = "Enables the attachment_state command without any pre-configured scope."
+commands.allow = ["attachment_state"]
+
+[[permission]]
+identifier = "deny-attachment-state"
+description = "Denies the attachment_state command without any pre-configured scope."
+commands.deny = ["attachment_state"]

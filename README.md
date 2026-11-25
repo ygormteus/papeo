@@ -112,6 +112,16 @@ Conversando com alguém, clique no botão de **bloco de notas** na barra do topo
 
 Tudo aparece também em **Tarefas** (barra lateral), no cartão **Para hoje** do Início, na janelinha da barra de menus e na busca (`⌘ K`). Nos lembretes, **Adiar 1 h** e **Concluir** funcionam direto na notificação.
 
+### Veja anexos antes de baixar
+
+Em **Configurações → Anexos → Visualizar antes**, a planilha, o PDF, o documento ou a foto que alguém mandar abre numa janela do Papeo quando você clica, sem ir para a pasta de downloads. De lá:
+
+- **Salvar** guarda na pasta de downloads;
+- **Abrir no app** abre no Excel, Word, leitor de PDF etc. para editar (o Papeo salva uma cópia na pasta de downloads antes, então o que você editar não se perde);
+- fechar descarta o arquivo.
+
+No Mac, a visualização é a mesma do Quick Look (barra de espaço no Finder) e mostra também Excel, Word e PowerPoint. No Windows, PDF e imagens aparecem na janela; Excel e Word vão pelo **Abrir no app**. Outros tipos de arquivo são salvos direto, como antes.
+
 ### Tema escuro
 
 ![Papeo no tema escuro](assets/screenshots/inicio-escuro.png)

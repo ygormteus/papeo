@@ -325,6 +325,18 @@ export function installDevMock() {
       case "clear_downloads":
         downloads.splice(0, downloads.length, ...downloads.filter((d) => d.state === "downloading"));
         return snap();
+      case "attachment_state":
+        // `#attachment?windows`: Excel sem visualização (como no Windows).
+        return {
+          fileName: "Orçamento 2026.xlsx",
+          view: new URLSearchParams(location.search).has("windows") ? "external" : "quickLook",
+          saved: false,
+        };
+      case "attachment_save":
+      case "attachment_open_app":
+      case "attachment_reveal":
+      case "attachment_close":
+        return null;
       case "preview_state":
         return { url: "https://example.com/artigo", title: "Um artigo de exemplo" };
       case "get_memory":

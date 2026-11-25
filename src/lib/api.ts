@@ -130,6 +130,8 @@ export interface Settings {
   reloadAboveMb: number;
   /** Links que os sites abrem fora: navegador padrão ou prévia do Papeo. */
   openLinks: LinkTarget;
+  /** Anexos baixados nos serviços: salvar direto ou visualizar antes. */
+  attachments: AttachmentMode;
   /** Textos salvos para a resposta rápida, chamados com "/". */
   quickReplies: QuickReply[];
 }
@@ -142,6 +144,7 @@ export interface QuickReply {
 
 
 export type LinkTarget = "browser" | "preview";
+export type AttachmentMode = "save" | "preview";
 
 export type UpdateStatus =
   | { state: "idle" | "checking" | "upToDate" }
@@ -239,6 +242,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     updates: { check: true, noticeSeen: false },
     reloadAboveMb: 2048,
     openLinks: "browser",
+    attachments: "save",
     quickReplies: [],
   },
   dndActive: false,
@@ -300,6 +304,7 @@ export const api = {
         | "protectScreen"
         | "reloadAboveMb"
         | "openLinks"
+        | "attachments"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
@@ -356,6 +361,11 @@ export const api = {
   previewState: () => invoke<PreviewInfo>("preview_state"),
   previewOpenBrowser: () => invoke<void>("preview_open_browser"),
   previewClose: () => invoke<void>("preview_close"),
+  attachmentState: () => invoke<AttachmentInfo>("attachment_state"),
+  attachmentSave: () => invoke<void>("attachment_save"),
+  attachmentOpenApp: () => invoke<void>("attachment_open_app"),
+  attachmentReveal: () => invoke<void>("attachment_reveal"),
+  attachmentClose: () => invoke<void>("attachment_close"),
 };
 
 /** Sincronização pelo Google Drive. */
@@ -394,6 +404,23 @@ export interface PreviewInfo {
 export function onPreview(cb: (p: PreviewInfo) => void): Promise<UnlistenFn> {
   return listen<PreviewInfo>("papeo://preview", (e) => cb(e.payload));
 }
+
+/** Anexo aberto na visualização (`src-tauri/src/attachment.rs`). */
+export interface AttachmentInfo {
+  fileName: string;
+  /** Sem valor: nada aberto. `external`: sem visualização aqui (Windows, Office). */
+  view?: "quickLook" | "web" | "external" | null;
+  saved: boolean;
+}
+
+export function onAttachment(cb: (a: AttachmentInfo) => void): Promise<UnlistenFn> {
+  return listen<AttachmentInfo>("papeo://attachment", (e) => cb(e.payload));
+}
+
+export const ATTACHMENT_OPTIONS: { value: AttachmentMode; label: string }[] = [
+  { value: "save", label: "Salvar na pasta" },
+  { value: "preview", label: "Visualizar antes" },
+];
 
 export const LINK_OPTIONS: { value: LinkTarget; label: string }[] = [
   { value: "browser", label: "No navegador" },

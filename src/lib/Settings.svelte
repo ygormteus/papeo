@@ -36,6 +36,8 @@
     untilLabel,
     updateLabel,
     type LinkTarget,
+    type AttachmentMode,
+    ATTACHMENT_OPTIONS,
     type Snapshot,
   } from "./api";
 
@@ -401,6 +403,27 @@
         onchange={(e) => run(api.setPreferences({ openLinks: e.currentTarget.value as LinkTarget }))}
       >
         {#each LINK_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Anexos</span>
+        <span class="hint">
+          Ao visualizar antes, planilhas, PDFs, documentos e imagens abrem numa janela do Papeo antes de ir para a pasta
+          de downloads; de lá, salve ou abra no app (Excel, Word…) para editar. Outros arquivos são salvos direto.
+          {#if !isMac}No Windows, Excel e Word abrem pelo próprio app.{/if}
+        </span>
+      </div>
+      <select
+        class="select"
+        aria-label="Anexos"
+        value={settings.attachments}
+        onchange={(e) => run(api.setPreferences({ attachments: e.currentTarget.value as AttachmentMode }))}
+      >
+        {#each ATTACHMENT_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
         {/each}
       </select>

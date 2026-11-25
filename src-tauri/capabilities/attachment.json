@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "attachment",
+  "description": "Barra da visualização de anexos (interface local `attachment-bar`): mostra o nome, salva na pasta de downloads, abre no app padrão e fecha. A página do arquivo (`attachment-page`, só no Windows) não recebe comando nenhum.",
+  "webviews": ["attachment-bar"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "allow-attachment-state",
+    "allow-attachment-save",
+    "allow-attachment-open-app",
+    "allow-attachment-reveal",
+    "allow-attachment-close"
+  ]
+}

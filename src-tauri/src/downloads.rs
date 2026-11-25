@@ -44,6 +44,13 @@ pub fn handle(webview: &Webview, event: DownloadEvent<'_>) -> bool {
                 .or_else(|| url.path_segments()?.next_back().map(str::to_owned))
                 .unwrap_or_default();
             let file_name = papeo_core::safe_file_name(&suggested);
+            // Anexo para visualizar: vai para a pasta temporária, fora da lista.
+            if let Some(path) =
+                crate::attachment::intercept(&app, webview.label(), url.as_str(), &file_name)
+            {
+                *destination = path;
+                return true;
+            }
             let dir = downloads_dir(&app);
             let state = app.state::<AppState>();
             let mut inner = state.lock();
@@ -72,6 +79,15 @@ pub fn handle(webview: &Webview, event: DownloadEvent<'_>) -> bool {
             true
         }
         DownloadEvent::Finished { url, path, success } => {
+            if crate::attachment::finished(
+                &app,
+                webview.label(),
+                url.as_str(),
+                path.as_deref(),
+                success,
+            ) {
+                return true;
+            }
             let state = app.state::<AppState>();
             let finished = {
                 let mut inner = state.lock();

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-attachment-open-app"
+description = "Enables the attachment_open_app command without any pre-configured scope."
+commands.allow = ["attachment_open_app"]
+
+[[permission]]
+identifier = "deny-attachment-open-app"
+description = "Denies the attachment_open_app command without any pre-configured scope."
+commands.deny = ["attachment_open_app"]

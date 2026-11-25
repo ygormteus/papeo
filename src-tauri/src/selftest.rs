@@ -9,7 +9,10 @@
 //! - conversas sem contador na lista do site (lidas lá ou no celular)
 //!   saem das não lidas, e o site consegue falar com o Papeo mesmo numa
 //!   porta fora da padrão;
-//! - a prévia abre com o link e fecha com ⌘W/Ctrl+W vindo da página.
+//! - a prévia abre com o link e fecha com ⌘W/Ctrl+W vindo da página;
+//! - um anexo (PDF) baixado com "Visualizar antes" abre na janela de anexo
+//!   (Quick Look no Mac, página no Windows) sem ir para os downloads; salvar
+//!   copia para lá e fechar apaga o temporário.
 //!
 //! Uso: `pnpm build && cargo run -p papeo --features selftest`. Sai com
 //! código 0 se tudo passou. Os links "abertos no navegador" só são anotados.
@@ -71,6 +74,12 @@ window.runCase = (c) => {
   if (c === "direct") window.open(other + "/direct", "_blank", "noopener");
   if (c === "internal") anchor("https://wa.me/5585999999999").click();
   if (c === "preview") anchor(other + "/target?preview").click();
+  if (c === "attachment") {
+    const a = document.createElement("a");
+    a.href = "/anexo.pdf"; a.download = "anexo.pdf";
+    document.body.appendChild(a);
+    a.click();
+  }
   // Lista de conversas como a do WhatsApp: "Ana" sem contador (lida),
   // "Bruno" com contador.
   if (c === "list") {
@@ -84,6 +93,9 @@ window.runCase = (c) => {
 };
 addEventListener("load", () => fetch("/loaded"));
 </script>"#;
+
+/// PDF mínimo de uma página em branco.
+const ATTACHMENT_PDF: &str = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
 
 const TARGET_PAGE: &str =
     "<!doctype html><meta charset=\"utf-8\"><title>Alvo da prévia</title><h1>Alvo</h1>";
@@ -105,15 +117,20 @@ fn respond(stream: std::net::TcpStream) {
     }
     let path = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
     lock(&REQUESTS).push(path.clone());
-    let body = if path == "/" || path.starts_with("/?") {
-        SERVICE_PAGE
+    let (body, headers) = if path == "/" || path.starts_with("/?") {
+        (SERVICE_PAGE, "Content-Type: text/html; charset=utf-8")
+    } else if path == "/anexo.pdf" {
+        (
+            ATTACHMENT_PDF,
+            "Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"anexo.pdf\"",
+        )
     } else {
-        TARGET_PAGE
+        (TARGET_PAGE, "Content-Type: text/html; charset=utf-8")
     };
     let mut stream = &stream;
     let _ = write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\n{headers}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.len(),
         body
     );
@@ -275,6 +292,49 @@ fn run(app: &AppHandle) -> Result<(), String> {
         || app.get_window(crate::preview::PREVIEW).is_none(),
     )?;
     println!("SELFTEST ok   prévia fechou pelo atalho");
+
+    attachment_case(app, &id)
+}
+
+/// Anexo com "Visualizar antes": abre na janela, salva e limpa.
+fn attachment_case(app: &AppHandle, id: &str) -> Result<(), String> {
+    let downloads = base_dir().join("downloads");
+    std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
+    app.state::<AppState>().update(|inner| {
+        let s = &mut inner.config.settings;
+        s.attachments = papeo_core::AttachmentMode::Preview;
+        s.downloads_dir = Some(downloads.to_string_lossy().into_owned());
+        Ok(())
+    })?;
+    eval(app, id, "runCase('attachment')")?;
+    let mut seen = None;
+    wait_for("anexo abrir na janela", Duration::from_secs(20), || {
+        seen = crate::attachment::inspect(app);
+        seen.as_ref()
+            .is_some_and(|(_, temp, shown)| *shown && temp.is_file())
+    })
+    .map_err(|e| format!("{e} (visto: {seen:?}, pedidos: {:?})", lock(&REQUESTS)))?;
+    let (name, temp, _) = seen.unwrap_or_default();
+    if name != "anexo.pdf" {
+        return Err(format!("anexo: nome {name:?}"));
+    }
+    let saved = || downloads.join("anexo.pdf").is_file();
+    if saved() || !crate::state::snapshot(app).downloads.is_empty() {
+        return Err("anexo: foi para os downloads antes de salvar".into());
+    }
+    println!("SELFTEST ok   anexo abriu na visualização");
+    tauri::async_runtime::block_on(crate::attachment::attachment_save(app.clone()))?;
+    if !saved() || crate::state::snapshot(app).downloads.len() != 1 {
+        return Err("anexo: salvar não copiou para os downloads".into());
+    }
+    tauri::async_runtime::block_on(crate::attachment::attachment_close(app.clone()));
+    wait_for("janela do anexo fechar", Duration::from_secs(10), || {
+        app.get_window(crate::attachment::ATTACHMENT).is_none()
+    })?;
+    if temp.exists() {
+        return Err("anexo: o arquivo temporário ficou depois de fechar".into());
+    }
+    println!("SELFTEST ok   anexo salvo e temporário apagado");
     Ok(())
 }
 
