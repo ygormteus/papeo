@@ -10,7 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
     "build:local": "tauri build --config src-tauri/tauri.local.conf.json",
-    "test": "node tests/notification-shim.test.mjs && node tests/notes.test.mjs && node tests/tasks.test.mjs && node tests/when.test.mjs"
+    "test": "node tests/capabilities.test.mjs && node tests/notification-shim.test.mjs && node tests/notes.test.mjs && node tests/tasks.test.mjs && node tests/when.test.mjs"
   },
   "dependencies": {
     "@lucide/svelte": "^1.79.0",

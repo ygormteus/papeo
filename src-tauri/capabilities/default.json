@@ -22,6 +22,7 @@
     "allow-activate-service",
     "allow-hibernate-service",
     "allow-open-chat",
+    "allow-send-reply",
     "allow-reload-service",
     "allow-set-content-area",
     "allow-set-overlay",
