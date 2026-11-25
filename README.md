@@ -138,7 +138,7 @@ Para economizar:
 ## Perguntas frequentes
 
 **Minhas conversas passam pelo Papeo ou por algum servidor dele?**
-Não. O Papeo só abre os sites oficiais (como o WhatsApp Web) dentro dele. Não existe servidor do Papeo, não há propaganda nem coleta de dados. A única coisa que ele consulta por conta própria é se existe versão nova — e dá para desligar em **Configurações → Sistema**. Se você ligar a sincronização das tarefas, ele também conversa com o seu Google Drive (com tudo cifrado).
+Não. O Papeo só abre os sites oficiais (como o WhatsApp Web) dentro dele. Não existe servidor do Papeo, não há propaganda nem coleta de dados. A única coisa que ele consulta por conta própria é se existe versão nova — e dá para desligar em **Configurações → Sistema**.
 
 **Como atualizo?**
 O Papeo confere a cada 2 horas se há versão nova. Quando houver, aparece **Atualizar e reiniciar** na barra lateral, com **Ver o que mudou** para conhecer as novidades antes. É só clicar; seus logins continuam. Depois de atualizar, o Papeo mostra uma vez o que mudou.
@@ -155,9 +155,6 @@ Clique com o botão direito na conta → **Personalizar…** e libere microfone 
 **Como passo para outro computador?**
 Em **Configurações → Backup**, exporte o arquivo e importe no outro computador. Vão junto as contas, as preferências, as tarefas e as anotações; os logins não: entre de novo em cada conta.
 
-**Dá para ter as tarefas em todos os meus computadores?**
-Sim: **Configurações → Sincronização → Conectar Google Drive**. O Papeo usa uma pasta oculta só dele no seu Drive (não vê seus outros arquivos) e cifra tudo com uma **frase-senha** que só você sabe: nem o Google consegue ler. A frase é pedida uma vez em cada computador. Se esquecê-la, dá para recomeçar a sincronização com outra (as tarefas de cada computador continuam). Com a sincronização ligada, restaurar um backup não apaga dos outros computadores as tarefas que não estavam nele: elas voltam na próxima sincronização.
-
 **Como desinstalo e apago tudo?**
 Antes de desinstalar, remova cada conta (botão direito → **Remover…**); isso apaga os logins daquele computador. Depois apague o aplicativo normalmente.
 
@@ -168,7 +165,7 @@ Antes de desinstalar, remova cada conta (botão direito → **Remover…**); iss
 - Você escolhe o que aparece nas notificações: a mensagem inteira, só quem mandou, ou nada.
 - O bloqueio esconde todas as conversas até você usar o Touch ID, a senha ou o Windows Hello.
 - Dá para esconder a janela do Papeo em gravações e compartilhamentos de tela.
-- Tarefas e anotações ficam no seu computador. Se você ligar a sincronização, vão para o seu Google Drive **cifradas** com a sua frase-senha.
+- Tarefas e anotações ficam só no seu computador (e no backup, se você exportar).
 
 ## Para desenvolvedores
 

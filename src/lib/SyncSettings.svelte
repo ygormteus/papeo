@@ -63,19 +63,13 @@
   }
 </script>
 
+<!-- Em espera: só aparece em build com o cliente OAuth do Google
+     (PAPEO_GOOGLE_CLIENT_ID/SECRET). Ver docs/PROGRESSO.md. -->
+{#if status?.available}
 <section class="card" aria-labelledby="s-sync">
   <h2 id="s-sync"><Cloud size={18} /> Sincronização</h2>
 
-  {#if !status}
-    <p class="hint pad">Carregando…</p>
-  {:else if !status.available}
-    <div class="row">
-      <div class="text">
-        <span class="label">Google Drive</span>
-        <span class="hint">Indisponível nesta versão do Papeo.</span>
-      </div>
-    </div>
-  {:else if !status.signedIn}
+  {#if !status.signedIn}
     <div class="row">
       <div class="text">
         <span class="label">Tarefas e anotações em todos os seus computadores</span>
@@ -163,6 +157,7 @@
   {/if}
   {#if message}<p class="message warn" role="alert">{message}</p>{/if}
 </section>
+{/if}
 
 {#if confirmOff}
   <ConfirmDialog
@@ -222,10 +217,6 @@
   .hint {
     font-size: 13px;
     color: var(--text-muted);
-  }
-
-  .pad {
-    padding: 8px 0 14px;
   }
 
   .warn {
