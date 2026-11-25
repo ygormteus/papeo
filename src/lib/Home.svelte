@@ -88,6 +88,28 @@
     return parts.join(" · ");
   });
   const servicesShown = $derived(servicesOpen || snap.services.length === 0);
+
+  // Conversas recentes: todas ou só as não lidas (escolha deste computador).
+  const RECENT_KEY = "papeo.recentUnreadOnly";
+  let unreadOnly = $state(readUnreadOnly());
+  function readUnreadOnly(): boolean {
+    try {
+      return localStorage.getItem(RECENT_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  function setUnreadOnly(value: boolean) {
+    unreadOnly = value;
+    try {
+      if (value) localStorage.setItem(RECENT_KEY, "1");
+      else localStorage.removeItem(RECENT_KEY);
+    } catch {
+      /* preferência local apenas */
+    }
+  }
+  const unreadChats = $derived(snap.recent.filter((c) => c.unread));
+  const shownChats = $derived(unreadOnly ? unreadChats : snap.recent);
   const reloading = $derived(home.reloading);
   const freeMemory = (ids: string[]) => freeMemoryOf(ids, run);
 
@@ -212,10 +234,18 @@
     <section class="card block" aria-labelledby="recent-title">
       <div class="block-head">
         <h2 id="recent-title"><MessagesSquare size={18} /> Conversas recentes</h2>
-        <span class="hint">Clique numa conversa para ler e responder daqui</span>
+        <div class="segmented" role="group" aria-label="Mostrar conversas">
+          <button aria-pressed={!unreadOnly} onclick={() => setUnreadOnly(false)}>Todas</button>
+          <button aria-pressed={unreadOnly} onclick={() => setUnreadOnly(true)}>
+            Não lidas{#if unreadChats.length}<span class="count">{unreadChats.length}</span>{/if}
+          </button>
+        </div>
       </div>
+      {#if shownChats.length === 0}
+        <p class="empty-note">Nenhuma conversa não lida. As conversas abertas no Papeo ou respondidas por aqui contam como lidas.</p>
+      {/if}
       <RecentChats
-        chats={snap.recent}
+        chats={shownChats}
         services={snap.services}
         onsnap={(s) => run(Promise.resolve(s))}
         onopen={onchat}
@@ -517,6 +547,54 @@
 
   .chevron.open {
     transform: rotate(90deg);
+  }
+
+  .segmented {
+    display: inline-flex;
+    flex: none;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+  }
+
+  .segmented button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  .segmented button[aria-pressed="true"] {
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: var(--shadow-card);
+  }
+
+  .segmented .count {
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  .empty-note {
+    margin: 4px 0 14px;
+    font-size: 13px;
+    color: var(--text-muted);
   }
 
   .head-actions {

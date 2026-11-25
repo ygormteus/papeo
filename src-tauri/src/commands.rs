@@ -250,7 +250,15 @@ pub async fn hide_popover(app: AppHandle) {
 #[tauri::command]
 pub async fn open_chat(app: AppHandle, id: String, query: String, exact: bool) -> CmdResult {
     ensure_unlocked(&app)?;
+    // Abrir pela lista (nome exato) conta como ler.
+    if exact {
+        state_mark_read(&app, &id, &query);
+    }
     crate::webviews::open_chat(&app, &id, &query, exact)
+}
+
+fn state_mark_read(app: &AppHandle, id: &str, chat: &str) {
+    app.state::<AppState>().lock().mark_read(id, chat);
 }
 
 #[tauri::command]

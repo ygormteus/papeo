@@ -70,6 +70,7 @@ export function installDevMock() {
       at: messages[messages.length - 1].at,
       messages,
       canReply: !serviceId.endsWith("x"),
+      unread: !messages[messages.length - 1].mine && title !== "Grupo da família",
     };
   };
   const recent: Snapshot["recent"] = [
@@ -92,6 +93,7 @@ export function installDevMock() {
     c.messages = [...c.messages, msg(text, 0, true)].slice(-6);
     c.at = minutesAgo(0);
     c.body = "";
+    c.unread = false;
     recent.unshift(c);
   };
   const downloads: DownloadEntry[] = [

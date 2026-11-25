@@ -191,6 +191,8 @@ export interface RecentChat {
   messages: ChatMessage[];
   /** WhatsApp/Telegram: dá para responder pela mini janela. */
   canReply: boolean;
+  /** Mensagem recebida depois da última vez que a conversa foi vista. */
+  unread: boolean;
 }
 
 /** Limite de texto da resposta rápida (igual ao backend). */

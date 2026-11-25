@@ -117,6 +117,9 @@ pub struct RecentChat {
     pub title: String,
     /// Mais antiga primeiro.
     pub messages: VecDeque<ChatMessage>,
+    /// Até quando a conversa foi vista (aberta com o Papeo na frente,
+    /// aberta pela lista ou respondida pelo Papeo); segundos Unix.
+    pub read_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -145,6 +148,8 @@ pub struct RecentView {
     pub messages: Vec<MessageView>,
     /// Dá para responder daqui (WhatsApp/Telegram).
     pub can_reply: bool,
+    /// Tem mensagem recebida depois da última vez que foi vista.
+    pub unread: bool,
 }
 
 pub struct Inner {
@@ -251,14 +256,44 @@ impl Inner {
                 service_id: service_id.to_owned(),
                 title: title.to_owned(),
                 messages: VecDeque::new(),
+                read_at: 0,
             },
         };
+        // Respondeu: viu a conversa.
+        if message.mine {
+            chat.read_at = chat.read_at.max(message.at);
+        }
         chat.messages.push_back(message);
         while chat.messages.len() > MAX_MESSAGES {
             chat.messages.pop_front();
         }
         self.recent.push_front(chat);
         self.recent.truncate(MAX_RECENT);
+    }
+
+    /// Marca a conversa como vista agora.
+    pub fn mark_read(&mut self, service_id: &str, chat: &str) {
+        let chat = papeo_core::clean_chat(chat);
+        let now = now_secs();
+        for c in self.recent.iter_mut() {
+            if c.service_id == service_id && papeo_core::clean_chat(&c.title) == chat {
+                c.read_at = now;
+            }
+        }
+    }
+
+    /// A conversa aberta na conta à vista, com a janela em foco, conta como
+    /// vista. Chamado a cada estado publicado.
+    pub fn mark_seen(&mut self) {
+        if !self.window_focused || self.locked || self.overlay {
+            return;
+        }
+        let Some(active) = self.active.clone() else {
+            return;
+        };
+        if let Some(chat) = self.current_chat.get(&active).cloned() {
+            self.mark_read(&active, &chat);
+        }
     }
 
     /// Esquece as mensagens de um serviço (removido ou "sair da conta").
@@ -299,6 +334,7 @@ impl Inner {
                     at: last.at,
                     messages,
                     can_reply: service.kind.supports_chat(),
+                    unread: chat.messages.iter().any(|m| !m.mine && m.at > chat.read_at),
                 })
             })
             .collect()
@@ -459,7 +495,8 @@ pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
 pub fn snapshot(app: &AppHandle) -> Snapshot {
     let state = app.state::<AppState>();
     let downloads_dir = crate::downloads::downloads_dir(app);
-    let inner = state.lock();
+    let mut inner = state.lock();
+    inner.mark_seen();
     let services = inner
         .config
         .services
@@ -520,4 +557,68 @@ pub fn publish(app: &AppHandle) -> Snapshot {
     }
     crate::tray::refresh(app, &snap);
     snap
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use papeo_core::{Service, ServiceKind};
+
+    fn inner_with_service() -> (Inner, String) {
+        let service = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        let id = service.id.clone();
+        let config = Config {
+            services: vec![service],
+            ..Config::default()
+        };
+        (Inner::new(config), id)
+    }
+
+    fn unread(inner: &Inner) -> Vec<bool> {
+        inner.recent_views().iter().map(|v| v.unread).collect()
+    }
+
+    fn incoming(at: u64) -> ChatMessage {
+        ChatMessage {
+            body: "Oi".into(),
+            at,
+            mine: false,
+        }
+    }
+
+    #[test]
+    fn chats_read_when_seen_or_answered() {
+        let (mut inner, id) = inner_with_service();
+        let past = now_secs() - 60;
+        inner.push_recent(&id, "Ana", incoming(past));
+        assert_eq!(unread(&inner), [true]);
+
+        // Respondida pelo Papeo: lida.
+        inner.push_recent(
+            &id,
+            "Ana",
+            ChatMessage {
+                body: "Já vou".into(),
+                at: past + 1,
+                mine: true,
+            },
+        );
+        assert_eq!(unread(&inner), [false]);
+
+        // Mensagem nova: não lida de novo.
+        inner.push_recent(&id, "Ana", incoming(past + 2));
+        assert_eq!(unread(&inner), [true]);
+
+        // Aberta numa conta em segundo plano ou com a janela sem foco: não conta.
+        inner.current_chat.insert(id.clone(), "Ana".into());
+        inner.window_focused = false;
+        inner.active = Some(id.clone());
+        inner.mark_seen();
+        assert_eq!(unread(&inner), [true]);
+
+        // Aberta na conta à vista, com a janela em foco: lida.
+        inner.window_focused = true;
+        inner.mark_seen();
+        assert_eq!(unread(&inner), [false]);
+    }
 }
