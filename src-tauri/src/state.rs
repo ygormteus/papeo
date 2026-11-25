@@ -5,7 +5,7 @@
 //! com espera de resposta…). Callbacks da thread principal (título da
 //! página, permissões, downloads) também pegam este lock.
 
-use papeo_core::{Config, Service, Settings};
+use papeo_core::{Config, Organizer, Service, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -181,6 +181,12 @@ pub struct Inner {
     /// Última verificação de atualização (manual ou automática), em
     /// segundos Unix.
     pub update_checked: Option<u64>,
+    /// Tarefas e anotações (`organizer.json`).
+    pub organizer: Organizer,
+    /// Conversa aberta em cada serviço, como o site informa.
+    pub current_chat: HashMap<String, String>,
+    /// `organizer.json` não pôde ser lido: nada é gravado por cima.
+    pub organizer_error: Option<String>,
 }
 
 impl Inner {
@@ -211,6 +217,9 @@ impl Inner {
             unfocused_since: None,
             update: UpdateStatus::Idle,
             update_checked: None,
+            organizer: Organizer::default(),
+            current_chat: HashMap::new(),
+            organizer_error: None,
         }
     }
 
@@ -256,6 +265,7 @@ impl Inner {
     pub fn forget_recent(&mut self, service_id: &str) {
         self.recent.retain(|m| m.service_id != service_id);
         self.pending_chat.remove(service_id);
+        self.current_chat.remove(service_id);
     }
 
     fn recent_views(&self) -> Vec<RecentView> {
@@ -305,6 +315,7 @@ impl Inner {
 
 pub struct AppState {
     pub store_path: PathBuf,
+    pub organizer_path: PathBuf,
     pub sessions_dir: PathBuf,
     pub inner: Mutex<Inner>,
 }
@@ -316,6 +327,13 @@ impl AppState {
 
     pub fn persist(&self, inner: &Inner) -> Result<(), String> {
         papeo_core::save(&self.store_path, &inner.config)
+    }
+
+    pub fn persist_organizer(&self, inner: &Inner) -> Result<(), String> {
+        if let Some(err) = &inner.organizer_error {
+            return Err(err.clone());
+        }
+        papeo_core::save_organizer(&self.organizer_path, &inner.organizer)
     }
 
     /// Altera a configuração e grava em seguida.
@@ -387,6 +405,8 @@ pub struct ServiceView {
     pub status: ServiceStatus,
     /// Minutos desde o último uso (None = não usado nesta sessão).
     pub idle_minutes: Option<u64>,
+    /// Conversa aberta no site (sem valor com o app bloqueado).
+    pub chat: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -406,6 +426,8 @@ pub struct Snapshot {
     pub app_version: String,
     /// Mensagens recentes, mais nova primeiro (vazia com o app bloqueado).
     pub recent: Vec<RecentView>,
+    /// Tarefas atrasadas e para hoje (zero com o app bloqueado).
+    pub tasks: crate::organizer::TaskCounts,
 }
 
 pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
@@ -457,6 +479,11 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                         .get(&s.id)
                         .map(|t| t.elapsed().as_secs() / 60)
                 },
+                chat: if inner.locked || !loaded {
+                    None
+                } else {
+                    inner.current_chat.get(&s.id).cloned()
+                },
             }
         })
         .collect::<Vec<_>>();
@@ -478,6 +505,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         update: inner.update.clone(),
         app_version: app.package_info().version.to_string(),
         recent: inner.recent_views(),
+        tasks: crate::organizer::counts(&inner),
     }
 }
 

@@ -1,5 +1,6 @@
 //! Persistência em `services.json` e backup/restauração da configuração.
 
+use crate::organizer::Organizer;
 use crate::service::{Service, ServiceKind};
 use crate::settings::Settings;
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,18 @@ struct StoreFile {
     pending_removal: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     open: Vec<String>,
+    /// Tarefas e anotações: só nos backups (no app ficam em
+    /// `organizer.json`). Backup antigo não traz.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    organizer: Option<Organizer>,
+}
+
+/// Backup lido e validado.
+#[derive(Debug, Clone)]
+pub struct Backup {
+    pub config: Config,
+    /// `None`: backup de uma versão sem tarefas (as atuais ficam).
+    pub organizer: Option<Organizer>,
 }
 
 fn defaults() -> Config {
@@ -131,8 +144,13 @@ pub fn load(path: &Path) -> Config {
     }
 }
 
-fn to_json(config: &Config, kind: Option<&str>) -> Result<Vec<u8>, String> {
+fn to_json(
+    config: &Config,
+    kind: Option<&str>,
+    organizer: Option<&Organizer>,
+) -> Result<Vec<u8>, String> {
     serde_json::to_vec_pretty(&StoreFile {
+        organizer: organizer.cloned(),
         version: STORE_VERSION,
         kind: kind.map(str::to_owned),
         services: config.services.clone(),
@@ -154,38 +172,49 @@ fn to_json(config: &Config, kind: Option<&str>) -> Result<Vec<u8>, String> {
 
 /// Grava de forma atômica (arquivo temporário + rename).
 pub fn save(path: &Path, config: &Config) -> Result<(), String> {
-    write_atomic(path, &to_json(config, None)?)
+    write_atomic(path, &to_json(config, None, None)?)
 }
 
-fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let tmp = path.with_extension("tmp-papeo");
-    fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    {
+        use std::io::Write;
+        let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        file.write_all(body).map_err(|e| e.to_string())?;
+        // No disco antes de trocar: queda de energia não deixa arquivo vazio.
+        file.sync_all().map_err(|e| e.to_string())?;
+    }
     fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 /// Exporta serviços, cores, ordem e configurações. Não inclui cookies nem
 /// conversas: em outro computador, cada serviço pede login de novo.
-pub fn export_backup(path: &Path, config: &Config) -> Result<(), String> {
-    write_atomic(path, &to_json(config, Some(BACKUP_KIND))?)
+/// Tarefas e anotações vão junto (sem os registros apagados).
+pub fn export_backup(path: &Path, config: &Config, organizer: &Organizer) -> Result<(), String> {
+    write_atomic(
+        path,
+        &to_json(config, Some(BACKUP_KIND), Some(&organizer.visible()))?,
+    )
 }
 
 /// Lê e valida um backup. Não altera nada no disco.
-pub fn read_backup(path: &Path) -> Result<Config, String> {
+pub fn read_backup(path: &Path, now_ms: u64) -> Result<Backup, String> {
     let meta = fs::metadata(path).map_err(|e| format!("Não foi possível ler o arquivo: {e}"))?;
-    if meta.len() > 1024 * 1024 {
+    if meta.len() > 64 * 1024 * 1024 {
         return Err("Arquivo grande demais para ser um backup do Papeo.".into());
     }
     let bytes = fs::read(path).map_err(|e| format!("Não foi possível ler o arquivo: {e}"))?;
-    let file: StoreFile = serde_json::from_slice(&bytes)
+    let mut file: StoreFile = serde_json::from_slice(&bytes)
         .map_err(|_| "Este arquivo não é um backup válido do Papeo.".to_owned())?;
     if file.kind.as_deref() != Some(BACKUP_KIND) {
         return Err("Este arquivo não é um backup do Papeo.".into());
     }
+    let organizer = file.organizer.take().map(|o| o.sanitized(now_ms));
     sanitize(file, true)
-        .map(|(config, _)| config)
+        .map(|(config, _)| Backup { config, organizer })
         .map_err(|e| format!("Backup inválido: {e}"))
 }
 
@@ -234,22 +263,22 @@ mod tests {
         config.services[0].name = "Pessoal".into();
         config.settings.quiet_hours.enabled = true;
         let path = dir.join("backup.json");
-        export_backup(&path, &config).unwrap();
-        let restored = read_backup(&path).unwrap();
+        export_backup(&path, &config, &Organizer::default()).unwrap();
+        let restored = read_backup(&path, 0).unwrap().config;
         assert_eq!(restored.services[0].name, "Pessoal");
         assert!(restored.settings.quiet_hours.enabled);
 
         // services.json comum não é aceito como backup.
         let plain = dir.join("services.json");
         save(&plain, &config).unwrap();
-        assert!(read_backup(&plain).is_err());
+        assert!(read_backup(&plain, 0).is_err());
 
         // Sessão adulterada é rejeitada.
         let mut tampered: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         tampered["services"][0]["session"] = "../../x".into();
         fs::write(&path, serde_json::to_vec(&tampered).unwrap()).unwrap();
-        assert!(read_backup(&path).is_err());
+        assert!(read_backup(&path, 0).is_err());
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -281,8 +310,12 @@ mod tests {
         save(&path, &config).unwrap();
         assert_eq!(load(&path).pending_removal.len(), 1);
         let backup = dir.join("backup.json");
-        export_backup(&backup, &config).unwrap();
-        assert!(read_backup(&backup).unwrap().pending_removal.is_empty());
+        export_backup(&backup, &config, &Organizer::default()).unwrap();
+        assert!(read_backup(&backup, 0)
+            .unwrap()
+            .config
+            .pending_removal
+            .is_empty());
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -296,8 +329,8 @@ mod tests {
         save(&path, &config).unwrap();
         assert_eq!(load(&path).open, vec![first]);
         let backup = dir.join("backup.json");
-        export_backup(&backup, &config).unwrap();
-        assert!(read_backup(&backup).unwrap().open.is_empty());
+        export_backup(&backup, &config, &Organizer::default()).unwrap();
+        assert!(read_backup(&backup, 0).unwrap().config.open.is_empty());
         // Arquivo antigo, sem o campo.
         fs::write(&path, br#"{"version":2,"services":[]}"#).unwrap();
         assert!(load(&path).open.is_empty());
@@ -314,6 +347,7 @@ mod tests {
             settings: Settings::default(),
             pending_removal: Vec::new(),
             open: Vec::new(),
+            organizer: None,
         };
         assert_eq!(sanitize(file, true).unwrap().0.services.len(), 1);
     }
@@ -327,7 +361,54 @@ mod tests {
             settings: Settings::default(),
             pending_removal: Vec::new(),
             open: Vec::new(),
+            organizer: None,
         };
         assert!(sanitize(file, false).is_err());
+    }
+
+    #[test]
+    fn backup_carries_tasks_and_notes() {
+        use crate::organizer::{ContactRef, TaskInput};
+        let dir = temp_dir();
+        let config = defaults();
+        let mut org = Organizer::default();
+        let now = 1_800_000_000_000;
+        let gone = org
+            .add_task(
+                &TaskInput {
+                    text: "apagada".into(),
+                    ..Default::default()
+                },
+                now,
+            )
+            .unwrap();
+        org.delete_task(&gone, now).unwrap();
+        org.add_task(
+            &TaskInput {
+                text: "ligar".into(),
+                ..Default::default()
+            },
+            now,
+        )
+        .unwrap();
+        let r = ContactRef {
+            service_id: config.services[0].id.clone(),
+            service_kind: "whatsapp".into(),
+            service_name: "WhatsApp".into(),
+            chat: "Ana".into(),
+        };
+        org.set_note(&r, "cliente desde 2020", now).unwrap();
+        let path = dir.join("backup.json");
+        export_backup(&path, &config, &org).unwrap();
+        let back = read_backup(&path, now).unwrap().organizer.unwrap();
+        assert_eq!(back.tasks.len(), 1);
+        assert_eq!(back.tasks[0].text, "ligar");
+        assert_eq!(back.contacts[0].note, "cliente desde 2020");
+        // Backup de versão antiga: sem tarefas.
+        let mut old: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        old.as_object_mut().unwrap().remove("organizer");
+        fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        assert!(read_backup(&path, now).unwrap().organizer.is_none());
+        let _ = fs::remove_dir_all(dir);
     }
 }

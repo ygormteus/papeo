@@ -2,12 +2,17 @@
 //! puras (não perturbe, nomes de arquivo, não lidas). Não depende do Tauri,
 //! para ser testado em qualquer máquina.
 
+mod organizer;
 mod privacy;
 mod service;
 mod settings;
 mod store;
 mod util;
 
+pub use organizer::{
+    clean_chat, is_date, is_item_id, load_organizer, new_item_id, save_organizer, Contact,
+    ContactRef, Organizer, Task, TaskInput, CHAT_MAX, NOTE_MAX, TASK_TEXT_MAX,
+};
 pub use privacy::{
     is_session_id, new_session, notification_text, recent_text, same_site, session_from_bytes,
     NotificationPreview,
@@ -20,5 +25,5 @@ pub use settings::{
     should_notify, AppLock, Appearance, QuietHours, Settings, UpdatePrefs, DND_FOREVER,
     LOCK_MAX_MINUTES,
 };
-pub use store::{export_backup, load, read_backup, save, Config, STORE_VERSION};
+pub use store::{export_backup, load, read_backup, save, Backup, Config, STORE_VERSION};
 pub use util::{clip, parse_unread, safe_file_name, unique_path};

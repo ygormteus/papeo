@@ -35,6 +35,60 @@ export interface ServiceView {
   status: ServiceStatus;
   /** Minutos desde o último uso nesta sessão (0 = em uso). */
   idleMinutes?: number | null;
+  /** Conversa aberta no site (nome no cabeçalho); só WhatsApp/Telegram. */
+  chat?: string | null;
+}
+
+/** Tarefa; com `remindAt`, é um lembrete. */
+export interface Task {
+  id: string;
+  text: string;
+  done: boolean;
+  /** Segundos Unix. */
+  doneAt?: number;
+  /** Dia em que vence (`AAAA-MM-DD`, data local). */
+  due?: string;
+  /** Quando avisar (segundos Unix). */
+  remindAt?: number;
+  reminded?: number;
+  /** `Contact.id`; sem valor = tarefa solta. */
+  contact?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Conversa de uma conta (`chat` vazio = a conta inteira) e a anotação dela. */
+export interface Contact {
+  id: string;
+  serviceId: string;
+  serviceKind: string;
+  serviceName: string;
+  chat: string;
+  note: string;
+  updatedAt: number;
+}
+
+export interface Organizer {
+  tasks: Task[];
+  contacts: Contact[];
+}
+
+export const EMPTY_ORGANIZER: Organizer = { tasks: [], contacts: [] };
+
+/** Conversa a ligar: conta + nome da conversa ("" = a conta inteira). */
+export interface ChatLink {
+  serviceId: string;
+  chat: string;
+}
+
+export interface TaskFields {
+  text: string;
+  due?: string | null;
+  remindAt?: number | null;
+  /** Liga a esta conversa… */
+  link?: ChatLink | null;
+  /** …ou mantém este contato. Sem os dois: tarefa solta. */
+  contactId?: string | null;
 }
 
 export interface QuietHours {
@@ -95,6 +149,8 @@ export interface Snapshot {
   /** Conversas com mensagens recentes, mais nova primeiro. Só na memória;
    * vazia com o app bloqueado ou a prévia oculta. */
   recent: RecentChat[];
+  /** Tarefas abertas atrasadas e para hoje (zero com o app bloqueado). */
+  tasks: { overdue: number; today: number };
 }
 
 export interface ChatMessage {
@@ -164,6 +220,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   update: { state: "idle" },
   appVersion: "",
   recent: [],
+  tasks: { overdue: 0, today: 0 },
 };
 
 export const api = {
@@ -224,7 +281,8 @@ export const api = {
   /** Abre no navegador padrão (plugin opener; só http/https). */
   openUrl: (url: string) => invoke<void>("plugin:opener|open_url", { url }),
   exportConfig: (path: string) => invoke<void>("export_config", { path }),
-  previewBackup: (path: string) => invoke<{ services: string[] }>("preview_backup", { path }),
+  previewBackup: (path: string) =>
+    invoke<{ services: string[]; tasks?: number | null; notes?: number | null }>("preview_backup", { path }),
   importConfig: (path: string) => invoke<Snapshot>("import_config", { path }),
   /** Sai da conta: troca a sessão e apaga cookies, cache e conversas guardadas. */
   clearServiceData: (id: string) => invoke<Snapshot>("clear_service_data", { id }),
@@ -240,7 +298,25 @@ export const api = {
   installUpdate: () => invoke<Snapshot>("install_update"),
   /** Liga/desliga a verificação automática e marca o aviso como visto. */
   setUpdates: (check: boolean) => invoke<Snapshot>("set_updates", { check }),
+  getOrganizer: () => invoke<Organizer>("get_organizer"),
+  /** Cria (`id` nulo) ou altera uma tarefa. */
+  saveTask: (id: string | null, task: TaskFields) => invoke<Organizer>("save_task", { id, task }),
+  setTaskDone: (id: string, done: boolean) => invoke<Organizer>("set_task_done", { id, done }),
+  /** Adia o aviso para `until` (segundos Unix). */
+  snoozeTask: (id: string, until: number) => invoke<Organizer>("snooze_task", { id, until }),
+  deleteTask: (id: string) => invoke<Organizer>("delete_task", { id }),
+  /** Anotação de uma conversa (`link`) ou de um contato existente. */
+  saveNote: (target: { link?: ChatLink; contactId?: string }, note: string) =>
+    invoke<Organizer>("save_note", {
+      link: target.link ?? null,
+      contactId: target.contactId ?? null,
+      note,
+    }),
 };
+
+export function onOrganizer(cb: (o: Organizer) => void): Promise<UnlistenFn> {
+  return listen<Organizer>("papeo://organizer", (e) => cb(e.payload));
+}
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return listen<Snapshot>("papeo://state", (e) => cb(e.payload));

@@ -24,6 +24,12 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::separator(app)?)
         .item(&item("go:reload", "Recarregar serviço", "CmdOrCtrl+R")?)
         .item(&item("go:search", "Buscar serviço…", "CmdOrCtrl+K")?)
+        .item(&item(
+            "go:panel",
+            "Tarefas e anotações do contato",
+            "CmdOrCtrl+Shift+N",
+        )?)
+        .item(&MenuItemBuilder::with_id("go:tasks", "Tarefas").build(app)?)
         .item(&item("go:settings", "Configurações…", "CmdOrCtrl+,")?)
         .build()?;
     let view = SubmenuBuilder::new(app, "Zoom")
@@ -64,6 +70,12 @@ fn handle(app: &AppHandle, id: &str) {
         }
         "go:search" => {
             let _ = app.emit_to(UI_WEBVIEW, COMMAND_EVENT, "search");
+        }
+        "go:panel" => {
+            let _ = app.emit_to(UI_WEBVIEW, COMMAND_EVENT, "panel");
+        }
+        "go:tasks" => {
+            crate::organizer::show_tasks(app);
         }
         "go:settings" => {
             let _ = activate(app, None);

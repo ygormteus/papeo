@@ -7,6 +7,7 @@ mod memory;
 mod menu;
 mod notifications;
 mod notify;
+mod organizer;
 mod popover;
 mod reply;
 mod sessions;
@@ -216,6 +217,7 @@ fn spawn_maintenance(app: AppHandle) {
                     }
                 }
             }
+            organizer::tick(&app);
             updater::tick(&app, started);
         }
     });
@@ -285,13 +287,23 @@ pub fn run() {
                 config.settings.start_hidden && std::env::args().any(|a| a == HIDDEN_ARG);
             let protected = config.settings.protect_screen;
             let appearance = config.settings.appearance;
+            let organizer_path = app.path().app_config_dir()?.join("organizer.json");
+            let organizer = papeo_core::load_organizer(&organizer_path, organizer::now_ms());
             let state = AppState {
                 store_path,
+                organizer_path,
                 sessions_dir: app.path().app_data_dir()?.join("sessions"),
                 inner: Mutex::new(Inner::new(config)),
             };
             {
                 let mut inner = state.lock();
+                match organizer {
+                    Ok(organizer) => inner.organizer = organizer,
+                    Err(err) => {
+                        eprintln!("papeo: {err}");
+                        inner.organizer_error = Some(err);
+                    }
+                }
                 inner.autostart = handle.autolaunch().is_enabled().unwrap_or(false);
                 inner.window_focused = !started_hidden;
                 if started_hidden {
@@ -363,6 +375,12 @@ pub fn run() {
             commands::check_update,
             commands::install_update,
             commands::set_updates,
+            organizer::get_organizer,
+            organizer::save_task,
+            organizer::set_task_done,
+            organizer::snooze_task,
+            organizer::delete_task,
+            organizer::save_note,
             notify::service_notify,
             notify::service_status,
         ])

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-snooze-task"
+description = "Enables the snooze_task command without any pre-configured scope."
+commands.allow = ["snooze_task"]
+
+[[permission]]
+identifier = "deny-snooze-task"
+description = "Denies the snooze_task command without any pre-configured scope."
+commands.deny = ["snooze_task"]

@@ -5,6 +5,7 @@
     ArrowUp,
     Bell,
     BellOff,
+    CalendarClock,
     LogOut,
     Palette,
     RotateCw,
@@ -14,6 +15,10 @@
   } from "@lucide/svelte";
   import AddServiceDialog from "./lib/AddServiceDialog.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
+  import ContactPanel from "./lib/ContactPanel.svelte";
+  import TaskList, { type TaskActions } from "./lib/TaskList.svelte";
+  import Tasks from "./lib/Tasks.svelte";
+  import { groupOf } from "./lib/tasks";
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
   import CustomizeDialog from "./lib/CustomizeDialog.svelte";
@@ -26,6 +31,7 @@
   import WhatsNew from "./lib/WhatsNew.svelte";
   import { bundledNotes } from "./lib/bundledNotes";
   import {
+    EMPTY_ORGANIZER,
     EMPTY_SNAPSHOT,
     THEME_OPTIONS,
     api,
@@ -34,7 +40,12 @@
     mediaPolicy,
     onCommand,
     onDownload,
+    onOrganizer,
     onState,
+    type ChatLink,
+    type Contact,
+    type Organizer,
+    type TaskFields,
     type MenuItem,
     type ServiceKind,
     type ServiceView,
@@ -69,7 +80,11 @@
 
   let snap = $state<Snapshot>(EMPTY_SNAPSHOT);
   let ready = $state(false);
-  let page = $state<"home" | "settings">("home");
+  let page = $state<"home" | "settings" | "tasks">("home");
+  let org = $state<Organizer>(EMPTY_ORGANIZER);
+  let panelOpen = $state(store.get("papeo.panel") === "open");
+  // Relógio das tarefas ("Hoje", "Atrasada"): avança a cada 30 s.
+  let now = $state(new Date());
   let collapsed = $state(store.get("papeo.sidebar") === "collapsed");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
   let systemIsDark = $state(systemDark.matches);
@@ -85,7 +100,12 @@
   let confirmRemove = $state<ServiceView | null>(null);
   let confirmClear = $state<ServiceView | null>(null);
   let customizing = $state<ServiceView | null>(null);
-  let restoring = $state<{ path: string; services: string[] } | null>(null);
+  let restoring = $state<{
+    path: string;
+    services: string[];
+    tasks?: number | null;
+    notes?: number | null;
+  } | null>(null);
   let menu = $state<{ service: ServiceView; x: number; y: number } | null>(null);
   let toast = $state<Toast | null>(null);
   // "O que mudou": da versão disponível ou da que acabou de ser instalada.
@@ -134,6 +154,15 @@
     document.documentElement.dataset.theme = resolvedTheme;
   });
 
+  // Tarefas e anotações só com o app desbloqueado; busca só quando o
+  // bloqueio muda (o estado chega a todo momento).
+  const locked = $derived(snap.locked);
+  $effect(() => {
+    if (!ready) return;
+    if (locked) org = EMPTY_ORGANIZER;
+    else api.getOrganizer().then((o) => (org = o)).catch(showError);
+  });
+
   $effect(() => {
     // A webview do serviço fica por cima da interface; some enquanto há um modal aberto.
     if (ready) api.setOverlay(modalOpen).catch(() => {});
@@ -167,6 +196,68 @@
     paletteOpen = false;
     run(api.openChat(serviceId, query, exact));
   }
+
+  function openTasks() {
+    paletteOpen = false;
+    page = "tasks";
+    if (snap.active !== null) run(api.activate(null));
+  }
+
+  function togglePanel() {
+    panelOpen = !panelOpen;
+    store.set("papeo.panel", panelOpen ? "open" : "closed");
+  }
+
+  let panel = $state<ContactPanel>();
+
+  /** Grava a anotação em edição antes de bloquear (bloqueado, não grava). */
+  async function lockApp() {
+    await panel?.flush();
+    run(api.lockNow());
+  }
+
+  async function orgRun(action: Promise<Organizer>) {
+    try {
+      org = await action;
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
+  }
+
+  const quiet = (p: Promise<void>) => p.catch(() => {});
+
+  /** Ações das listas de tarefas (Início, página Tarefas, painel). */
+  const taskActions: TaskActions = {
+    done: (id, done) => quiet(orgRun(api.setTaskDone(id, done))),
+    snooze: (id, until) => quiet(orgRun(api.snoozeTask(id, until))),
+    remove: (id) => {
+      quiet(orgRun(api.deleteTask(id)));
+    },
+    edit: (id, fields) => orgRun(api.saveTask(id, fields)),
+    open: (contact: Contact) => {
+      if (!snap.services.some((s) => s.id === contact.serviceId)) return;
+      if (!panelOpen) togglePanel();
+      if (contact.chat) openChat(contact.serviceId, contact.chat, true);
+      else select(contact.serviceId);
+    },
+  };
+
+  async function createTask(fields: TaskFields) {
+    await orgRun(api.saveTask(null, fields));
+    if (!fields.link && !fields.contactId && active) {
+      showToast({ text: "Tarefa criada sem conversa: está em Tarefas." });
+    }
+  }
+
+  const saveNote = (link: ChatLink, note: string) => orgRun(api.saveNote({ link }, note));
+
+  const todayTasks = $derived(
+    org.tasks.filter((t) => {
+      const g = groupOf(t, now);
+      return g === "overdue" || g === "today";
+    }),
+  );
 
   function openSettings() {
     page = "settings";
@@ -255,6 +346,11 @@
     if (modalOpen || snap.locked) return;
     if (cmd === "search") paletteOpen = true;
     else if (cmd === "settings") openSettings();
+    else if (cmd === "tasks") openTasks();
+    else if (cmd === "panel") {
+      if (active) togglePanel();
+      else openTasks();
+    }
     else if (cmd === "zoom:in") zoom({ delta: 0.1 });
     else if (cmd === "zoom:out") zoom({ delta: -0.1 });
     else if (cmd === "zoom:reset") zoom({ zoom: 1 });
@@ -271,7 +367,10 @@
       "+": "zoom:in",
       "-": "zoom:out",
     };
-    if (e.shiftKey && (e.code === "Digit0" || key === ")")) {
+    if (e.shiftKey && key === "n") {
+      e.preventDefault();
+      handleCommand("panel");
+    } else if (e.shiftKey && (e.code === "Digit0" || key === ")")) {
       e.preventDefault();
       handleCommand("zoom:reset");
     } else if (commands[key]) {
@@ -282,7 +381,7 @@
       openAdd();
     } else if (key === "l" && snap.settings.lock.enabled) {
       e.preventDefault();
-      run(api.lockNow());
+      lockApp();
     } else if (/^[0-9]$/.test(key)) {
       e.preventDefault();
       const n = Number(key);
@@ -294,6 +393,9 @@
   onMount(() => {
     const unlisten = [
       onState((s) => (snap = s)),
+      onOrganizer((o) => {
+        if (!snap.locked) org = o;
+      }),
       onCommand(handleCommand),
       onDownload((d) =>
         !snap.locked &&
@@ -335,6 +437,7 @@
     const onScheme = (e: MediaQueryListEvent) => (systemIsDark = e.matches);
     systemDark.addEventListener("change", onScheme);
 
+    const clock = setInterval(() => (now = new Date()), 30_000);
     const observer = new ResizeObserver(reportArea);
     if (content) observer.observe(content);
     window.addEventListener("resize", reportArea);
@@ -343,6 +446,7 @@
       unlisten.forEach((p) => p.then((off) => off()));
       systemDark.removeEventListener("change", onScheme);
       observer.disconnect();
+      clearInterval(clock);
       window.removeEventListener("resize", reportArea);
     };
   });
@@ -363,6 +467,7 @@
     onmove={(id, to) => run(api.moveService(id, to))}
     onupdate={() => run(api.installUpdate())}
     onnotes={() => showNotes("available")}
+    ontasks={openTasks}
   />
 
   <main class="main">
@@ -370,18 +475,21 @@
       {active}
       {appearance}
       lockable={snap.settings.lock.enabled && snap.lockAvailable}
-      onlock={() => run(api.lockNow())}
+      onlock={lockApp}
       ontogglesidebar={toggleSidebar}
       onsearch={() => (paletteOpen = true)}
       ontheme={cycleTheme}
       onreload={() => active && run(api.reload(active.id))}
       onhibernate={() => active && run(api.hibernate(active.id))}
       onzoom={zoom}
+      {panelOpen}
+      onpanel={togglePanel}
       extra={!active && page === "home" && snap.services.length ? homeStats : undefined}
     />
     {#snippet homeStats()}
       <HomeStats {snap} {run} onadd={openAdd} onopen={select} />
     {/snippet}
+    <div class="body">
     <section class="content" bind:this={content} aria-live="polite">
       {#if active}
         <div class="placeholder">
@@ -395,9 +503,11 @@
         <Settings
           {snap}
           {run}
-          onrestore={(path, services) => (restoring = { path, services })}
+          onrestore={(path, preview) => (restoring = { path, ...preview })}
           onnotes={showNotes}
         />
+      {:else if page === "tasks"}
+        <Tasks {org} services={snap.services} actions={taskActions} {now} oncreate={createTask} />
       {:else}
         <Home
           {snap}
@@ -407,9 +517,38 @@
           onremove={(service) => (confirmRemove = service)}
           oncustomize={(service) => (customizing = service)}
           onchat={(id, chat) => openChat(id, chat, true)}
+          today={todayTasks.length ? todayCard : undefined}
         />
       {/if}
     </section>
+    {#if active && panelOpen && !snap.locked}
+      <ContactPanel
+        bind:this={panel}
+        service={active}
+        {org}
+        actions={taskActions}
+        {now}
+        oncreate={createTask}
+        onnote={saveNote}
+        onclose={togglePanel}
+      />
+    {/if}
+    </div>
+    {#snippet todayCard()}
+      <section class="card today" aria-labelledby="today-title">
+        <div class="today-head">
+          <h2 id="today-title"><CalendarClock size={18} /> Para hoje</h2>
+          <button class="link-btn" onclick={openTasks}>Ver todas</button>
+        </div>
+        <TaskList
+          tasks={todayTasks.slice(0, 5)}
+          {org}
+          services={snap.services}
+          actions={taskActions}
+          {now}
+        />
+      </section>
+    {/snippet}
   </main>
 </div>
 
@@ -442,7 +581,7 @@
   {@const service = confirmRemove}
   <ConfirmDialog
     title="Remover {service.name}?"
-    message="A sessão deste serviço será apagada. Para usá-lo de novo, será preciso fazer login outra vez."
+    message="A sessão deste serviço será apagada. Para usá-lo de novo, será preciso fazer login outra vez. Tarefas e anotações ligadas a ele continuam em Tarefas."
     confirmLabel="Remover"
     onclose={() => (confirmRemove = null)}
     onconfirm={() => {
@@ -474,7 +613,11 @@
   {@const backup = restoring}
   <ConfirmDialog
     title="Restaurar backup?"
-    message={`Os serviços atuais serão substituídos por: ${backup.services.join(", ") || "nenhum serviço"}. Logins que já existem neste computador continuam; os outros pedem login de novo.`}
+    message={`Os serviços atuais serão substituídos por: ${backup.services.join(", ") || "nenhum serviço"}. ${
+      backup.tasks != null
+        ? `Tarefas e anotações também: ${backup.tasks} ${backup.tasks === 1 ? "tarefa aberta" : "tarefas abertas"} e ${backup.notes ?? 0} ${backup.notes === 1 ? "anotação" : "anotações"}. `
+        : "As tarefas atuais continuam (este backup não tem tarefas). "
+    }Logins que já existem neste computador continuam; os outros pedem login de novo.`}
     confirmLabel="Restaurar"
     onclose={() => (restoring = null)}
     onconfirm={async () => {
@@ -567,10 +710,48 @@
     flex-direction: column;
   }
 
-  .content {
+  .body {
     flex: 1;
     min-height: 0;
+    display: flex;
+  }
+
+  .content {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
     position: relative;
+  }
+
+  .today {
+    padding: 14px 12px 10px;
+  }
+
+  .today-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 8px 6px;
+  }
+
+  .today-head h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .link-btn {
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font-size: 13px;
+  }
+
+  .link-btn:hover {
+    text-decoration: underline;
   }
 
   .placeholder {

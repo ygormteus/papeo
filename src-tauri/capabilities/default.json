@@ -46,6 +46,12 @@
     "allow-set-appearance",
     "allow-check-update",
     "allow-install-update",
-    "allow-set-updates"
+    "allow-set-updates",
+    "allow-get-organizer",
+    "allow-save-task",
+    "allow-set-task-done",
+    "allow-snooze-task",
+    "allow-delete-task",
+    "allow-save-note"
   ]
 }

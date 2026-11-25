@@ -469,22 +469,34 @@ pub async fn export_config(
     path: String,
 ) -> CmdResult<()> {
     ensure_unlocked(&app)?;
-    let config = state.lock().config.clone();
-    papeo_core::export_backup(&PathBuf::from(path), &config)
+    let (config, organizer) = {
+        let inner = state.lock();
+        // Tarefas não lidas: um backup sem elas apagaria as de outro computador.
+        if let Some(err) = &inner.organizer_error {
+            return Err(err.clone());
+        }
+        (inner.config.clone(), inner.organizer.clone())
+    };
+    papeo_core::export_backup(&PathBuf::from(path), &config, &organizer)
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupPreview {
     services: Vec<String>,
+    /// `None`: backup sem tarefas (de uma versão antiga); as atuais ficam.
+    tasks: Option<usize>,
+    notes: Option<usize>,
 }
 
 #[tauri::command]
 pub async fn preview_backup(app: AppHandle, path: String) -> CmdResult<BackupPreview> {
     ensure_unlocked(&app)?;
-    let config = papeo_core::read_backup(&PathBuf::from(path))?;
+    let backup = papeo_core::read_backup(&PathBuf::from(path), crate::organizer::now_ms())?;
     Ok(BackupPreview {
-        services: config.services.into_iter().map(|s| s.name).collect(),
+        services: backup.config.services.into_iter().map(|s| s.name).collect(),
+        tasks: backup.organizer.as_ref().map(|o| o.open_count()),
+        notes: backup.organizer.as_ref().map(|o| o.note_count()),
     })
 }
 
@@ -493,9 +505,22 @@ pub async fn preview_backup(app: AppHandle, path: String) -> CmdResult<BackupPre
 #[tauri::command]
 pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: String) -> CmdResult {
     ensure_unlocked(&app)?;
-    let config = papeo_core::read_backup(&PathBuf::from(path))?;
+    let backup = papeo_core::read_backup(&PathBuf::from(path), crate::organizer::now_ms())?;
+    let config = backup.config;
+    if backup.organizer.is_some() {
+        if let Some(err) = &state.lock().organizer_error {
+            return Err(err.clone());
+        }
+    }
     close_all(&app);
     state.update(|inner| {
+        // Tarefas primeiro (grava e troca na memória sob o mesmo lock, antes
+        // de mexer na configuração): se falhar, nada mudou. Backup sem
+        // tarefas (versão antiga): as atuais continuam.
+        if let Some(organizer) = backup.organizer {
+            papeo_core::save_organizer(&state.organizer_path, &organizer)?;
+            inner.organizer = organizer;
+        }
         // A limpeza pendente é deste computador; o backup não a traz.
         let pending = std::mem::take(&mut inner.config.pending_removal);
         // O aviso e a escolha sobre atualizações valem para este computador.
@@ -505,8 +530,10 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         inner.config.settings.updates = updates;
         inner.last_used.clear();
         inner.unread.clear();
+        inner.current_chat.clear();
         Ok(())
     })?;
+    crate::organizer::publish_organizer(&app);
     activate(&app, None)
 }
 

@@ -3,7 +3,17 @@
 // Mantém os mesmos padrões do backend (URLs, nomes numerados, validações).
 import { mockIPC } from "@tauri-apps/api/mocks";
 import notes020 from "../../release-notes/0.2.0.md?raw";
-import { EMPTY_SNAPSHOT, type DownloadEntry, type ServiceView, type Settings, type Snapshot } from "./api";
+import {
+  EMPTY_SNAPSHOT,
+  type Contact,
+  type DownloadEntry,
+  type Organizer,
+  type ServiceView,
+  type Settings,
+  type Snapshot,
+  type Task,
+} from "./api";
+import { addDays, dateKey, groupOf, startOfDay } from "./tasks";
 
 const DEFAULT_URL: Record<string, string> = {
   whatsapp: "https://web.whatsapp.com/",
@@ -89,8 +99,65 @@ export function installDevMock() {
     { id: 2, serviceId: "svc-a", fileName: "foto-praia.jpg", state: "downloading", at: 0 },
   ];
 
+  // Tarefas e anotações (`?demo` traz exemplos).
+  const org: Organizer = { tasks: [], contacts: [] };
+  const hex = () => Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+  const ms = () => Date.now();
+  const contactFor = (serviceId: string, chat: string): string => {
+    const s = services.find((x) => x.id === serviceId);
+    if (!s) throw "Serviço não encontrado.";
+    let c = org.contacts.find((x) => x.serviceId === serviceId && x.chat === chat);
+    if (!c) {
+      c = { id: hex(), serviceId, serviceKind: s.kind, serviceName: s.name, chat, note: "", updatedAt: ms() };
+      org.contacts.push(c);
+    }
+    return c.id;
+  };
+  const addTask = (extra: Partial<Task> & { text: string }) => {
+    const t: Task = { id: hex(), done: false, createdAt: ms(), updatedAt: ms(), ...extra };
+    org.tasks.push(t);
+    return t;
+  };
+  if (new URLSearchParams(location.search).has("demo")) {
+    const today = new Date();
+    const at = (d: Date, h: number, m = 0) => {
+      const x = new Date(d);
+      x.setHours(h, m, 0, 0);
+      return Math.floor(x.getTime() / 1000);
+    };
+    const ana = contactFor("svc-a", "Ana Souza");
+    const vendas = contactFor("svc-c", "Equipe Vendas");
+    (org.contacts.find((c) => c.id === ana) as Contact).note =
+      "Prefere falar à tarde.\nPediu orçamento do jardim em novembro.";
+    addTask({ text: "Retornar orçamento do jardim", contact: ana, remindAt: at(today, 17, 30) });
+    addTask({ text: "Mandar contrato assinado", contact: vendas, due: dateKey(addDays(startOfDay(today), -1)) });
+    addTask({ text: "Pagar o contador", due: dateKey(addDays(startOfDay(today), 2)) });
+    addTask({ text: "Ligar para a Ana sobre a entrega", contact: ana, remindAt: at(addDays(today, 1), 9) });
+    addTask({ text: "Comprar presente da Marina" });
+    addTask({ text: "Enviar fotos da obra", contact: ana, done: true, doneAt: Math.floor(ms() / 1000) });
+    services[0].chat = "Ana Souza";
+  }
+  const visible = (): Organizer => structuredClone(org);
+  const taskById = (id: unknown) => {
+    const t = org.tasks.find((x) => x.id === id);
+    if (!t) throw "Tarefa não encontrada.";
+    return t;
+  };
+  const counts = () => {
+    const d = new Date();
+    let overdue = 0;
+    let today = 0;
+    for (const t of org.tasks) {
+      const g = groupOf(t, d);
+      if (g === "overdue") overdue++;
+      if (g === "today") today++;
+    }
+    return { overdue, today };
+  };
+
   const now = () => Date.now() / 1000;
   const snap = (): Snapshot => ({
+    tasks: locked ? { overdue: 0, today: 0 } : counts(),
     services: structuredClone(services),
     active,
     totalUnread: services.reduce((n, s) => n + s.unread, 0),
@@ -275,7 +342,50 @@ export function installDevMock() {
         settings.updates = { check: Boolean(args.check), noticeSeen: true };
         return snap();
       case "preview_backup":
-        return { services: services.map((s) => s.name) };
+        return { services: services.map((s) => s.name), tasks: org.tasks.filter((t) => !t.done).length, notes: 1 };
+      case "get_organizer":
+        if (locked) throw "Desbloqueie o Papeo primeiro.";
+        return visible();
+      case "save_task": {
+        const f = args.task as {
+          text: string;
+          due?: string | null;
+          remindAt?: number | null;
+          link?: { serviceId: string; chat: string } | null;
+          contactId?: string | null;
+        };
+        if (!f.text.trim()) throw "Escreva a tarefa.";
+        const contact = f.link ? contactFor(f.link.serviceId, f.link.chat) : (f.contactId ?? undefined);
+        const fields = {
+          text: f.text.trim(),
+          due: f.due ?? undefined,
+          remindAt: f.remindAt ?? undefined,
+          contact,
+          updatedAt: ms(),
+        };
+        if (args.id) Object.assign(taskById(args.id), fields);
+        else addTask(fields);
+        return visible();
+      }
+      case "set_task_done": {
+        const t = taskById(args.id);
+        t.done = Boolean(args.done);
+        t.doneAt = t.done ? Math.floor(ms() / 1000) : undefined;
+        return visible();
+      }
+      case "snooze_task":
+        Object.assign(taskById(args.id), { remindAt: Number(args.until), done: false });
+        return visible();
+      case "delete_task":
+        org.tasks.splice(org.tasks.indexOf(taskById(args.id)), 1);
+        return visible();
+      case "save_note": {
+        const link = args.link as { serviceId: string; chat: string } | null;
+        const id = link ? contactFor(link.serviceId, link.chat) : String(args.contactId);
+        const c = org.contacts.find((x) => x.id === id);
+        if (c) c.note = String(args.note);
+        return visible();
+      }
       default:
         return null;
     }

@@ -43,6 +43,12 @@ const COMMANDS: &[&str] = &[
     "check_update",
     "install_update",
     "set_updates",
+    "get_organizer",
+    "save_task",
+    "set_task_done",
+    "snooze_task",
+    "delete_task",
+    "save_note",
     "service_notify",
     "service_status",
 ];

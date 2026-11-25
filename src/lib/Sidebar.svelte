@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BellOff, CirclePlus, Download, House, MemoryStick, Settings } from "@lucide/svelte";
+  import { BellOff, CirclePlus, Download, House, ListTodo, MemoryStick, Settings } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import { isMac, isMuted, modKey, untilLabel, updateLabel, type Snapshot, type ServiceView } from "./api";
 
@@ -14,10 +14,11 @@
     onmove,
     onupdate,
     onnotes,
+    ontasks,
   }: {
     snap: Snapshot;
     collapsed: boolean;
-    page: "home" | "settings";
+    page: "home" | "settings" | "tasks";
     onselect: (id: string | null) => void;
     onadd: () => void;
     onsettings: () => void;
@@ -25,7 +26,10 @@
     onmove: (id: string, to: number) => void;
     onupdate: () => void;
     onnotes: () => void;
+    ontasks: () => void;
   } = $props();
+
+  const due = $derived(snap.tasks.overdue + snap.tasks.today);
 
   const updating = $derived(
     snap.update.state === "available" || snap.update.state === "installing",
@@ -105,6 +109,28 @@
     >
       <House size={18} />
       {#if !collapsed}<span class="label">Início</span>{/if}
+    </button>
+    <button
+      class="item"
+      class:active={snap.active === null && page === "tasks"}
+      aria-current={snap.active === null && page === "tasks" ? "page" : undefined}
+      onclick={ontasks}
+      title="Tarefas e lembretes"
+    >
+      <span class="avatar-wrap">
+        <ListTodo size={18} />
+        {#if collapsed && due > 0}
+          <span class="dot" class:warn={snap.tasks.overdue > 0} aria-hidden="true"></span>
+        {/if}
+      </span>
+      {#if !collapsed}
+        <span class="label">Tarefas</span>
+        {#if snap.tasks.overdue > 0}
+          <span class="pill pill-danger" aria-label="{snap.tasks.overdue} atrasadas">{snap.tasks.overdue}</span>
+        {:else if snap.tasks.today > 0}
+          <span class="pill" aria-label="{snap.tasks.today} para hoje">{snap.tasks.today}</span>
+        {/if}
+      {/if}
     </button>
 
     {#if !collapsed}<div class="section">Mensageiros</div>{:else}<div class="sep"></div>{/if}

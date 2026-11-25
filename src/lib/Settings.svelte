@@ -42,7 +42,7 @@
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
-    onrestore: (path: string, services: string[]) => void;
+    onrestore: (path: string, preview: { services: string[]; tasks?: number | null; notes?: number | null }) => void;
     onnotes: (mode: "available" | "installed") => void;
   } = $props();
   const hasNotes = $derived(!!bundledNotes(snap.appVersion));
@@ -134,7 +134,7 @@
       });
       if (typeof path !== "string") return;
       const preview = await api.previewBackup(path);
-      onrestore(path, preview.services);
+      onrestore(path, preview);
     } catch (err) {
       backupMessage = errorMessage(err);
     }
@@ -445,7 +445,8 @@
       <div class="text">
         <span class="label">Exportar ou restaurar a configuração</span>
         <span class="hint">
-          Serviços, nomes, cores, ordem e preferências. Conversas e logins não entram: em outro
+          Serviços, nomes, cores, ordem, preferências, tarefas e anotações (o arquivo não é
+          criptografado: guarde em lugar seguro). Conversas e logins não entram: em outro
           computador, cada serviço pede login de novo.
         </span>
       </div>

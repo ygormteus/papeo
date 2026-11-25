@@ -5,6 +5,7 @@
     LockOpen,
     Minus,
     Monitor,
+    NotebookPen,
     Moon,
     PanelLeft,
     Plus,
@@ -26,6 +27,8 @@
     onreload,
     onhibernate,
     onzoom,
+    panelOpen,
+    onpanel,
     lockable,
     onlock,
     extra,
@@ -39,6 +42,9 @@
     onhibernate: () => void;
     /** Zoom absoluto (`zoom`) ou relativo (`delta`). */
     onzoom: (change: { zoom?: number; delta?: number }) => void;
+    /** Painel de tarefas e anotações do contato. */
+    panelOpen: boolean;
+    onpanel: () => void;
     lockable: boolean;
     onlock: () => void;
     /** Conteúdo ao lado da busca (o resumo, no Início). */
@@ -129,6 +135,16 @@
         <Plus size={15} />
       </button>
     </div>
+    <button
+      class="icon-btn"
+      class:pressed={panelOpen}
+      onclick={onpanel}
+      title="Tarefas e anotações ({modKey}⇧N)"
+      aria-label="Tarefas e anotações"
+      aria-pressed={panelOpen}
+    >
+      <NotebookPen size={17} />
+    </button>
     <button class="icon-btn" onclick={onreload} title="Recarregar ({modKey}R)" aria-label="Recarregar {active.name}">
       <RotateCw size={17} />
     </button>
@@ -275,6 +291,11 @@
   .zoom .level.changed {
     color: var(--text);
     font-weight: 600;
+  }
+
+  .pressed {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
   }
 
   .spacer {

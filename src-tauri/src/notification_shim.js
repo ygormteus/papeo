@@ -66,9 +66,35 @@
     }
   };
 
+  // Conversa aberta (nome no cabeçalho), para o painel do contato no
+  // Papeo. Só nos mensageiros conhecidos; "" = nenhuma conversa aberta.
+  const currentChat = () => {
+    const sel = CHAT_HEADER[location.hostname];
+    if (!sel) return undefined;
+    try {
+      const el = document.querySelector(sel);
+      if (!el) return "";
+      return (el.getAttribute("title") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200);
+    } catch (_) {
+      return undefined;
+    }
+  };
+  let lastChat;
+
   // Sinal de vida: se o serviço visível parar de enviar, o Papeo oferece recarregar.
-  const heartbeat = () => invoke("service_status", { loggedOut: loggedOut(), media: mediaActive() });
+  const heartbeat = () => {
+    lastChat = currentChat();
+    invoke("service_status", { loggedOut: loggedOut(), media: mediaActive(), chat: lastChat ?? null });
+  };
   setInterval(heartbeat, 20000);
+  // Trocou de conversa (clique ou teclado): avisa logo.
+  const chatChanged = () =>
+    setTimeout(() => {
+      const chat = currentChat();
+      if (chat !== undefined && chat !== lastChat) heartbeat();
+    }, 400);
+  document.addEventListener("click", chatChanged, true);
+  document.addEventListener("keyup", (e) => e.key === "Enter" || e.key === "Escape" ? chatChanged() : undefined, true);
   // Uma mídia começou: avisa logo (no máximo a cada 5 s).
   let lastPlayBeat = 0;
   document.addEventListener(

@@ -27,6 +27,8 @@ pub struct Target {
     pub chat: Option<String>,
     /// Mostra o campo "Responder".
     pub reply: bool,
+    /// Lembrete desta tarefa: botões "Adiar 1 h" e "Concluir".
+    pub task: Option<String>,
 }
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
@@ -47,8 +49,16 @@ fn run_mark() -> u64 {
 }
 
 fn remember(target: Target) -> String {
+    // Lembrete: o id da tarefa vai no identificador, para os botões e o
+    // clique funcionarem mesmo depois de reabrir o app.
+    let task = target
+        .task
+        .as_deref()
+        .filter(|t| papeo_core::is_item_id(t))
+        .map(|t| format!("task-{t}-"))
+        .unwrap_or_default();
     let id = format!(
-        "papeo-{}-{}",
+        "papeo-{task}{}-{}",
         run_mark(),
         NEXT_ID.fetch_add(1, Ordering::Relaxed)
     );
@@ -58,6 +68,13 @@ fn remember(target: Target) -> String {
         targets.pop_front();
     }
     id
+}
+
+/// Tarefa de um lembrete pelo identificador da notificação.
+fn task_of(id: &str) -> Option<String> {
+    let rest = id.strip_prefix("papeo-task-")?;
+    let task = rest.split('-').next()?;
+    papeo_core::is_item_id(task).then(|| task.to_owned())
 }
 
 fn target(id: &str) -> Option<Target> {
@@ -103,16 +120,27 @@ pub fn show(
 }
 
 /// Clique na notificação: traz o app e abre a conversa (se desbloqueado).
+/// Lembrete sem conversa abre a página Tarefas.
 fn opened(id: &str) {
     let (Some(app), Some(target)) = (APP.get().cloned(), target(id)) else {
-        if let Some(app) = APP.get() {
-            crate::tray::show_main(app);
+        if let Some(app) = APP.get().cloned() {
+            // Lembrete de antes de reabrir o app: abre pela tarefa.
+            match task_of(id) {
+                Some(task) => {
+                    std::thread::spawn(move || crate::organizer::open_task(&app, &task));
+                }
+                None => crate::tray::show_main(&app),
+            }
         }
         return;
     };
     // Fora da thread do sistema: abrir pode criar webview (espera a principal).
     std::thread::spawn(move || {
         crate::popover::hide(&app);
+        if target.service_id.is_empty() {
+            crate::organizer::show_tasks(&app);
+            return;
+        }
         crate::tray::show_main(&app);
         if app.state::<AppState>().lock().locked {
             return;
@@ -144,6 +172,16 @@ fn replied(id: &str, text: String) {
     });
 }
 
+/// Botão do lembrete ("snooze" ou "done"), sem trazer o app.
+fn reminder_action(id: &str, action: &str) {
+    let task = target(id).and_then(|t| t.task).or_else(|| task_of(id));
+    let (Some(app), Some(task)) = (APP.get().cloned(), task) else {
+        return;
+    };
+    let action = action.to_owned();
+    std::thread::spawn(move || crate::organizer::notification_action(&app, &task, &action));
+}
+
 #[cfg(target_os = "macos")]
 mod mac {
     use super::Target;
@@ -164,6 +202,7 @@ mod mac {
 
     const CATEGORY: &str = "papeo.reply";
     const REPLY_ACTION: &str = "reply";
+    const REMINDER_CATEGORY: &str = "papeo.reminder";
 
     /// O usuário permitiu as notificações do Papeo.
     static AUTHORIZED: AtomicBool = AtomicBool::new(false);
@@ -204,6 +243,8 @@ mod mac {
                     if let Some(text) = user_text(response) {
                         super::replied(&id, text);
                     }
+                } else if action == "snooze" || action == "done" {
+                    super::reminder_action(&id, &action);
                 } else if action == "com.apple.UNNotificationDefaultActionIdentifier" {
                     super::opened(&id);
                 }
@@ -265,7 +306,26 @@ mod mac {
                 &NSArray::new(),
                 UNNotificationCategoryOptions::empty(),
             );
-        center.setNotificationCategories(&NSSet::from_retained_slice(&[category]));
+        let button = |id: &str, title: &str| {
+            UNNotificationAction::actionWithIdentifier_title_options(
+                &NSString::from_str(id),
+                &NSString::from_str(title),
+                UNNotificationActionOptions::empty(),
+            )
+        };
+        let reminder_actions: Retained<NSArray<UNNotificationAction>> =
+            NSArray::from_retained_slice(&[
+                button("snooze", "Adiar 1 h"),
+                button("done", "Concluir"),
+            ]);
+        let reminder =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(REMINDER_CATEGORY),
+                &reminder_actions,
+                &NSArray::new(),
+                UNNotificationCategoryOptions::empty(),
+            );
+        center.setNotificationCategories(&NSSet::from_retained_slice(&[category, reminder]));
 
         let done = RcBlock::new(|granted: Bool, _error: *mut NSError| {
             AUTHORIZED.store(granted.as_bool(), Ordering::Relaxed);
@@ -289,9 +349,16 @@ mod mac {
         if sound {
             content.setSound(Some(&UNNotificationSound::defaultSound()));
         }
-        // Agrupa por conta na Central de Notificações.
-        content.setThreadIdentifier(&NSString::from_str(&target.service_id));
-        if target.reply && target.chat.is_some() {
+        // Agrupa por conta na Central de Notificações (lembretes juntos).
+        let thread = if target.task.is_some() {
+            "papeo.tasks"
+        } else {
+            target.service_id.as_str()
+        };
+        content.setThreadIdentifier(&NSString::from_str(thread));
+        if target.task.is_some() {
+            content.setCategoryIdentifier(&NSString::from_str(REMINDER_CATEGORY));
+        } else if target.reply && target.chat.is_some() {
             content.setCategoryIdentifier(&NSString::from_str(CATEGORY));
         }
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
@@ -338,13 +405,15 @@ mod win {
         out
     }
 
-    fn xml(title: &str, body: &str, sound: bool, reply: bool) -> String {
+    fn xml(title: &str, body: &str, sound: bool, reply: bool, reminder: bool) -> String {
         let audio = if sound {
             ""
         } else {
             r#"<audio silent="true"/>"#
         };
-        let actions = if reply {
+        let actions = if reminder {
+            r#"<actions><action content="Adiar 1 h" arguments="snooze" activationType="foreground"/><action content="Concluir" arguments="done" activationType="foreground"/></actions>"#
+        } else if reply {
             r#"<actions><input id="reply" type="text" placeHolderContent="Responder…"/><action content="Enviar" arguments="reply" hint-inputId="reply" activationType="foreground"/></actions>"#
         } else {
             ""
@@ -391,7 +460,13 @@ mod win {
     ) -> windows::core::Result<()> {
         let reply = target.reply && target.chat.is_some();
         let doc = XmlDocument::new()?;
-        doc.LoadXml(&HSTRING::from(xml(title, body, sound, reply)))?;
+        doc.LoadXml(&HSTRING::from(xml(
+            title,
+            body,
+            sound,
+            reply,
+            target.task.is_some(),
+        )))?;
         let toast = ToastNotification::CreateToastNotification(&doc)?;
         let id = id.to_owned();
         toast.Activated(&TypedEventHandler::new(
@@ -407,6 +482,8 @@ mod win {
                     if let Some(text) = user_text(&args) {
                         super::replied(&id, text);
                     }
+                } else if arguments == "snooze" || arguments == "done" {
+                    super::reminder_action(&id, &arguments);
                 } else {
                     super::opened(&id);
                 }
@@ -427,11 +504,32 @@ mod win {
     mod tests {
         #[test]
         fn xml_is_escaped() {
-            let xml = super::xml("Ana & <Bia>", "\"oi\"", false, true);
+            let xml = super::xml("Ana & <Bia>", "\"oi\"", false, true, false);
             assert!(xml.contains("Ana &amp; &lt;Bia&gt;"));
             assert!(xml.contains("&quot;oi&quot;"));
             assert!(xml.contains(r#"hint-inputId="reply""#));
             assert!(xml.contains(r#"silent="true""#));
+            let reminder = super::xml("Lembrete", "ligar", true, false, true);
+            assert!(reminder.contains(r#"arguments="snooze""#));
+            assert!(reminder.contains(r#"arguments="done""#));
+            assert!(!reminder.contains("reply"));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn task_id_travels_in_the_notification_id() {
+        let task = "0123456789abcdef0123456789abcdef";
+        let id = super::remember(super::Target {
+            service_id: String::new(),
+            chat: None,
+            reply: false,
+            task: Some(task.into()),
+        });
+        assert_eq!(super::task_of(&id).as_deref(), Some(task));
+        assert_eq!(super::task_of("papeo-123-4"), None);
+        assert_eq!(super::task_of("papeo-task-../x-1-2"), None);
     }
 }

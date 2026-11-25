@@ -129,6 +129,16 @@ voice.paused = true;
 timers[0]();
 check(lastMedia() === false, "áudio pausado deixa de contar");
 
+// Conversa aberta no cabeçalho (painel do contato)
+const lastChat = () => calls.filter(([c]) => c === "service_status").at(-1)[1].chat;
+check(lastChat() === "", `sem conversa aberta: ${JSON.stringify(lastChat())}`);
+const header = '#main header span[title], #main header span[dir="auto"]';
+dom[header] = { getAttribute: (a) => (a === "title" ? "  Ana   Souza " : null) };
+timers[0]();
+check(lastChat() === "Ana Souza", `conversa aberta: ${JSON.stringify(lastChat())}`);
+check(typeof docListeners.click === "function", "troca de conversa por clique é percebida");
+delete dom[header];
+
 // Abrir conversa pedida pelo Papeo (nome exato na lista)
 check(typeof window.__papeoOpenChat === "function", "abrir conversa disponível");
 try {

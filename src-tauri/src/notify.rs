@@ -15,9 +15,9 @@ pub const FOCUS_AFTER_NOTIFICATION: Duration = Duration::from_secs(20);
 
 /// Som do sistema: nome de som do macOS ou variante do toast do Windows.
 #[cfg(target_os = "macos")]
-const DEFAULT_SOUND: &str = "Glass";
+pub const DEFAULT_SOUND: &str = "Glass";
 #[cfg(not(target_os = "macos"))]
-const DEFAULT_SOUND: &str = "Default";
+pub const DEFAULT_SOUND: &str = "Default";
 
 #[tauri::command]
 pub async fn service_notify(
@@ -60,6 +60,7 @@ pub async fn service_notify(
                 && !inner.locked
                 && inner.config.settings.notification_preview != NotificationPreview::Hidden,
             chat: (!chat.is_empty()).then(|| chat.clone()),
+            task: None,
         };
         // Bloqueado: nada do conteúdo aparece.
         let preview = if inner.locked {
@@ -113,6 +114,8 @@ pub async fn service_status(
     logged_out: bool,
     // Opcional: páginas abertas antes da atualização não enviam.
     media: Option<bool>,
+    // Conversa aberta no site (nome no cabeçalho); vazio = nenhuma.
+    chat: Option<String>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
@@ -132,9 +135,26 @@ pub async fn service_status(
         if media == Some(true) {
             health.media_at = health.last_beat;
         }
+        // Conversa aberta (painel do contato). Só do próprio site.
+        let mut chat_changed = false;
+        if let Some(open) = chat.filter(|_| own_site) {
+            let open = papeo_core::clean_chat(&open);
+            let before = inner.current_chat.get(&id).cloned().unwrap_or_default();
+            if before != open {
+                chat_changed = true;
+                if open.is_empty() {
+                    inner.current_chat.remove(&id);
+                } else {
+                    inner.current_chat.insert(id.clone(), open);
+                }
+            }
+        }
         // A página está pronta: abre a conversa que esperava por ela.
-        let chat = own_site.then(|| inner.pending_chat.remove(&id)).flatten();
-        (before != status_of(&inner, &id, true), chat)
+        let pending = own_site.then(|| inner.pending_chat.remove(&id)).flatten();
+        (
+            chat_changed || before != status_of(&inner, &id, true),
+            pending,
+        )
     };
     if let Some((query, exact)) = chat {
         crate::webviews::run_open_chat(&webview, &query, exact);

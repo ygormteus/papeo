@@ -11,6 +11,7 @@
     Trash2,
     TriangleAlert,
   } from "@lucide/svelte";
+  import type { Snippet } from "svelte";
   import RecentChats from "./RecentChats.svelte";
   import { HEAVY_BYTES, freeMemory as freeMemoryOf, home, watchMemory } from "./homeState.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
@@ -33,6 +34,7 @@
     onremove,
     oncustomize,
     onchat,
+    today,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
@@ -42,6 +44,8 @@
     oncustomize: (service: ServiceView) => void;
     /** Abre a conversa (nome exato) no serviço. */
     onchat: (serviceId: string, chat: string) => void;
+    /** Cartão "Para hoje" (tarefas atrasadas e de hoje). */
+    today?: Snippet;
   } = $props();
 
   /** Acima disso (`HEAVY_BYTES`), um serviço parado vira sugestão. */
@@ -168,6 +172,8 @@
       {/each}
     </section>
   {/if}
+
+  {@render today?.()}
 
   {#if snap.recent.length}
     <section class="card block" aria-labelledby="recent-title">
