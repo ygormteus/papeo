@@ -8,6 +8,8 @@ const listeners = {};
 let qrVisible = false;
 
 globalThis.window = globalThis;
+const opened = [];
+window.open = (url, target, features) => (opened.push([url, target, features]), null);
 window.__TAURI_INTERNALS__ = { invoke: (cmd, args) => (calls.push([cmd, args]), Promise.resolve()) };
 window.setInterval = (fn) => timers.push(fn);
 window.addEventListener = (type, fn) => (listeners[type] = fn);
@@ -188,6 +190,23 @@ check((await replyResult(6)) === "ambiguous", "nome repetido");
 chatTitles.pop();
 window.__papeoReply(3, "Ana Souza", "   ");
 check((await replyResult(3)) === "empty", "texto vazio");
+
+// Links externos: endereço direto passa intacto; janela em branco repassa o
+// endereço definido depois (padrão do WhatsApp).
+window.open("https://a.example/", "_blank", "noopener");
+check(JSON.stringify(opened.at(-1)) === '["https://a.example/","_blank","noopener"]', "abertura direta intacta");
+const blank = window.open();
+blank.opener = null;
+blank.location = "https://b.example/";
+blank.location.href = "https://c.example/";
+check(opened.length === 2 && opened[1][0] === "https://b.example/", `janela em branco abre o endereço: ${JSON.stringify(opened)}`);
+window.open("about:blank", "_blank").location.href = "https://d.example/";
+check(opened.at(-1)[0] === "https://d.example/", "about:blank com location.href");
+window.open("", "_blank").location.replace("https://e.example/");
+check(opened.at(-1)[0] === "https://e.example/", "location.replace");
+const unused = window.open("");
+unused.close();
+check(opened.length === 4 && unused.closed, "janela em branco fechada não abre nada");
 
 if (failures.length) {
   console.error("FALHOU:", failures.join("; "));

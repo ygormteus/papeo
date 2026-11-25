@@ -14,6 +14,38 @@
     }
   };
 
+  // Links externos: o Papeo nega janelas novas e manda o endereço para o
+  // navegador padrão. Alguns sites (o WhatsApp) abrem antes uma janela em
+  // branco e só depois definem o endereço; o Papeo veria só "about:blank" e o
+  // link não abriria. Aqui a janela em branco é de mentira e, quando o site
+  // define o endereço, a abertura vai com ele.
+  const nativeOpen = window.open;
+  const isBlank = (url) => url === undefined || url === null || String(url) === "" || String(url) === "about:blank";
+  window.open = function (url, target, features) {
+    if (!isBlank(url) || typeof nativeOpen !== "function") return nativeOpen?.call(window, url, target, features) ?? null;
+    let sent = false;
+    const go = (next) => {
+      if (sent || isBlank(next)) return;
+      sent = true;
+      nativeOpen.call(window, String(next), "_blank", "noopener");
+    };
+    const loc = { assign: go, replace: go, reload() {}, toString: () => "about:blank" };
+    Object.defineProperty(loc, "href", { get: () => "about:blank", set: go });
+    const popup = {
+      opener: null,
+      closed: false,
+      focus() {},
+      blur() {},
+      close() {
+        popup.closed = true;
+      },
+      postMessage() {},
+      document: { title: "", write() {}, writeln() {}, open() {}, close() {} },
+    };
+    Object.defineProperty(popup, "location", { get: () => loc, set: go });
+    return popup;
+  };
+
   // Tela de login/QR visível = sessão desconectada (só mensageiros conhecidos).
   const LOGGED_OUT_SELECTORS = {
     "web.whatsapp.com": '[data-ref] canvas, canvas[aria-label*="QR" i], canvas[aria-label*="scan" i]',
