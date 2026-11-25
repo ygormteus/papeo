@@ -49,6 +49,7 @@ const COMMANDS: &[&str] = &[
     "snooze_task",
     "delete_task",
     "save_note",
+    "show_task",
     "service_notify",
     "service_status",
 ];

@@ -39,6 +39,15 @@ export interface ServiceView {
   chat?: string | null;
 }
 
+export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
+
+export const REPEAT_OPTIONS: { value: Repeat; label: string }[] = [
+  { value: "daily", label: "Todo dia" },
+  { value: "weekdays", label: "Dias úteis" },
+  { value: "weekly", label: "Toda semana" },
+  { value: "monthly", label: "Todo mês" },
+];
+
 /** Tarefa; com `remindAt`, é um lembrete. */
 export interface Task {
   id: string;
@@ -53,6 +62,8 @@ export interface Task {
   reminded?: number;
   /** `Contact.id`; sem valor = tarefa solta. */
   contact?: string;
+  /** Repete (concluir passa para a próxima vez). */
+  repeat?: Repeat;
   createdAt: number;
   updatedAt: number;
 }
@@ -89,6 +100,7 @@ export interface TaskFields {
   link?: ChatLink | null;
   /** …ou mantém este contato. Sem os dois: tarefa solta. */
   contactId?: string | null;
+  repeat?: Repeat | null;
 }
 
 export interface QuietHours {
@@ -301,10 +313,18 @@ export const api = {
   getOrganizer: () => invoke<Organizer>("get_organizer"),
   /** Cria (`id` nulo) ou altera uma tarefa. */
   saveTask: (id: string | null, task: TaskFields) => invoke<Organizer>("save_task", { id, task }),
-  setTaskDone: (id: string, done: boolean) => invoke<Organizer>("set_task_done", { id, done }),
+  /** `seen`: a vez que a pessoa viu (tarefa que repete não pula duas). */
+  setTaskDone: (id: string, done: boolean, seen?: Pick<Task, "remindAt" | "due">) =>
+    invoke<Organizer>("set_task_done", {
+      id,
+      done,
+      seen: seen ? { remindAt: seen.remindAt ?? null, due: seen.due ?? null } : null,
+    }),
   /** Adia o aviso para `until` (segundos Unix). */
   snoozeTask: (id: string, until: number) => invoke<Organizer>("snooze_task", { id, until }),
   deleteTask: (id: string) => invoke<Organizer>("delete_task", { id }),
+  /** Mini janela: abre o app na conversa da tarefa (ou em Tarefas). */
+  showTask: (id: string) => invoke<void>("show_task", { id }),
   /** Anotação de uma conversa (`link`) ou de um contato existente. */
   saveNote: (target: { link?: ChatLink; contactId?: string }, note: string) =>
     invoke<Organizer>("save_note", {

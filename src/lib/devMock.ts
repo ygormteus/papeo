@@ -134,6 +134,7 @@ export function installDevMock() {
     addTask({ text: "Pagar o contador", due: dateKey(addDays(startOfDay(today), 2)) });
     addTask({ text: "Ligar para a Ana sobre a entrega", contact: ana, remindAt: at(addDays(today, 1), 9) });
     addTask({ text: "Comprar presente da Marina" });
+    addTask({ text: "Enviar relatório semanal", remindAt: at(addDays(today, 2), 10), repeat: "weekly" });
     addTask({ text: "Enviar fotos da obra", contact: ana, done: true, doneAt: Math.floor(ms() / 1000) });
     services[0].chat = "Ana Souza";
   }
@@ -353,6 +354,7 @@ export function installDevMock() {
           remindAt?: number | null;
           link?: { serviceId: string; chat: string } | null;
           contactId?: string | null;
+          repeat?: Task["repeat"] | null;
         };
         if (!f.text.trim()) throw "Escreva a tarefa.";
         const contact = f.link ? contactFor(f.link.serviceId, f.link.chat) : (f.contactId ?? undefined);
@@ -361,6 +363,7 @@ export function installDevMock() {
           due: f.due ?? undefined,
           remindAt: f.remindAt ?? undefined,
           contact,
+          repeat: (f.due || f.remindAt) && f.repeat ? f.repeat : undefined,
           updatedAt: ms(),
         };
         if (args.id) Object.assign(taskById(args.id), fields);
@@ -369,6 +372,14 @@ export function installDevMock() {
       }
       case "set_task_done": {
         const t = taskById(args.id);
+        // Repete: vai para a próxima vez (aproximado no mock).
+        const days = { daily: 1, weekdays: 1, weekly: 7, monthly: 30 }[t.repeat ?? "daily"];
+        if (args.done && t.repeat) {
+          if (t.remindAt) t.remindAt += days * 86_400;
+          if (t.due) t.due = dateKey(addDays(new Date(`${t.due}T00:00`), days));
+          t.doneAt = Math.floor(ms() / 1000);
+          return visible();
+        }
         t.done = Boolean(args.done);
         t.doneAt = t.done ? Math.floor(ms() / 1000) : undefined;
         return visible();
@@ -376,6 +387,12 @@ export function installDevMock() {
       case "snooze_task":
         Object.assign(taskById(args.id), { remindAt: Number(args.until), done: false });
         return visible();
+      case "show_task": {
+        const t = taskById(args.id);
+        const c = org.contacts.find((x) => x.id === t.contact);
+        if (c) active = c.serviceId;
+        return null;
+      }
       case "delete_task":
         org.tasks.splice(org.tasks.indexOf(taskById(args.id)), 1);
         return visible();

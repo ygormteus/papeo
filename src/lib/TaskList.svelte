@@ -1,9 +1,10 @@
 <script lang="ts" module>
-  import type { Contact, TaskFields } from "./api";
+  import type { Contact, Task, TaskFields } from "./api";
 
   /** Ações sobre tarefas, definidas uma vez no App. */
   export interface TaskActions {
-    done: (id: string, done: boolean) => void;
+    /** Devolve quando terminar (o botão fica parado até lá). */
+    done: (task: Task, done: boolean) => Promise<void>;
     snooze: (id: string, until: number) => void;
     remove: (id: string) => void;
     edit: (id: string, fields: TaskFields) => Promise<void>;
@@ -13,7 +14,7 @@
 
 <script lang="ts">
   import { ChevronDown, ChevronRight } from "@lucide/svelte";
-  import type { Organizer, ServiceView, Task } from "./api";
+  import type { Organizer, ServiceView } from "./api";
   import TaskItem from "./TaskItem.svelte";
   import { GROUP_LABEL, contactOf, groupTasks } from "./tasks";
 
@@ -65,7 +66,7 @@
             {services}
             {now}
             {showContact}
-            ondone={(done) => actions.done(task.id, done)}
+            ondone={(done) => actions.done(task, done)}
             onsnooze={(until) => actions.snooze(task.id, until)}
             ondelete={() => actions.remove(task.id)}
             onedit={(fields) => actions.edit(task.id, fields)}

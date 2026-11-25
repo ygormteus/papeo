@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { CirclePlus, House, MessageCircle, Search } from "@lucide/svelte";
+  import { CirclePlus, House, ListTodo, MessageCircle, NotebookPen, Search, SquareCheck } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { searchable, type RecentChat, type ServiceView } from "./api";
+  import { searchable, type Contact, type Organizer, type RecentChat, type ServiceView } from "./api";
+  import { contactLabel, contactOf, whenLabel } from "./tasks";
 
   let {
     services,
@@ -11,9 +12,16 @@
     onselect,
     onadd,
     onchat,
+    org,
+    ontasks,
+    oncontact,
   }: {
     services: ServiceView[];
     recent: RecentChat[];
+    org: Organizer;
+    ontasks: () => void;
+    /** Abre a conversa do contato com o painel. */
+    oncontact: (contact: Contact) => void;
     onclose: () => void;
     onselect: (id: string | null) => void;
     onadd: () => void;
@@ -21,7 +29,7 @@
     onchat: (serviceId: string, query: string, exact: boolean) => void;
   } = $props();
 
-  type Kind = "service" | "chat" | "search" | "home" | "add";
+  type Kind = "service" | "chat" | "search" | "home" | "add" | "task" | "note" | "tasks";
   type Entry = {
     key: string;
     kind: Kind;
@@ -85,11 +93,52 @@
         }))
       : [];
 
+    // Tarefas e anotações (busca no texto; "#cliente" acha anotações
+    // marcadas assim).
+    const now = new Date();
+    const live = (c: Contact) => services.some((s) => s.id === c.serviceId);
+    const tasks: Entry[] = raw
+      ? org.tasks
+          .filter((t) => has(t.text))
+          .sort((a, b) => Number(a.done) - Number(b.done))
+          .slice(0, 5)
+          .map((t) => {
+            const c = contactOf(org, t);
+            const when = t.done ? "feita" : whenLabel(t, now);
+            const who = c ? contactLabel(c, services.find((s) => s.id === c.serviceId)?.name) : "";
+            return {
+              key: `task-${t.id}`,
+              kind: "task",
+              group: "Tarefas",
+              label: clip(t.text, 60),
+              detail: [when, who].filter(Boolean).join(" · "),
+              run: () => (c && live(c) ? oncontact(c) : ontasks()),
+            };
+          })
+      : [];
+    const notes: Entry[] = raw
+      ? org.contacts
+          .filter((c) => c.note && has(c.note, c.chat))
+          .slice(0, 5)
+          .map((c) => {
+            const line = c.note.split("\n").find((l) => normalize(l).includes(q)) ?? c.note.split("\n")[0];
+            return {
+              key: `note-${c.id}`,
+              kind: "note",
+              group: "Anotações",
+              label: contactLabel(c, services.find((s) => s.id === c.serviceId)?.name),
+              detail: clip(line.trim(), 44),
+              run: () => (live(c) ? oncontact(c) : ontasks()),
+            };
+          })
+      : [];
+
     const extras: Entry[] = [
       { key: "home", kind: "home", group: "Papeo", label: "Início", run: () => onselect(null) },
+      { key: "tasks", kind: "tasks", group: "Papeo", label: "Tarefas", run: ontasks },
       { key: "add", kind: "add", group: "Papeo", label: "Adicionar serviço", run: onadd },
     ];
-    return [...accounts, ...chats, ...searches, ...extras.filter((e) => has(e.label))];
+    return [...accounts, ...chats, ...tasks, ...notes, ...searches, ...extras.filter((e) => has(e.label))];
   });
 
   $effect(() => {
@@ -116,7 +165,7 @@
     <input
       bind:value={query}
       onkeydown={keydown}
-      placeholder="Ir para uma conta ou buscar um contato…"
+      placeholder="Ir para uma conta, buscar contato, tarefa ou anotação…"
       autofocus
       autocomplete="off"
       autocorrect="off"
@@ -150,6 +199,12 @@
           <span class="glyph"><Search size={17} /></span>
         {:else if entry.kind === "home"}
           <span class="glyph"><House size={17} /></span>
+        {:else if entry.kind === "task"}
+          <span class="glyph"><SquareCheck size={17} /></span>
+        {:else if entry.kind === "note"}
+          <span class="glyph"><NotebookPen size={17} /></span>
+        {:else if entry.kind === "tasks"}
+          <span class="glyph"><ListTodo size={17} /></span>
         {:else}
           <span class="glyph"><CirclePlus size={17} /></span>
         {/if}

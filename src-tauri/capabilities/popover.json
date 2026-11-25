@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "popover",
-  "description": "Mini janela da barra de menus/bandeja (interface local): lê o estado, responde conversas e leva ao app. Sem os demais comandos da interface.",
+  "description": "Mini janela da barra de menus/bandeja (interface local): lê o estado, responde conversas, vê e conclui os próximos lembretes e leva ao app. Sem os demais comandos da interface.",
   "webviews": ["popover"],
   "permissions": [
     "core:event:default",
@@ -10,6 +10,9 @@
     "allow-show-app",
     "allow-hide-popover",
     "allow-set-dnd",
-    "allow-lock-now"
+    "allow-lock-now",
+    "allow-get-organizer",
+    "allow-set-task-done",
+    "allow-show-task"
   ]
 }

@@ -61,6 +61,7 @@ pub async fn service_notify(
                 && inner.config.settings.notification_preview != NotificationPreview::Hidden,
             chat: (!chat.is_empty()).then(|| chat.clone()),
             task: None,
+            remind_at: None,
         };
         // Bloqueado: nada do conteúdo aparece.
         let preview = if inner.locked {

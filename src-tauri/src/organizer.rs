@@ -6,7 +6,7 @@
 
 use crate::notifications::Target;
 use crate::state::{now_secs, publish, AppState, Inner, UI_WEBVIEW};
-use papeo_core::{ContactRef, NotificationPreview, Organizer, TaskInput};
+use papeo_core::{ContactRef, NotificationPreview, Organizer, Repeat, TaskInput};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -54,6 +54,139 @@ fn local_day() -> (String, u64, u64) {
         .and_then(start_of)
         .unwrap_or(start + 86_400);
     (today.format("%Y-%m-%d").to_string(), start, end)
+}
+
+/// A data `n` passos depois de `start` (mês: mesmo dia, ou o último do mês).
+fn step(start: chrono::NaiveDate, repeat: Repeat, n: u32) -> Option<chrono::NaiveDate> {
+    use chrono::{Datelike, Days, Months, Weekday};
+    match repeat {
+        Repeat::Daily => start.checked_add_days(Days::new(u64::from(n))),
+        Repeat::Weekly => start.checked_add_days(Days::new(7 * u64::from(n))),
+        Repeat::Monthly => start.checked_add_months(Months::new(n)),
+        Repeat::Weekdays => {
+            let mut d = start;
+            let mut left = n;
+            while left > 0 {
+                d = d.succ_opt()?;
+                if !matches!(d.weekday(), Weekday::Sat | Weekday::Sun) {
+                    left -= 1;
+                }
+            }
+            Some(d)
+        }
+    }
+}
+
+/// Passos já "vencidos" entre o dia-base e hoje, para não andar dia a dia
+/// desde um início muito antigo (fica um pouco antes; o laço completa).
+fn skip_ahead(start: chrono::NaiveDate, today: chrono::NaiveDate, repeat: Repeat) -> u32 {
+    use chrono::Datelike;
+    let days = (today - start).num_days().max(0);
+    let k = match repeat {
+        Repeat::Daily => days - 2,
+        Repeat::Weekly => days / 7 - 1,
+        Repeat::Weekdays => days * 5 / 7 - 3,
+        Repeat::Monthly => {
+            i64::from(today.year() - start.year()) * 12 + i64::from(today.month0())
+                - i64::from(start.month0())
+                - 1
+        }
+    };
+    u32::try_from(k.max(1)).unwrap_or(1)
+}
+
+/// Próxima vez de uma tarefa que repete: a primeira depois de agora e da
+/// vez atual, contada a partir do horário-base (adiar não muda a série).
+/// Devolve o novo lembrete e/ou a nova data.
+fn next_occurrence(task: &papeo_core::Task, now: u64) -> Option<(Option<u64>, Option<String>)> {
+    use chrono::{Local, NaiveDate, TimeZone};
+    let repeat = task.repeat?;
+    let to_secs = |t: chrono::NaiveDateTime| {
+        Local
+            .from_local_datetime(&t)
+            .earliest()
+            .or_else(|| {
+                Local
+                    .from_local_datetime(&(t + chrono::Duration::hours(1)))
+                    .earliest()
+            })
+            .map(|t| t.timestamp().max(0) as u64)
+    };
+    let today = Local::now().date_naive();
+    if let Some(base) = task.anchor_at.or(task.remind_at) {
+        let start = Local
+            .timestamp_opt(i64::try_from(base).ok()?, 0)
+            .single()?
+            .naive_local();
+        let after = now.max(task.remind_at.unwrap_or(0));
+        let first = skip_ahead(start.date(), today, repeat);
+        for n in first..first + 800 {
+            let date = step(start.date(), repeat, n)?;
+            let next = to_secs(date.and_time(start.time()))?;
+            if next > after {
+                let due = task
+                    .due
+                    .is_some()
+                    .then(|| date.format("%Y-%m-%d").to_string());
+                return Some((Some(next), due));
+            }
+        }
+        return None;
+    }
+    let base = task.anchor_due.as_deref().or(task.due.as_deref())?;
+    let start = NaiveDate::parse_from_str(base, "%Y-%m-%d").ok()?;
+    let current = task
+        .due
+        .as_deref()
+        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .unwrap_or(start);
+    let after = today.max(current);
+    let first = skip_ahead(start, today, repeat);
+    for n in first..first + 800 {
+        let date = step(start, repeat, n)?;
+        if date > after {
+            return Some((None, Some(date.format("%Y-%m-%d").to_string())));
+        }
+    }
+    None
+}
+
+/// A vez da tarefa que a pessoa viu ao concluir (lembrete e/ou dia). Se a
+/// tarefa já passou para outra vez (concluída em outro lugar, clique
+/// repetido), concluir de novo não faz nada.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Occurrence {
+    #[serde(default)]
+    pub remind_at: Option<u64>,
+    #[serde(default)]
+    pub due: Option<String>,
+}
+
+/// Concluir: tarefa que repete passa para a próxima vez; as outras fecham.
+fn complete(
+    inner: &mut Inner,
+    id: &str,
+    now: u64,
+    seen: Option<&Occurrence>,
+) -> Result<(), String> {
+    let task = inner
+        .organizer
+        .task(id)
+        .ok_or_else(|| "Tarefa não encontrada.".to_owned())?;
+    if task.repeat.is_some() {
+        if let Some(seen) = seen {
+            let same =
+                seen.remind_at == task.remind_at && (seen.due.is_none() || seen.due == task.due);
+            if !same {
+                return Ok(());
+            }
+        }
+    }
+    match next_occurrence(task, now / 1000) {
+        Some((remind_at, due)) => inner.organizer.advance(id, remind_at, due, now),
+        None => inner.organizer.set_done(id, true, now),
+    }
 }
 
 pub fn counts(inner: &Inner) -> TaskCounts {
@@ -145,6 +278,8 @@ pub struct TaskFields {
     /// …ou manter este contato (conta removida, por exemplo).
     #[serde(default)]
     pub contact_id: Option<String>,
+    #[serde(default)]
+    pub repeat: Option<Repeat>,
 }
 
 fn task_input(inner: &Inner, fields: TaskFields) -> Result<TaskInput, String> {
@@ -158,6 +293,7 @@ fn task_input(inner: &Inner, fields: TaskFields) -> Result<TaskInput, String> {
         remind_at: fields.remind_at,
         contact,
         contact_id: fields.contact_id,
+        repeat: fields.repeat,
     })
 }
 
@@ -195,9 +331,20 @@ pub async fn save_task(
 }
 
 #[tauri::command]
-pub async fn set_task_done(app: AppHandle, id: String, done: bool) -> CmdResult<Organizer> {
+pub async fn set_task_done(
+    app: AppHandle,
+    id: String,
+    done: bool,
+    seen: Option<Occurrence>,
+) -> CmdResult<Organizer> {
     ensure_unlocked(&app)?;
-    change(&app, |inner, now| inner.organizer.set_done(&id, done, now))?;
+    change(&app, |inner, now| {
+        if done {
+            complete(inner, &id, now, seen.as_ref())
+        } else {
+            inner.organizer.set_done(&id, false, now)
+        }
+    })?;
     Ok(view(&app))
 }
 
@@ -279,6 +426,7 @@ pub fn tick(app: &AppHandle) {
                 chat: None,
                 reply: false,
                 task: None,
+                remind_at: None,
             };
             vec![(
                 "Lembretes".to_owned(),
@@ -318,6 +466,7 @@ pub fn tick(app: &AppHandle) {
                         chat,
                         reply: false,
                         task: Some(task.id.clone()),
+                        remind_at: task.remind_at,
                     };
                     (title, body, target)
                 })
@@ -356,19 +505,34 @@ fn reminder_text(
     }
 }
 
-/// Botões da notificação: "Adiar 1 h" e "Concluir".
-pub fn notification_action(app: &AppHandle, task: &str, action: &str) {
+/// Botões da notificação: "Adiar 1 h" e "Concluir". `remind_at`: a vez
+/// que a notificação avisou.
+pub fn notification_action(app: &AppHandle, task: &str, remind_at: Option<u64>, action: &str) {
     let task = task.to_owned();
     let result = match action {
         "snooze" => change(app, |inner, now| {
             inner.organizer.snooze(&task, now / 1000 + SNOOZE_SECS, now)
         }),
-        "done" => change(app, |inner, now| inner.organizer.set_done(&task, true, now)),
+        "done" => change(app, |inner, now| {
+            let seen = remind_at.map(|at| Occurrence {
+                remind_at: Some(at),
+                due: None,
+            });
+            complete(inner, &task, now, seen.as_ref())
+        }),
         _ => Ok(()),
     };
     if let Err(err) = result {
         eprintln!("papeo: ação do lembrete falhou ({err})");
     }
+}
+
+/// Mini janela: abre o app na conversa da tarefa (ou em Tarefas).
+#[tauri::command]
+pub async fn show_task(app: AppHandle, id: String) -> CmdResult {
+    crate::popover::hide(&app);
+    open_task(&app, &id);
+    Ok(())
 }
 
 /// Clique num lembrete de antes de reabrir o app: abre a conversa ligada
@@ -429,6 +593,107 @@ mod tests {
             reminder_text(NotificationPreview::Full, None, "x").0,
             "Lembrete"
         );
+    }
+
+    #[test]
+    fn repeats_move_to_the_next_time_after_now() {
+        use chrono::{Local, TimeZone};
+        let at = |y, m, d, h| {
+            Local
+                .with_ymd_and_hms(y, m, d, h, 0, 0)
+                .unwrap()
+                .timestamp() as u64
+        };
+        let task = |repeat, remind: u64| papeo_core::Task {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            text: "t".into(),
+            done: false,
+            done_at: None,
+            due: None,
+            remind_at: Some(remind),
+            reminded: None,
+            contact: None,
+            repeat: Some(repeat),
+            anchor_at: Some(remind),
+            anchor_due: None,
+            created_at: 0,
+            updated_at: 0,
+            deleted: false,
+        };
+        // Quarta 25/11/2026 9h, concluída na quinta 26 às 10h.
+        let now = at(2026, 11, 26, 10);
+        let next = |r| {
+            next_occurrence(&task(r, at(2026, 11, 25, 9)), now)
+                .unwrap()
+                .0
+                .unwrap()
+        };
+        assert_eq!(next(Repeat::Daily), at(2026, 11, 27, 9));
+        assert_eq!(next(Repeat::Weekly), at(2026, 12, 2, 9));
+        assert_eq!(next(Repeat::Monthly), at(2026, 12, 25, 9));
+        assert_eq!(next(Repeat::Weekdays), at(2026, 11, 27, 9));
+        let friday = task(Repeat::Weekdays, at(2026, 11, 27, 9));
+        assert_eq!(
+            next_occurrence(&friday, at(2026, 11, 27, 10)).unwrap().0,
+            Some(at(2026, 11, 30, 9))
+        );
+
+        // Adiado (lembrete às 10h02): a série continua às 9h.
+        let mut snoozed = task(Repeat::Daily, at(2026, 11, 25, 9));
+        snoozed.remind_at = Some(at(2026, 11, 25, 10) + 120);
+        assert_eq!(
+            next_occurrence(&snoozed, at(2026, 11, 25, 10) + 200)
+                .unwrap()
+                .0,
+            Some(at(2026, 11, 26, 9))
+        );
+
+        // Todo dia 31: 31/01 → 28/02 → 31/03 (não fica preso no 28).
+        let mut monthly = task(Repeat::Monthly, at(2027, 1, 31, 8));
+        let feb = next_occurrence(&monthly, at(2027, 1, 31, 9))
+            .unwrap()
+            .0
+            .unwrap();
+        assert_eq!(feb, at(2027, 2, 28, 8));
+        monthly.remind_at = Some(feb);
+        assert_eq!(
+            next_occurrence(&monthly, feb + 60).unwrap().0,
+            Some(at(2027, 3, 31, 8))
+        );
+
+        // Começo muito antigo: ainda acha a próxima (sem fechar a tarefa).
+        let old = task(Repeat::Daily, at(2015, 1, 1, 7));
+        let n = next_occurrence(&old, now).unwrap().0.unwrap();
+        assert!(n > now && n - now <= 86_400);
+    }
+
+    #[test]
+    fn completing_a_stale_occurrence_does_nothing() {
+        let mut inner = Inner::new(papeo_core::Config::default());
+        let now = now_ms();
+        let first = now / 1000 - 600;
+        let id = inner
+            .organizer
+            .add_task(
+                &TaskInput {
+                    text: "tomar remédio".into(),
+                    remind_at: Some(first),
+                    repeat: Some(Repeat::Daily),
+                    ..Default::default()
+                },
+                now,
+            )
+            .unwrap();
+        let seen = Occurrence {
+            remind_at: Some(first),
+            due: None,
+        };
+        complete(&mut inner, &id, now, Some(&seen)).unwrap();
+        let after = inner.organizer.task(&id).unwrap().remind_at;
+        assert!(after > Some(first));
+        // A mesma notificação (ou um segundo clique) não pula mais um dia.
+        complete(&mut inner, &id, now + 1, Some(&seen)).unwrap();
+        assert_eq!(inner.organizer.task(&id).unwrap().remind_at, after);
     }
 
     #[test]

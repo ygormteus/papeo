@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { AlarmClock, CalendarDays, Link2, X } from "@lucide/svelte";
-  import type { ChatLink, Task, TaskFields } from "./api";
+  import { AlarmClock, CalendarDays, Link2, Repeat as RepeatIcon, Sparkles, X } from "@lucide/svelte";
+  import { REPEAT_OPTIONS, type ChatLink, type Repeat, type Task, type TaskFields } from "./api";
   import { dateKey, fromInputs, quickTimes, toTimeInput, whenLabel } from "./tasks";
+  import { parseWhen } from "./when";
 
   let {
     link = null,
@@ -38,6 +39,10 @@
   let remindAt = $state<number | null>(initial?.remindAt ?? null);
   let due = $state<string | null>(initial?.due ?? null);
   let linked = $state(true);
+  let repeat = $state<Repeat | "">(initial?.repeat ?? "");
+  // Data escrita no texto ("amanhã 15h") que a pessoa preferiu ignorar.
+  // Editando: o texto atual não é relido (só se for mudado).
+  let ignoredText = $state<string | null>(initial?.text ?? null);
   let picking = $state(false);
   let pickDate = $state("");
   let pickTime = $state("");
@@ -53,6 +58,27 @@
     ),
   );
   const hasLink = $derived(linked && (!!link || !!keepContact));
+  // Só lê a data do texto se nenhuma foi escolhida nos botões.
+  const parsed = $derived(
+    remindAt == null && due == null && text !== ignoredText ? parseWhen(text, now) : null,
+  );
+  const parsedLabel = $derived(
+    parsed
+      ? whenLabel(
+          {
+            id: "",
+            text: "",
+            done: false,
+            createdAt: 0,
+            updatedAt: 0,
+            remindAt: parsed.remindAt ?? undefined,
+            due: parsed.due ?? undefined,
+          },
+          now,
+        )
+      : null,
+  );
+  const dated = $derived(remindAt != null || due != null || !!parsed);
   const label = $derived(link ? linkLabel : keepLabel);
 
   function choose(at: number) {
@@ -94,16 +120,19 @@
     error = "";
     try {
       await onsave({
-        text,
-        due,
-        remindAt,
+        text: parsed ? parsed.text : text,
+        due: parsed ? parsed.due : due,
+        remindAt: parsed ? parsed.remindAt : remindAt,
         link: hasLink && link ? link : null,
         contactId: hasLink && !link ? keepContact : null,
+        repeat: dated && repeat ? repeat : null,
       });
       if (!task) {
         text = "";
         clearWhen();
         linked = true;
+        repeat = "";
+        ignoredText = null;
         input?.focus();
       }
     } catch (err) {
@@ -131,6 +160,18 @@
     maxlength="500"
     aria-label="Texto da tarefa"
   />
+  {#if parsed && parsedLabel}
+    <div class="row">
+      <span class="chip set parsed" title="Lido do texto: “{parsed.match}”">
+        <Sparkles size={13} />
+        {parsedLabel}
+        <button type="button" class="x" onclick={() => (ignoredText = text)} aria-label="Não usar a data do texto">
+          <X size={12} />
+        </button>
+      </span>
+      <span class="hint">“{parsed.match}” sai do texto</span>
+    </div>
+  {/if}
   <div class="row">
     {#if when}
       <span class="chip set">
@@ -155,6 +196,19 @@
       <input type="time" bind:value={pickTime} aria-label="Hora (vazia: só o dia, sem aviso)" />
       <button type="button" class="btn small" onclick={applyPicker}>Usar</button>
       <span class="hint">Sem hora: vence no dia, sem aviso.</span>
+    </div>
+  {/if}
+  {#if dated}
+    <div class="row">
+      <label class="chip repeat" class:set={!!repeat}>
+        <RepeatIcon size={13} />
+        <select bind:value={repeat} aria-label="Repetir">
+          <option value="">Não repete</option>
+          {#each REPEAT_OPTIONS as o (o.value)}
+            <option value={o.value}>{o.label}</option>
+          {/each}
+        </select>
+      </label>
     </div>
   {/if}
   {#if (link || keepContact) && label}
@@ -237,6 +291,18 @@
     color: var(--text);
     background: var(--bg-subtle);
     padding-right: 3px;
+  }
+
+  .parsed {
+    color: var(--accent);
+  }
+
+  .repeat select {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 12.5px;
+    padding: 0 2px;
   }
 
   .ellipsis {

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { AlarmClock, Check, MessageCircle, Pencil, Trash2 } from "@lucide/svelte";
-  import type { Contact, ServiceView, Task, TaskFields } from "./api";
+  import { AlarmClock, Check, MessageCircle, Pencil, Repeat, Trash2 } from "@lucide/svelte";
+  import { REPEAT_OPTIONS, type Contact, type ServiceView, type Task, type TaskFields } from "./api";
   import TaskForm from "./TaskForm.svelte";
   import { contactLabel, groupOf, quickTimes, whenLabel } from "./tasks";
 
@@ -21,7 +21,7 @@
     services: ServiceView[];
     now: Date;
     showContact?: boolean;
-    ondone: (done: boolean) => void;
+    ondone: (done: boolean) => Promise<void>;
     onsnooze: (until: number) => void;
     ondelete: () => void;
     onedit: (fields: TaskFields) => Promise<void>;
@@ -31,6 +31,17 @@
 
   let editing = $state(false);
   let snoozing = $state(false);
+  let busy = $state(false);
+
+  async function toggle() {
+    if (busy) return;
+    busy = true;
+    try {
+      await ondone(!task.done);
+    } finally {
+      busy = false;
+    }
+  }
 
   const service = $derived(contact ? services.find((s) => s.id === contact.serviceId) : undefined);
   const label = $derived(
@@ -58,7 +69,8 @@
     <button
       class="check"
       class:on={task.done}
-      onclick={() => ondone(!task.done)}
+      onclick={toggle}
+      disabled={busy}
       aria-label={task.done ? `Reabrir: ${task.text}` : `Concluir: ${task.text}`}
       aria-pressed={task.done}
     >
@@ -73,6 +85,12 @@
               {#if task.remindAt}<AlarmClock size={12} />{/if}
               {late ? "Atrasada · " : ""}{when}
             </span>
+            {#if task.repeat}
+              <span class="when">
+                <Repeat size={12} />
+                {REPEAT_OPTIONS.find((o) => o.value === task.repeat)?.label}
+              </span>
+            {/if}
           {/if}
           {#if showContact && contact}
             {#if service && onopen}

@@ -229,7 +229,7 @@
 
   /** Ações das listas de tarefas (Início, página Tarefas, painel). */
   const taskActions: TaskActions = {
-    done: (id, done) => quiet(orgRun(api.setTaskDone(id, done))),
+    done: (task, done) => quiet(orgRun(api.setTaskDone(task.id, done, task))),
     snooze: (id, until) => quiet(orgRun(api.snoozeTask(id, until))),
     remove: (id) => {
       quiet(orgRun(api.deleteTask(id)));
@@ -574,6 +574,9 @@
     onselect={select}
     onadd={openAdd}
     onchat={openChat}
+    {org}
+    ontasks={openTasks}
+    oncontact={taskActions.open}
   />
 {/if}
 

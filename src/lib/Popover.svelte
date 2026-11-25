@@ -1,15 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { BellOff, Bell, ExternalLink, Lock, LockOpen } from "@lucide/svelte";
+  import { AlarmClock, BellOff, Bell, ExternalLink, Lock, LockOpen } from "@lucide/svelte";
   import RecentChats from "./RecentChats.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import {
     api,
+    EMPTY_ORGANIZER,
     EMPTY_SNAPSHOT,
     modKey,
+    onOrganizer,
     onState,
+    type Organizer,
     type Snapshot,
   } from "./api";
+  import { groupOf, sortTasks, whenLabel } from "./tasks";
 
   // Mini janela da barra de menus (macOS) / bandeja (Windows): conversas
   // recentes com resposta rápida. Some ao perder o foco (backend).
@@ -35,9 +39,33 @@
   const withUnread = $derived(snap.services.filter((s) => s.unread > 0));
   const hidden = $derived(snap.settings.notificationPreview === "hidden");
 
+  // Próximos lembretes (atrasados, de hoje e os seguintes com data).
+  let org = $state<Organizer>(EMPTY_ORGANIZER);
+  let now = $state(new Date());
+  const locked = $derived(snap.locked);
+  $effect(() => {
+    if (locked) org = EMPTY_ORGANIZER;
+    else api.getOrganizer().then((o) => (org = o)).catch(() => {});
+  });
+  const upcoming = $derived(
+    sortTasks(org.tasks.filter((t) => !t.done && (t.remindAt != null || t.due != null))).slice(0, 3),
+  );
+
+  let busy = $state<string | null>(null);
+  async function done(t: Organizer["tasks"][number]) {
+    if (busy) return;
+    busy = t.id;
+    org = await api.setTaskDone(t.id, true, t).catch(() => org);
+    busy = null;
+  }
+
   onMount(() => {
     api.getState().then((s) => (snap = s));
     const off = onState((s) => (snap = s));
+    const offOrg = onOrganizer((o) => {
+      if (!snap.locked) org = o;
+    });
+    const clock = setInterval(() => (now = new Date()), 30_000);
     const onScheme = (e: MediaQueryListEvent) => (systemIsDark = e.matches);
     systemDark.addEventListener("change", onScheme);
     const onKey = (e: KeyboardEvent) => {
@@ -49,6 +77,8 @@
     window.addEventListener("focus", onFocus);
     return () => {
       off.then((f) => f());
+      offOrg.then((f) => f());
+      clearInterval(clock);
       systemDark.removeEventListener("change", onScheme);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("focus", onFocus);
@@ -114,6 +144,27 @@
         onopen={(id, chat) => go(id, chat)}
         autoOpen
       />
+    {/if}
+
+    {#if !snap.locked && upcoming.length}
+      <section class="reminders" aria-label="Próximos lembretes">
+        <h2><AlarmClock size={13} /> Próximos lembretes</h2>
+        {#each upcoming as t (t.id)}
+          <div class="reminder">
+            <button
+              class="tick"
+              disabled={busy === t.id}
+              onclick={() => done(t)}
+              aria-label={hidden ? "Concluir lembrete" : `Concluir: ${t.text}`}
+            ></button>
+            <button class="what" onclick={() => api.showTask(t.id).catch(() => {})} title="Abrir">
+              <!-- Prévia oculta: só a hora, sem o texto (como as conversas). -->
+              <span class="text">{hidden ? "Lembrete" : t.text}</span>
+              <span class="when" class:late={groupOf(t, now) === "overdue"}>{whenLabel(t, now)}</span>
+            </button>
+          </div>
+        {/each}
+      </section>
     {/if}
 
     {#if !snap.locked && withUnread.length}
@@ -235,6 +286,86 @@
 
   .empty .btn {
     margin-top: 14px;
+  }
+
+  .reminders {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .reminders h2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 2px;
+    padding: 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .reminder {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px;
+    border-radius: 8px;
+  }
+
+  .reminder:hover {
+    background: var(--bg-hover);
+  }
+
+  .tick {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--bg);
+  }
+
+  .tick:hover {
+    border-color: var(--success-text);
+  }
+
+  .what {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+  }
+
+  .what .text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    align-self: center;
+  }
+
+  .what .when {
+    flex: none;
+    font-size: 12px;
+    color: var(--text-muted);
+    align-self: center;
+  }
+
+  .what .when.late {
+    color: var(--danger);
+    font-weight: 600;
   }
 
   .accounts {

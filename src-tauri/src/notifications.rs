@@ -29,6 +29,8 @@ pub struct Target {
     pub reply: bool,
     /// Lembrete desta tarefa: botões "Adiar 1 h" e "Concluir".
     pub task: Option<String>,
+    /// A vez do lembrete que esta notificação avisa.
+    pub remind_at: Option<u64>,
 }
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
@@ -55,7 +57,7 @@ fn remember(target: Target) -> String {
         .task
         .as_deref()
         .filter(|t| papeo_core::is_item_id(t))
-        .map(|t| format!("task-{t}-"))
+        .map(|t| format!("task-{t}-r{}-", target.remind_at.unwrap_or(0)))
         .unwrap_or_default();
     let id = format!(
         "papeo-{task}{}-{}",
@@ -70,11 +72,16 @@ fn remember(target: Target) -> String {
     id
 }
 
-/// Tarefa de um lembrete pelo identificador da notificação.
-fn task_of(id: &str) -> Option<String> {
-    let rest = id.strip_prefix("papeo-task-")?;
-    let task = rest.split('-').next()?;
-    papeo_core::is_item_id(task).then(|| task.to_owned())
+/// Tarefa (e a vez do lembrete) pelo identificador da notificação.
+fn task_of(id: &str) -> Option<(String, Option<u64>)> {
+    let mut parts = id.strip_prefix("papeo-task-")?.split('-');
+    let task = parts.next()?;
+    let at = parts
+        .next()
+        .and_then(|p| p.strip_prefix('r'))
+        .and_then(|n| n.parse::<u64>().ok())
+        .filter(|n| *n > 0);
+    papeo_core::is_item_id(task).then(|| (task.to_owned(), at))
 }
 
 fn target(id: &str) -> Option<Target> {
@@ -126,7 +133,7 @@ fn opened(id: &str) {
         if let Some(app) = APP.get().cloned() {
             // Lembrete de antes de reabrir o app: abre pela tarefa.
             match task_of(id) {
-                Some(task) => {
+                Some((task, _)) => {
                     std::thread::spawn(move || crate::organizer::open_task(&app, &task));
                 }
                 None => crate::tray::show_main(&app),
@@ -174,12 +181,16 @@ fn replied(id: &str, text: String) {
 
 /// Botão do lembrete ("snooze" ou "done"), sem trazer o app.
 fn reminder_action(id: &str, action: &str) {
-    let task = target(id).and_then(|t| t.task).or_else(|| task_of(id));
-    let (Some(app), Some(task)) = (APP.get().cloned(), task) else {
+    let task = target(id)
+        .and_then(|t| t.task.map(|task| (task, t.remind_at)))
+        .or_else(|| task_of(id));
+    let (Some(app), Some((task, remind_at))) = (APP.get().cloned(), task) else {
         return;
     };
     let action = action.to_owned();
-    std::thread::spawn(move || crate::organizer::notification_action(&app, &task, &action));
+    std::thread::spawn(move || {
+        crate::organizer::notification_action(&app, &task, remind_at, &action)
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -527,8 +538,12 @@ mod tests {
             chat: None,
             reply: false,
             task: Some(task.into()),
+            remind_at: Some(1_800_000_000),
         });
-        assert_eq!(super::task_of(&id).as_deref(), Some(task));
+        assert_eq!(
+            super::task_of(&id),
+            Some((task.to_owned(), Some(1_800_000_000)))
+        );
         assert_eq!(super::task_of("papeo-123-4"), None);
         assert_eq!(super::task_of("papeo-task-../x-1-2"), None);
     }

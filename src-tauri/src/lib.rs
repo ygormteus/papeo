@@ -381,6 +381,7 @@ pub fn run() {
             organizer::snooze_task,
             organizer::delete_task,
             organizer::save_note,
+            organizer::show_task,
             notify::service_notify,
             notify::service_status,
         ])

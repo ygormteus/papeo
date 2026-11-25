@@ -18,6 +18,17 @@ pub const MAX_CONTACTS: usize = 2_000;
 /// Registros apagados somem de vez depois disto (milissegundos).
 const TOMBSTONE_KEEP_MS: u64 = 90 * 24 * 60 * 60 * 1000;
 
+/// Repetição de uma tarefa com data ou lembrete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Repeat {
+    Daily,
+    /// Segunda a sexta.
+    Weekdays,
+    Weekly,
+    Monthly,
+}
+
 /// Uma tarefa. Com `remind_at`, é um lembrete: avisa naquela hora.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +54,21 @@ pub struct Task {
     /// Contato ligado (`Contact::id`); sem valor = tarefa solta.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact: Option<String>,
+    /// Repete: concluir passa para a próxima data em vez de fechar.
+    /// Versões antigas ignoram (desconhecido vira "não repete").
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient_repeat"
+    )]
+    pub repeat: Option<Repeat>,
+    /// Horário-base da repetição (o lembrete como foi marcado): adiar não
+    /// o muda, então a próxima vez volta ao horário de sempre.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_at: Option<u64>,
+    /// Dia-base da repetição (mantém "todo dia 31" nos meses longos).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_due: Option<String>,
     #[serde(default)]
     pub created_at: u64,
     #[serde(default)]
@@ -95,6 +121,10 @@ pub struct ContactRef {
     pub chat: String,
 }
 
+fn lenient_repeat<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Repeat>, D::Error> {
+    Ok(Option::<serde_json::Value>::deserialize(d)?.and_then(|v| serde_json::from_value(v).ok()))
+}
+
 /// Campos editáveis de uma tarefa.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +140,8 @@ pub struct TaskInput {
     /// …ou mantém um contato que já existe (ex.: de uma conta removida).
     #[serde(default)]
     pub contact_id: Option<String>,
+    #[serde(default)]
+    pub repeat: Option<Repeat>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -223,7 +255,16 @@ impl Organizer {
                 }
                 t.due = t.due.filter(|d| is_date(d));
                 t.contact = t.contact.filter(|c| live.contains(c.as_str()));
-                if !t.done {
+                // Repetir só faz sentido com data ou lembrete.
+                if t.due.is_none() && t.remind_at.is_none() {
+                    t.repeat = None;
+                }
+                t.anchor_due = t.anchor_due.filter(|d| is_date(d));
+                if t.repeat.is_none() {
+                    t.anchor_at = None;
+                    t.anchor_due = None;
+                }
+                if !t.done && t.repeat.is_none() {
                     t.done_at = None;
                 }
                 Some(t)
@@ -319,6 +360,7 @@ impl Organizer {
             ),
             (None, None) => None,
         };
+        let dated = input.due.is_some() || input.remind_at.is_some();
         Ok(Task {
             id: String::new(),
             text,
@@ -328,6 +370,9 @@ impl Organizer {
             remind_at: input.remind_at,
             reminded: None,
             contact,
+            repeat: input.repeat.filter(|_| dated),
+            anchor_at: input.remind_at.filter(|_| input.repeat.is_some()),
+            anchor_due: input.due.clone().filter(|_| input.repeat.is_some()),
             created_at: now_ms,
             updated_at: now_ms,
             deleted: false,
@@ -354,10 +399,38 @@ impl Organizer {
         if task.remind_at != next.remind_at {
             task.reminded = None;
         }
+        // Só muda o horário-base se a data, a hora ou a repetição mudaram
+        // (editar o texto de um lembrete adiado não move a série).
+        let same_schedule =
+            task.repeat == next.repeat && task.remind_at == next.remind_at && task.due == next.due;
         task.text = next.text;
         task.due = next.due;
         task.remind_at = next.remind_at;
         task.contact = next.contact;
+        if !same_schedule {
+            task.anchor_at = next.anchor_at;
+            task.anchor_due = next.anchor_due;
+        }
+        task.repeat = next.repeat;
+        task.updated_at = now_ms;
+        Ok(())
+    }
+
+    /// Conclui uma tarefa que repete: passa para a próxima data (calculada
+    /// por quem chama, na hora local) e continua aberta.
+    pub fn advance(
+        &mut self,
+        id: &str,
+        remind_at: Option<u64>,
+        due: Option<String>,
+        now_ms: u64,
+    ) -> Result<(), String> {
+        let task = self.task_mut(id)?;
+        task.remind_at = remind_at;
+        task.due = due.filter(|d| is_date(d));
+        task.reminded = None;
+        task.done = false;
+        task.done_at = Some(now_ms / 1000);
         task.updated_at = now_ms;
         Ok(())
     }
@@ -479,6 +552,9 @@ fn tombstone(task: Task) -> Task {
         remind_at: None,
         reminded: None,
         contact: None,
+        repeat: None,
+        anchor_at: None,
+        anchor_due: None,
         created_at: task.created_at,
         updated_at: task.updated_at,
         deleted: true,
@@ -749,6 +825,56 @@ mod tests {
         fs::create_dir_all(&folder).unwrap();
         assert!(load_organizer(&folder, NOW).is_err());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn repeat_needs_a_date_and_unknown_is_ignored() {
+        let mut org = Organizer::default();
+        let loose = org
+            .add_task(
+                &TaskInput {
+                    repeat: Some(Repeat::Daily),
+                    ..input("sem data")
+                },
+                NOW,
+            )
+            .unwrap();
+        assert_eq!(org.task(&loose).unwrap().repeat, None);
+        let daily = org
+            .add_task(
+                &TaskInput {
+                    repeat: Some(Repeat::Weekly),
+                    remind_at: Some(1000),
+                    ..input("reunião")
+                },
+                NOW,
+            )
+            .unwrap();
+        org.mark_reminded(&daily, NOW);
+        org.advance(&daily, Some(1000 + 7 * 86_400), None, NOW + 1)
+            .unwrap();
+        let t = org.task(&daily).unwrap();
+        assert!(!t.done && t.reminded.is_none() && t.done_at.is_some());
+        assert_eq!(org.due_reminders(1000 + 7 * 86_400).len(), 1);
+        // Adiado e depois editado só no texto: o horário-base fica.
+        org.snooze(&daily, 5000, NOW + 2).unwrap();
+        let edit = TaskInput {
+            repeat: Some(Repeat::Weekly),
+            remind_at: Some(5000),
+            ..input("reunião de equipe")
+        };
+        org.edit_task(&daily, &edit, NOW + 3).unwrap();
+        assert_eq!(org.task(&daily).unwrap().anchor_at, Some(1000));
+        // Mudou a hora: novo horário-base.
+        let moved = TaskInput {
+            remind_at: Some(9000),
+            ..edit
+        };
+        org.edit_task(&daily, &moved, NOW + 4).unwrap();
+        assert_eq!(org.task(&daily).unwrap().anchor_at, Some(9000));
+        let json = r#"{"id":"0123456789abcdef0123456789abcdef","text":"x","due":"2026-11-25","repeat":"everyFullMoon"}"#;
+        let task: Task = serde_json::from_str(json).unwrap();
+        assert_eq!(task.repeat, None);
     }
 
     #[test]

@@ -11,7 +11,7 @@ mod util;
 
 pub use organizer::{
     clean_chat, is_date, is_item_id, load_organizer, new_item_id, save_organizer, Contact,
-    ContactRef, Organizer, Task, TaskInput, CHAT_MAX, NOTE_MAX, TASK_TEXT_MAX,
+    ContactRef, Organizer, Repeat, Task, TaskInput, CHAT_MAX, NOTE_MAX, TASK_TEXT_MAX,
 };
 pub use privacy::{
     is_session_id, new_session, notification_text, recent_text, same_site, session_from_bytes,
