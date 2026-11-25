@@ -157,11 +157,42 @@
   let lastChat;
 
   // Sinal de vida: se o serviço visível parar de enviar, o Papeo oferece recarregar.
+  // Lista de conversas do WhatsApp: nome e contador de não lidas de cada
+  // linha visível ("3 mensagens não lidas"). Conversa sem contador foi lida,
+  // inclusive no celular. Fica só na memória do Papeo.
+  const UNREAD_LABEL = /n[aã]o lid|unread|no le[ií]d/i;
+  const chatList = () => {
+    const pane = document.querySelector("#pane-side");
+    if (!pane) return null;
+    const out = [];
+    for (const row of pane.querySelectorAll('[role="row"]')) {
+      const title = (row.querySelector("span[title]")?.getAttribute("title") || "").replace(/\s+/g, " ").trim().slice(0, 200);
+      if (!title) continue;
+      let unread = 0;
+      for (const el of row.querySelectorAll("[aria-label]")) {
+        const label = el.getAttribute("aria-label") || "";
+        if (UNREAD_LABEL.test(label)) {
+          unread = Number((label.match(/\d[\d.]*/)?.[0] || "1").replace(/\./g, "")) || 1;
+          break;
+        }
+      }
+      out.push([title, unread]);
+      if (out.length >= 60) break;
+    }
+    return out;
+  };
+  let lastList = "";
   const heartbeat = () => {
     lastChat = currentChat();
-    invoke("service_status", { loggedOut: loggedOut(), media: mediaActive(), chat: lastChat ?? null });
+    const list = chatList();
+    lastList = JSON.stringify(list);
+    invoke("service_status", { loggedOut: loggedOut(), media: mediaActive(), chat: lastChat ?? null, list });
   };
   setInterval(heartbeat, 20000);
+  // A lista mudou (conversa lida, mensagem nova): avisa logo.
+  setInterval(() => {
+    if (JSON.stringify(chatList()) !== lastList) heartbeat();
+  }, 5000);
   // Trocou de conversa (clique ou teclado): avisa logo.
   const chatChanged = () =>
     setTimeout(() => {

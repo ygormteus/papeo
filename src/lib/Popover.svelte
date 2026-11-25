@@ -143,6 +143,7 @@
         onsnap={(s) => (snap = s)}
         onopen={(id, chat) => go(id, chat)}
         autoOpen
+        quickReplies={snap.settings.quickReplies}
       />
     {/if}
 

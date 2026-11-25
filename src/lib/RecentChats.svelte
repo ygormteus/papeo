@@ -1,8 +1,18 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { SendHorizontal } from "@lucide/svelte";
+  import { AlarmClock, SendHorizontal } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { api, MAX_REPLY_CHARS, type RecentChat, type ServiceView, type Snapshot } from "./api";
+  import TaskForm from "./TaskForm.svelte";
+  import { matchQuickReplies } from "./quickReplies";
+  import {
+    api,
+    MAX_REPLY_CHARS,
+    type QuickReply,
+    type RecentChat,
+    type ServiceView,
+    type Snapshot,
+    type TaskFields,
+  } from "./api";
 
   // Conversas recentes com resposta rápida: na mini janela e no Início.
   let {
@@ -11,6 +21,9 @@
     onsnap,
     onopen,
     autoOpen = false,
+    oncreatetask,
+    clock,
+    quickReplies = [],
   }: {
     chats: RecentChat[];
     services: ServiceView[];
@@ -20,7 +33,23 @@
     onopen: (serviceId: string, chat: string) => void;
     /** Já abre a conversa mais recente que dá para responder. */
     autoOpen?: boolean;
+    /** "Lembrar disso": cria uma tarefa ligada à conversa (só no Início). */
+    oncreatetask?: (fields: TaskFields) => Promise<void>;
+    /** Relógio do app, para o formulário de tarefa. */
+    clock?: Date;
+    /** Respostas prontas, chamadas com "/" na resposta. */
+    quickReplies?: QuickReply[];
   } = $props();
+
+
+
+  /** Conversa com o formulário "Lembrar disso" aberto. */
+  let reminding = $state<string | null>(null);
+  /** Última mensagem recebida, para começar o texto da tarefa. */
+  const lastIncoming = (c: RecentChat) => {
+    const body = [...c.messages].reverse().find((m) => !m.mine)?.body ?? c.body;
+    return body.length > 140 ? `${body.slice(0, 139)}…` : body;
+  };
 
   let open = $state<string | null>(null);
   let drafts = $state<Record<string, string>>({});
@@ -35,6 +64,27 @@
   const visible = $derived(chats.filter((c) => byId.has(c.serviceId)));
   const keyOf = (c: RecentChat) => `${c.serviceId}\u0000${c.chat}`;
 
+  // Respostas prontas: lista sob a resposta enquanto o texto começa com "/".
+  let pick = $state(0);
+  let dismissed = $state<string | null>(null);
+  const matches = $derived(
+    open && dismissed !== (drafts[open] ?? "") ? matchQuickReplies(quickReplies, drafts[open] ?? "") : [],
+  );
+  $effect(() => {
+    void matches;
+    pick = 0;
+  });
+
+  function useReply(key: string, reply: QuickReply) {
+    drafts[key] = reply.text;
+    tick().then(() => {
+      if (input) {
+        grow(input);
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    });
+  }
   /** Foca a resposta da conversa aberta (mini janela reaberta). */
   export function focus() {
     input?.focus();
@@ -91,6 +141,27 @@
   }
 
   function onInputKey(e: KeyboardEvent, c: RecentChat) {
+    const key = keyOf(c);
+    if (matches.length && !e.isComposing) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        pick = (pick + step + matches.length) % matches.length;
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        useReply(key, matches[pick]);
+        return;
+      }
+      if (e.key === "Escape") {
+        // Fecha só a lista (não a mini janela).
+        e.preventDefault();
+        e.stopPropagation();
+        dismissed = drafts[key] ?? "";
+        return;
+      }
+    }
     // Enter envia; Shift+Enter quebra a linha.
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -176,6 +247,8 @@
                 maxlength={MAX_REPLY_CHARS}
                 placeholder="Responder a {c.title}…"
                 aria-label="Responder a {c.title}"
+                aria-autocomplete="list"
+                aria-controls="quick-replies"
                 disabled={sending[key]}
                 autocomplete="off"
                 spellcheck="true"
@@ -195,6 +268,25 @@
               </button>
             </form>
           {/if}
+          {#if c.canReply && matches.length}
+            <ul class="quick" id="quick-replies" role="listbox" aria-label="Respostas prontas">
+              {#each matches as r, i (i)}
+                <li role="option" aria-selected={i === pick}>
+                  <button
+                    type="button"
+                    class:picked={i === pick}
+                    onmousedown={(e) => e.preventDefault()}
+                    onclick={() => useReply(key, r)}
+                  >
+                    {#if r.shortcut}<span class="sc">/{r.shortcut}</span>{/if}
+                    <span class="qt">{r.text}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else if c.canReply && quickReplies.length === 0 && (drafts[key] ?? "") === "/"}
+            <p class="quick-empty">Nenhuma resposta pronta ainda. Crie em Configurações → Respostas prontas.</p>
+          {/if}
           <div class="status" aria-live="polite">
             {#if sending[key]}
               <span class="muted">Enviando pelo {service.name}…</span>
@@ -205,8 +297,32 @@
             {:else if c.canReply}
               <span class="muted">Enter envia · Shift+Enter quebra a linha</span>
             {/if}
-            <button class="link" onclick={() => onopen(c.serviceId, c.chat)}>Abrir conversa</button>
+            <span class="links">
+              {#if oncreatetask && clock && c.chat}
+                <button class="link" aria-expanded={reminding === key} onclick={() => (reminding = reminding === key ? null : key)}>
+                  <AlarmClock size={12} /> Lembrar disso
+                </button>
+              {/if}
+              <button class="link" onclick={() => onopen(c.serviceId, c.chat)}>Abrir conversa</button>
+            </span>
           </div>
+          {#if reminding === key && oncreatetask && clock}
+            <div class="remind">
+              <TaskForm
+                link={{ serviceId: c.serviceId, chat: c.chat }}
+                linkLabel="{c.title} · {service.name}"
+                initialText={lastIncoming(c)}
+                placeholder="Tarefa ou lembrete sobre {c.title}…"
+                compact
+                now={clock}
+                onsave={async (fields) => {
+                  await oncreatetask(fields);
+                  reminding = null;
+                }}
+                oncancel={() => (reminding = null)}
+              />
+            </div>
+          {/if}
         </div>
       {/if}
     </li>
@@ -425,7 +541,71 @@
     color: var(--success-text);
   }
 
+  .quick {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .quick button {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .quick button.picked,
+  .quick button:hover {
+    background: var(--bg-hover);
+  }
+
+  .quick .sc {
+    flex: none;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .quick .qt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+  }
+
+  .quick-empty {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .links {
+    display: inline-flex;
+    flex: none;
+    gap: 12px;
+  }
+
+  .remind {
+    margin-top: 8px;
+  }
+
   .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     flex: none;
     padding: 0;
     border: none;

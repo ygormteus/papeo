@@ -122,6 +122,17 @@ pub struct RecentChat {
     pub read_at: u64,
 }
 
+impl RecentChat {
+    /// Tem mensagem recebida depois da última vez que foi vista.
+    pub fn has_unread(&self) -> bool {
+        self.messages.iter().any(|m| !m.mine && m.at > self.read_at)
+    }
+}
+
+/// Segundos que a lista do site leva para mostrar o contador de uma
+/// mensagem nova.
+const LIST_GRACE_SECS: u64 = 10;
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageView {
@@ -282,6 +293,35 @@ impl Inner {
         }
     }
 
+    /// Lista de conversas do próprio site: a que aparece sem contador de não
+    /// lidas foi lida lá (ou no celular). Mensagens dos últimos segundos
+    /// esperam a próxima leitura (o contador do site pode ainda não ter
+    /// aparecido). Devolve se alguma conversa deixou de ser não lida.
+    pub fn apply_chat_list(&mut self, service_id: &str, list: &[(String, u32)]) -> bool {
+        let read: Vec<String> = list
+            .iter()
+            .filter(|(_, unread)| *unread == 0)
+            .map(|(title, _)| papeo_core::clean_chat(title))
+            .collect();
+        if read.is_empty() {
+            return false;
+        }
+        let until = now_secs().saturating_sub(LIST_GRACE_SECS);
+        let mut changed = false;
+        for c in self
+            .recent
+            .iter_mut()
+            .filter(|c| c.service_id == service_id)
+        {
+            if c.read_at < until && read.contains(&papeo_core::clean_chat(&c.title)) {
+                let before = c.has_unread();
+                c.read_at = until;
+                changed |= before != c.has_unread();
+            }
+        }
+        changed
+    }
+
     /// A conversa aberta na conta à vista, com a janela em foco, conta como
     /// vista. Chamado a cada estado publicado.
     pub fn mark_seen(&mut self) {
@@ -334,7 +374,7 @@ impl Inner {
                     at: last.at,
                     messages,
                     can_reply: service.kind.supports_chat(),
-                    unread: chat.messages.iter().any(|m| !m.mine && m.at > chat.read_at),
+                    unread: chat.has_unread(),
                 })
             })
             .collect()
@@ -620,5 +660,38 @@ mod tests {
         inner.window_focused = true;
         inner.mark_seen();
         assert_eq!(unread(&inner), [false]);
+    }
+
+    #[test]
+    fn chats_read_on_the_site_leave_unread() {
+        let (mut inner, id) = inner_with_service();
+        let old = now_secs() - 60;
+        inner.push_recent(&id, "Ana", incoming(old));
+        inner.push_recent(&id, "Bruno", incoming(old));
+        // Bruno ainda com contador no site; Ana lida (no celular, por ex.).
+        let list = vec![("Ana".to_owned(), 0), ("Bruno".to_owned(), 2)];
+        assert!(inner.apply_chat_list(&id, &list));
+        let by_title: Vec<(String, bool)> = inner
+            .recent_views()
+            .into_iter()
+            .map(|v| (v.chat, v.unread))
+            .collect();
+        assert!(by_title.contains(&("Ana".to_owned(), false)));
+        assert!(by_title.contains(&("Bruno".to_owned(), true)));
+        // Nada mudou: não pede para publicar de novo.
+        assert!(!inner.apply_chat_list(&id, &list));
+
+        // Mensagem que acabou de chegar: o contador do site pode não ter
+        // aparecido ainda, então não conta como lida.
+        inner.push_recent(&id, "Ana", incoming(now_secs()));
+        inner.apply_chat_list(&id, &list);
+        assert!(inner
+            .recent_views()
+            .iter()
+            .any(|v| v.chat == "Ana" && v.unread));
+
+        // Outra conta com o mesmo nome não é afetada.
+        let other = "svc-outraconta0".to_owned();
+        assert!(!inner.apply_chat_list(&other, &list));
     }
 }

@@ -117,6 +117,8 @@ pub async fn service_status(
     media: Option<bool>,
     // Conversa aberta no site (nome no cabeçalho); vazio = nenhuma.
     chat: Option<String>,
+    // Lista de conversas do site: (nome, não lidas) de cada linha visível.
+    list: Option<Vec<(String, u32)>>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
@@ -149,6 +151,10 @@ pub async fn service_status(
                     inner.current_chat.insert(id.clone(), open);
                 }
             }
+        }
+        // Conversas lidas no próprio site (ou no celular) saem das não lidas.
+        if let Some(list) = list.filter(|_| own_site) {
+            chat_changed |= inner.apply_chat_list(&id, &list);
         }
         // A página está pronta: abre a conversa que esperava por ela.
         let pending = own_site.then(|| inner.pending_chat.remove(&id)).flatten();

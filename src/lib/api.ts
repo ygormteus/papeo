@@ -129,7 +129,16 @@ export interface Settings {
   reloadAboveMb: number;
   /** Links que os sites abrem fora: navegador padrão ou prévia do Papeo. */
   openLinks: LinkTarget;
+  /** Textos salvos para a resposta rápida, chamados com "/". */
+  quickReplies: QuickReply[];
 }
+
+export interface QuickReply {
+  /** Atalho curto, sem "/" (pode ficar vazio). */
+  shortcut: string;
+  text: string;
+}
+
 
 export type LinkTarget = "browser" | "preview";
 
@@ -229,6 +238,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     updates: { check: true, noticeSeen: false },
     reloadAboveMb: 2048,
     openLinks: "browser",
+    quickReplies: [],
   },
   dndActive: false,
   autostart: false,
@@ -292,6 +302,7 @@ export const api = {
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
+  setQuickReplies: (replies: QuickReply[]) => invoke<Snapshot>("set_quick_replies", { replies }),
   setAutostart: (enabled: boolean) => invoke<Snapshot>("set_autostart", { enabled }),
   setDownloadsDir: (path: string | null) => invoke<Snapshot>("set_downloads_dir", { path }),
   revealDownload: (id: number) => invoke<void>("reveal_download", { id }),

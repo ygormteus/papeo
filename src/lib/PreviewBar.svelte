@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ExternalLink, Globe, X } from "@lucide/svelte";
+  import { Check, ExternalLink, Globe, Link, X } from "@lucide/svelte";
   import { api, errorMessage, isMac, onPreview, type PreviewInfo } from "./api";
 
   // Barra da prévia de links (`src-tauri/src/preview.rs`): o site fica na
@@ -36,6 +36,21 @@
   }
 
   const openBrowser = () => act(api.previewOpenBrowser());
+
+  let copied = $state(false);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copyLink() {
+    if (!info.url) return;
+    try {
+      error = "";
+      await navigator.clipboard.writeText(info.url);
+      copied = true;
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => (copied = false), 1500);
+    } catch {
+      error = "Não foi possível copiar o link.";
+    }
+  }
   const close = () => act(api.previewClose());
 
   function onkeydown(e: KeyboardEvent) {
@@ -64,6 +79,15 @@
     {#if host && host !== title}<span class="host" data-tauri-drag-region>{host}</span>{/if}
   </div>
   {#if error}<span class="error" role="alert">{error}</span>{/if}
+  <button
+    class="icon-btn ghost"
+    onclick={copyLink}
+    disabled={!info.url}
+    title={copied ? "Link copiado" : "Copiar link"}
+    aria-label={copied ? "Link copiado" : "Copiar link"}
+  >
+    {#if copied}<Check size={16} />{:else}<Link size={16} />{/if}
+  </button>
   <button class="btn small" onclick={openBrowser} title="Abrir no navegador ({isMac ? '⌘' : 'Ctrl+'}Enter)">
     <ExternalLink size={15} /> Abrir no navegador
   </button>

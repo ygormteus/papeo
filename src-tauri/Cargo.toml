@@ -11,6 +11,10 @@ license = "GPL-3.0-or-later"
 name = "papeo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Autoteste no app de verdade (CI e conferência local); fora do app publicado.
+selftest = []
+
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
 
@@ -39,7 +43,7 @@ objc2 = "0.6"
 block2 = "0.6"
 security-framework = "3"
 libc = "0.2"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError", "NSData", "NSArray", "NSSet", "NSBundle"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError", "NSData", "NSArray", "NSSet", "NSBundle", "NSURL"] }
 objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "bitflags", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationCategory", "UNNotificationAction", "UNNotificationSound", "UNNotification", "UNNotificationTrigger", "UNNotificationSettings"] }
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
 

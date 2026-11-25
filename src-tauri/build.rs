@@ -25,6 +25,7 @@ const COMMANDS: &[&str] = &[
     "set_dnd",
     "set_quiet_hours",
     "set_preferences",
+    "set_quick_replies",
     "set_autostart",
     "set_downloads_dir",
     "reveal_download",

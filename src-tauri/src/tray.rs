@@ -344,6 +344,17 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         WindowEvent::Focused(focused) if window.label() == MAIN_WINDOW => {
             crate::notify::on_window_focus(window.app_handle(), *focused);
         }
+        // Lendo na prévia de links também é usar o Papeo: o bloqueio
+        // automático não conta esse tempo.
+        WindowEvent::Focused(focused) if window.label() == crate::preview::PREVIEW => {
+            let state = window.app_handle().state::<AppState>();
+            let mut inner = state.lock();
+            if *focused {
+                inner.unfocused_since = None;
+            } else if !inner.window_focused && inner.unfocused_since.is_none() {
+                inner.unfocused_since = Some(std::time::Instant::now());
+            }
+        }
         _ => {}
     }
 }

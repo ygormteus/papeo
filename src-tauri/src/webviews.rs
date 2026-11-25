@@ -44,6 +44,19 @@ fn permission_for(webview: &Webview, kind: PermissionKind) -> PermissionResponse
     }
 }
 
+/// Abre no navegador padrão (no autoteste, só anota).
+pub fn open_external(app: &AppHandle, url: &str) {
+    #[cfg(feature = "selftest")]
+    {
+        let _ = app;
+        crate::selftest::opened(url);
+    }
+    #[cfg(not(feature = "selftest"))]
+    {
+        let _ = app.opener().open_url(url, None::<&str>);
+    }
+}
+
 pub fn create_service_webview(
     app: &AppHandle,
     service: &Service,
@@ -91,7 +104,7 @@ pub fn create_service_webview(
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move { crate::preview::open(&app, url) });
                 } else if matches!(url.scheme(), "http" | "https" | "mailto") {
-                    let _ = app.opener().open_url(url.as_str(), None::<&str>);
+                    open_external(&app, url.as_str());
                 }
                 NewWindowResponse::Deny
             }

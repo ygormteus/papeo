@@ -25,6 +25,7 @@
     isMuted,
     type ServiceView,
     type Snapshot,
+    type TaskFields,
   } from "./api";
 
   let {
@@ -36,6 +37,8 @@
     oncustomize,
     onchat,
     today,
+    oncreatetask,
+    clock,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
@@ -47,6 +50,9 @@
     onchat: (serviceId: string, chat: string) => void;
     /** Cartão "Para hoje" (tarefas atrasadas e de hoje). */
     today?: Snippet;
+    /** "Lembrar disso" nas conversas recentes. */
+    oncreatetask?: (fields: TaskFields) => Promise<void>;
+    clock?: Date;
   } = $props();
 
   /** Acima disso (`HEAVY_BYTES`), um serviço parado vira sugestão. */
@@ -242,13 +248,16 @@
         </div>
       </div>
       {#if shownChats.length === 0}
-        <p class="empty-note">Nenhuma conversa não lida. As conversas abertas no Papeo ou respondidas por aqui contam como lidas.</p>
+        <p class="empty-note">Nenhuma conversa não lida. Conversas lidas no WhatsApp, aqui ou no celular, saem desta lista.</p>
       {/if}
       <RecentChats
         chats={shownChats}
         services={snap.services}
         onsnap={(s) => run(Promise.resolve(s))}
         onopen={onchat}
+        {oncreatetask}
+        {clock}
+        quickReplies={snap.settings.quickReplies}
       />
     </section>
   {/if}

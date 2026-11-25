@@ -35,6 +35,50 @@ pub struct Settings {
     pub reload_above_mb: u32,
     /// Onde abrem os links que os sites mandam abrir fora.
     pub open_links: LinkTarget,
+    /// Textos salvos para a resposta rápida (chamados com "/").
+    pub quick_replies: Vec<QuickReply>,
+}
+
+/// Resposta pronta: um atalho curto e o texto que entra na resposta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickReply {
+    pub shortcut: String,
+    pub text: String,
+}
+
+/// Limites das respostas prontas.
+pub const QUICK_REPLIES_MAX: usize = 100;
+pub const QUICK_REPLY_SHORTCUT_MAX: usize = 40;
+/// Igual ao limite de uma resposta rápida.
+pub const QUICK_REPLY_TEXT_MAX: usize = 4096;
+
+impl QuickReply {
+    /// Atalho sem "/" nem espaços nas pontas; texto sem espaços nas pontas e
+    /// no limite. Sem texto, a resposta é descartada.
+    fn sanitized(self) -> Option<Self> {
+        let text: String = self
+            .text
+            .trim()
+            .chars()
+            .take(QUICK_REPLY_TEXT_MAX)
+            .collect();
+        if text.is_empty() {
+            return None;
+        }
+        let shortcut: String = self
+            .shortcut
+            .trim()
+            .trim_start_matches('/')
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(QUICK_REPLY_SHORTCUT_MAX)
+            .collect();
+        Some(Self { shortcut, text })
+    }
 }
 
 /// Destino dos links externos clicados dentro dos serviços.
@@ -135,6 +179,7 @@ impl Default for Settings {
             updates: UpdatePrefs::default(),
             reload_above_mb: RELOAD_DEFAULT_MB,
             open_links: LinkTarget::Browser,
+            quick_replies: Vec::new(),
         }
     }
 }
@@ -195,6 +240,11 @@ impl Settings {
         if self.reload_above_mb != 0 {
             self.reload_above_mb = self.reload_above_mb.clamp(RELOAD_MIN_MB, RELOAD_MAX_MB);
         }
+        self.quick_replies = std::mem::take(&mut self.quick_replies)
+            .into_iter()
+            .filter_map(QuickReply::sanitized)
+            .take(QUICK_REPLIES_MAX)
+            .collect();
         self
     }
 }
@@ -294,6 +344,53 @@ mod tests {
         assert_eq!(off.sanitized().reload_above_mb, 0);
         let low: Settings = serde_json::from_str(r#"{"reloadAboveMb":10}"#).unwrap();
         assert_eq!(low.sanitized().reload_above_mb, RELOAD_MIN_MB);
+    }
+
+    #[test]
+    fn quick_replies_are_cleaned() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(old.quick_replies.is_empty());
+        let s = Settings {
+            quick_replies: vec![
+                QuickReply {
+                    shortcut: "  /orça mento ".into(),
+                    text: "  Segue o orçamento.  ".into(),
+                },
+                QuickReply {
+                    shortcut: "vazio".into(),
+                    text: "   ".into(),
+                },
+            ],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            s.quick_replies,
+            vec![QuickReply {
+                shortcut: "orça mento".into(),
+                text: "Segue o orçamento.".into(),
+            }]
+        );
+        let many = Settings {
+            quick_replies: vec![
+                QuickReply {
+                    shortcut: "x".repeat(99),
+                    text: "y".repeat(5000),
+                };
+                QUICK_REPLIES_MAX + 5
+            ],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(many.quick_replies.len(), QUICK_REPLIES_MAX);
+        assert_eq!(
+            many.quick_replies[0].shortcut.chars().count(),
+            QUICK_REPLY_SHORTCUT_MAX
+        );
+        assert_eq!(
+            many.quick_replies[0].text.chars().count(),
+            QUICK_REPLY_TEXT_MAX
+        );
     }
 
     #[test]

@@ -51,9 +51,15 @@ jobs:
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
+  # Testes no app de verdade (Mac e Windows) antes de gerar os instaladores.
+  selftest:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/selftest.yml
+
   build:
-    needs: create-release
-    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
+    needs: [create-release, selftest]
+    if: ${{ !cancelled() && needs.selftest.result == 'success' && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
     permissions:
       contents: write # enviar os arquivos ao rascunho
     strategy:

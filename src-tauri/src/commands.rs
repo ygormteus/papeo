@@ -408,6 +408,23 @@ pub async fn set_preferences(
     Ok(publish(&app))
 }
 
+/// Respostas prontas (lista inteira, já na ordem desejada).
+#[tauri::command]
+pub async fn set_quick_replies(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    replies: Vec<papeo_core::QuickReply>,
+) -> CmdResult {
+    ensure_unlocked(&app)?;
+    state.update(|inner| {
+        let s = &mut inner.config.settings;
+        s.quick_replies = replies;
+        *s = std::mem::take(s).sanitized();
+        Ok(())
+    })?;
+    Ok(publish(&app))
+}
+
 #[tauri::command]
 pub async fn set_autostart(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult {
     ensure_unlocked(&app)?;

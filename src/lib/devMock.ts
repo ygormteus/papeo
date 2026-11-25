@@ -304,6 +304,9 @@ export function installDevMock() {
       case "set_preferences":
         settings = { ...settings, ...(args.prefs as Partial<Settings>) };
         return snap();
+      case "set_quick_replies":
+        settings = { ...settings, quickReplies: args.replies as Settings["quickReplies"] };
+        return snap();
       case "set_autostart":
         autostart = Boolean(args.enabled);
         return snap();

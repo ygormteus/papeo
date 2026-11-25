@@ -1,3 +1,6 @@
+// Autoteste: bandeja, manutenção e sincronização ficam de fora (sem uso).
+#![cfg_attr(feature = "selftest", allow(dead_code, unused_imports))]
+
 mod commands;
 mod downloads;
 mod drive;
@@ -12,6 +15,8 @@ mod organizer;
 mod popover;
 mod preview;
 mod reply;
+#[cfg(feature = "selftest")]
+mod selftest;
 mod sessions;
 mod state;
 mod sync;
@@ -276,7 +281,15 @@ fn build_main_window(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        // Sem o script que o plugin injeta em toda webview para abrir links
+        // de nova aba pelo app: nas contas (sem permissão para o plugin) ele
+        // cancelava o clique e o link não abria. Os links das contas vão pelo
+        // `on_new_window` (navegador ou prévia).
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -286,18 +299,23 @@ pub fn run() {
         ))
         .setup(|app| {
             let handle = app.handle();
-            let store_path = app.path().app_config_dir()?.join("services.json");
+            // Autoteste: tudo numa pasta temporária, nada dos dados reais.
+            #[cfg(feature = "selftest")]
+            let (config_dir, data_dir) = (selftest::base_dir(), selftest::base_dir());
+            #[cfg(not(feature = "selftest"))]
+            let (config_dir, data_dir) = (app.path().app_config_dir()?, app.path().app_data_dir()?);
+            let store_path = config_dir.join("services.json");
             let config = papeo_core::load(&store_path);
             let started_hidden =
                 config.settings.start_hidden && std::env::args().any(|a| a == HIDDEN_ARG);
             let protected = config.settings.protect_screen;
             let appearance = config.settings.appearance;
-            let organizer_path = app.path().app_config_dir()?.join("organizer.json");
+            let organizer_path = config_dir.join("organizer.json");
             let organizer = papeo_core::load_organizer(&organizer_path, organizer::now_ms());
             let state = AppState {
                 store_path,
                 organizer_path,
-                sessions_dir: app.path().app_data_dir()?.join("sessions"),
+                sessions_dir: data_dir.join("sessions"),
                 inner: Mutex::new(Inner::new(config)),
             };
             {
@@ -318,27 +336,34 @@ pub fn run() {
             }
             app.manage(state);
             build_main_window(handle, !started_hidden, protected, appearance)?;
-            // Chave do WebCrypto fora das Chaves do macOS (antes de qualquer
-            // webview de serviço): sem pedido de senha a cada atualização.
-            #[cfg(target_os = "macos")]
-            webcrypto::init(&app.path().app_data_dir()?, &app.config().identifier);
-            // Contas que estavam carregadas ao fechar voltam carregadas.
-            webviews::restore_open(handle);
-            lock::check_availability(handle);
-            // Termina de apagar sessões de serviços removidos (nada está aberto ainda).
-            let cleanup = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                sessions::retry_pending(&cleanup).await;
-            });
-            sync::init(handle, app.path().app_local_data_dir()?);
-            notifications::init(handle);
-            tray::install(handle)?;
-            #[cfg(target_os = "macos")]
-            menu::install(handle)?;
-            spawn_maintenance(handle.clone());
-            // Marca deixada por uma atualização: sem ela, a próxima abertura
-            // não cai na cópia temporária do Gatekeeper.
-            std::thread::spawn(updater::clear_quarantine);
+            // Autoteste: só a janela e a conta de teste; sem chaveiro, bandeja,
+            // sincronização ou manutenção.
+            #[cfg(feature = "selftest")]
+            selftest::start(handle);
+            #[cfg(not(feature = "selftest"))]
+            {
+                // Chave do WebCrypto fora das Chaves do macOS (antes de qualquer
+                // webview de serviço): sem pedido de senha a cada atualização.
+                #[cfg(target_os = "macos")]
+                webcrypto::init(&app.path().app_data_dir()?, &app.config().identifier);
+                // Contas que estavam carregadas ao fechar voltam carregadas.
+                webviews::restore_open(handle);
+                lock::check_availability(handle);
+                // Termina de apagar sessões de serviços removidos (nada está aberto ainda).
+                let cleanup = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    sessions::retry_pending(&cleanup).await;
+                });
+                sync::init(handle, app.path().app_local_data_dir()?);
+                notifications::init(handle);
+                tray::install(handle)?;
+                #[cfg(target_os = "macos")]
+                menu::install(handle)?;
+                spawn_maintenance(handle.clone());
+                // Marca deixada por uma atualização: sem ela, a próxima abertura
+                // não cai na cópia temporária do Gatekeeper.
+                std::thread::spawn(updater::clear_quarantine);
+            }
             Ok(())
         })
         .on_window_event(tray::on_window_event)
@@ -365,6 +390,7 @@ pub fn run() {
             commands::set_dnd,
             commands::set_quiet_hours,
             commands::set_preferences,
+            commands::set_quick_replies,
             commands::set_autostart,
             commands::set_downloads_dir,
             commands::reveal_download,

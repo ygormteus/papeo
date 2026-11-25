@@ -29,6 +29,7 @@
     "allow-set-dnd",
     "allow-set-quiet-hours",
     "allow-set-preferences",
+    "allow-set-quick-replies",
     "allow-set-autostart",
     "allow-set-downloads-dir",
     "allow-reveal-download",

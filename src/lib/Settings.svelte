@@ -18,6 +18,7 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import Switch from "./Switch.svelte";
+  import QuickReplies from "./QuickReplies.svelte";
   import { home, setConfirmFree } from "./homeState.svelte";
   import { bundledNotes } from "./bundledNotes";
   import {
@@ -457,6 +458,8 @@
       {/if}
     </div>
   </section>
+
+  <QuickReplies replies={settings.quickReplies} {run} />
 
   <section class="card" aria-labelledby="s-dl">
     <h2 id="s-dl"><HardDrive size={18} /> Downloads</h2>

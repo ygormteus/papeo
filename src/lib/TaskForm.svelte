@@ -11,6 +11,7 @@
     keepContact = null,
     keepLabel = "",
     placeholder = "Nova tarefa…",
+    initialText = "",
     compact = false,
     now,
     onsave,
@@ -25,6 +26,8 @@
     keepContact?: string | null;
     keepLabel?: string;
     placeholder?: string;
+    /** Texto já escrito numa tarefa nova (ex.: a mensagem recebida). */
+    initialText?: string;
     compact?: boolean;
     /** Relógio do app (avança a cada 30 s). */
     now: Date;
@@ -35,7 +38,7 @@
   // Valores iniciais: a tarefa editada ou vazio (o formulário é recriado
   // para cada tarefa, então ler as props só no início é o esperado).
   const initial = (() => task)();
-  let text = $state(initial?.text ?? "");
+  let text = $state(initial?.text ?? (() => initialText)());
   let remindAt = $state<number | null>(initial?.remindAt ?? null);
   let due = $state<string | null>(initial?.due ?? null);
   let linked = $state(true);

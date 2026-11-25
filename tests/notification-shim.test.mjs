@@ -90,7 +90,7 @@ check((await navigator.permissions.query({ name: "notifications" })).state === "
 check((await navigator.permissions.query({ name: "camera" })).state === "prompt", "outras permissões intactas");
 
 // Sinal de vida e sessão desconectada
-check(timers.length === 1, "um único timer de sinal de vida");
+check(timers.length === 2, "timers: sinal de vida e leitura da lista de conversas");
 timers[0]();
 qrVisible = true;
 timers[0]();
@@ -235,6 +235,33 @@ check(opened.length === before, "links do próprio WhatsApp ficam com ele");
 clickOn("https://other.example/", { target: "" });
 await tick();
 check(opened.length === before, "link sem nova aba não é aberto pelo Papeo");
+
+// Lista de conversas do WhatsApp: nome e contador de não lidas de cada linha.
+const row = (title, label) => ({
+  querySelector: (sel) => (sel === "span[title]" ? { getAttribute: () => title } : null),
+  querySelectorAll: () => (label ? [{ getAttribute: () => label }] : [{ getAttribute: () => "Conversa fixada" }]),
+});
+dom["#pane-side"] = {
+  querySelectorAll: () => [
+    row("Ana  Souza", "3 mensagens não lidas"),
+    row("Bruno", null),
+    row("Grupo", "1.234 mensagens não lidas"),
+    row("", "2 mensagens não lidas"),
+  ],
+};
+timers[0]();
+const sentList = calls.filter(([c]) => c === "service_status").at(-1)[1].list;
+check(
+  JSON.stringify(sentList) === '[["Ana Souza",3],["Bruno",0],["Grupo",1234]]',
+  `lista de conversas: ${JSON.stringify(sentList)}`,
+);
+const beforeTick = calls.length;
+timers[1]();
+check(calls.length === beforeTick, "lista igual: não envia de novo");
+dom["#pane-side"] = { querySelectorAll: () => [row("Bruno", "1 mensagem não lida")] };
+timers[1]();
+check(calls.length === beforeTick + 1, "lista mudou: envia");
+delete dom["#pane-side"];
 
 if (failures.length) {
   console.error("FALHOU:", failures.join("; "));

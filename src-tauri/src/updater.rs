@@ -87,7 +87,7 @@ pub async fn check(app: &AppHandle) -> Result<(), String> {
 /// o próprio `.dmg`.
 fn blocked_location(exe: &str) -> Option<&'static str> {
     if exe.contains("/AppTranslocation/") {
-        Some("O Mac está abrindo o Papeo de uma cópia temporária, que não pode ser atualizada. Feche o Papeo, abra o Terminal e rode: xattr -dr com.apple.quarantine /Applications/Papeo.app — depois abra o Papeo e atualize de novo.")
+        Some("O Mac está abrindo o Papeo de uma cópia temporária, que não pode ser atualizada. Feche o Papeo (ícone na barra de menus → Sair) e abra de novo: ele já se corrigiu. Se o aviso voltar, rode no Terminal: xattr -dr com.apple.quarantine /Applications/Papeo.app")
     } else if exe.starts_with("/Volumes/") {
         Some("O Papeo está aberto direto do instalador. Arraste-o para a pasta Aplicativos, abra de lá e atualize de novo.")
     } else {
@@ -95,16 +95,56 @@ fn blocked_location(exe: &str) -> Option<&'static str> {
     }
 }
 
-/// `.app` do executável atual, se ele não estiver na cópia temporária.
+/// `.app` original do executável atual. Aberto da cópia temporária do
+/// Gatekeeper, pergunta ao macOS onde está o original; aberto do `.dmg`, nada.
 #[cfg(target_os = "macos")]
 fn app_bundle() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    if blocked_location(&exe.to_string_lossy()).is_some() {
-        return None;
-    }
     // Papeo.app/Contents/MacOS/papeo
     let bundle = exe.parent()?.parent()?.parent()?.to_path_buf();
-    (bundle.extension()? == "app").then_some(bundle)
+    if bundle.extension()? != "app" {
+        return None;
+    }
+    let bundle = if exe.to_string_lossy().contains("/AppTranslocation/") {
+        original_of_translocated(&bundle)?
+    } else {
+        bundle
+    };
+    (bundle.extension()? == "app" && !bundle.starts_with("/Volumes/")).then_some(bundle)
+}
+
+/// Caminho original de um app na cópia temporária (`AppTranslocation`), pela
+/// função do Security.framework que o próprio macOS oferece para isso
+/// (`SecTranslocateCreateOriginalPathForURL`, macOS 10.12+). Procurada em
+/// tempo de execução: se não existir, nada muda.
+#[cfg(target_os = "macos")]
+fn original_of_translocated(bundle: &std::path::Path) -> Option<std::path::PathBuf> {
+    use objc2::rc::Retained;
+    use objc2_foundation::{NSString, NSURL};
+    use std::ffi::c_void;
+    type Original = unsafe extern "C" fn(*const c_void, *mut *const c_void) -> *mut c_void;
+    // SAFETY: dlopen/dlsym com textos terminados em zero; o símbolo, se
+    // existir, tem a assinatura acima (CFURLRef, CFErrorRef*) -> CFURLRef, e
+    // CFURL/NSURL são intercambiáveis. O retorno segue a regra "Create" (é
+    // nosso), então vira um `Retained` sem retain extra.
+    unsafe {
+        let lib = libc::dlopen(
+            c"/System/Library/Frameworks/Security.framework/Security".as_ptr(),
+            libc::RTLD_LAZY,
+        );
+        if lib.is_null() {
+            return None;
+        }
+        let sym = libc::dlsym(lib, c"SecTranslocateCreateOriginalPathForURL".as_ptr());
+        if sym.is_null() {
+            return None;
+        }
+        let original: Original = std::mem::transmute(sym);
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&bundle.to_string_lossy()));
+        let out = original(Retained::as_ptr(&url).cast(), std::ptr::null_mut());
+        let out: Retained<NSURL> = Retained::from_raw(out.cast())?;
+        Some(std::path::PathBuf::from(out.path()?.to_string()))
+    }
 }
 
 /// Tira do app a marca de "baixado da internet". O Papeo instalado com ela

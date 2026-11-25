@@ -101,6 +101,23 @@ fn web(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
 }
 
+/// Pedido da página para fechar a prévia (atalho de teclado). A página não
+/// tem comando nenhum: o pedido é uma navegação que o Papeo intercepta. Um
+/// site só consegue, no máximo, fechar a própria prévia.
+const CLOSE_URL: &str = "papeo-preview://close";
+
+/// Na página: ⌘W/Ctrl+W fecha a prévia mesmo com o foco no site (no Mac o
+/// menu já faz isso; no Windows não há menu).
+const PAGE_SCRIPT: &str = r#"
+addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "w") {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    location.href = "papeo-preview://close";
+  }
+}, true);
+"#;
+
 fn update(app: &AppHandle, change: impl FnOnce(&mut PreviewInfo)) {
     let info = {
         let mut cur = current();
@@ -190,13 +207,24 @@ fn create(
     let mut page = WebviewBuilder::new(PAGE, WebviewUrl::External(url))
         // Sem dados em disco: a prévia não guarda login, cookies nem cache.
         .incognito(true)
-        .on_navigation(web)
+        .initialization_script(PAGE_SCRIPT)
+        .on_navigation({
+            let app = app.clone();
+            move |url| {
+                if url.as_str().starts_with(CLOSE_URL) {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move { close(&app) });
+                    return false;
+                }
+                web(url)
+            }
+        })
         .on_new_window({
             let app = app.clone();
             move |url, _features| {
                 // Dentro da prévia, "nova janela" vai para o navegador.
                 if web(&url) || url.scheme() == "mailto" {
-                    let _ = app.opener().open_url(url.as_str(), None::<&str>);
+                    crate::webviews::open_external(&app, url.as_str());
                 }
                 NewWindowResponse::Deny
             }

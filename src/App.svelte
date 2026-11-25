@@ -518,6 +518,8 @@
           oncustomize={(service) => (customizing = service)}
           onchat={(id, chat) => openChat(id, chat, true)}
           today={todayTasks.length ? todayCard : undefined}
+          oncreatetask={createTask}
+          clock={now}
         />
       {/if}
     </section>
