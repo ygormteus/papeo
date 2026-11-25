@@ -19,8 +19,14 @@ const DEFAULT_URL: Record<string, string> = {
   whatsapp: "https://web.whatsapp.com/",
   telegram: "https://web.telegram.org/a/",
   discord: "https://discord.com/app",
+  gmail: "https://mail.google.com/mail/u/0/",
 };
-const DEFAULT_NAME: Record<string, string> = { whatsapp: "WhatsApp", telegram: "Telegram", discord: "Discord" };
+const DEFAULT_NAME: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+  discord: "Discord",
+  gmail: "Gmail",
+};
 const MB = 1024 ** 2;
 
 export function installDevMock() {
@@ -38,8 +44,11 @@ export function installDevMock() {
       mk("svc-a", "whatsapp", "Pessoal", DEFAULT_URL.whatsapp, true, 4),
       mk("svc-c", "whatsapp", "Trabalho", DEFAULT_URL.whatsapp, true, 12),
       mk("svc-b", "telegram", "Telegram", DEFAULT_URL.telegram, false, 0),
+      mk("svc-d", "gmail", "Gmail", DEFAULT_URL.gmail, true, 7),
+      mk("svc-e", "email", "E-mail da loja", "https://webmail.exemplo.com.br/", true, 2),
     );
     Object.assign(services[0], { emoji: "🏠", color: "#16a34a", idleMinutes: 24 });
+    Object.assign(services[3], { chat: "Proposta de orçamento — novembro", idleMinutes: 5 });
     Object.assign(services[1], { emoji: "💼", color: "#2563eb", idleMinutes: 3 });
     settings.updates.noticeSeen = true;
     // `?alertas`: uma conta fora do ar e outra travada.
@@ -241,7 +250,7 @@ export function installDevMock() {
         return snap();
       case "add_service": {
         const kind = args.kind as ServiceView["kind"];
-        if (kind === "custom" && !args.url) throw "Informe a URL do serviço.";
+        if ((kind === "custom" || kind === "email") && !args.url) throw "Informe a URL do serviço.";
         const id = `svc-${Math.random().toString(16).slice(2, 8)}`;
         const base = (args.name as string) || DEFAULT_NAME[kind] || String(args.url);
         let name = base;

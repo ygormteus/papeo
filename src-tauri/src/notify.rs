@@ -107,6 +107,8 @@ pub async fn service_notify(
 }
 
 /// Sinal de vida periódico do site, com a detecção de "deslogado".
+// Cada argumento é um campo do IPC enviado pelo shim.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn service_status(
     app: AppHandle,
@@ -119,6 +121,9 @@ pub async fn service_status(
     chat: Option<String>,
     // Lista de conversas do site: (nome, não lidas) de cada linha visível.
     list: Option<Vec<(String, u32)>>,
+    // Não lidas lidas na própria página (caixas de e-mail); sem valor, vale
+    // o número do título.
+    unread: Option<u32>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
@@ -155,6 +160,15 @@ pub async fn service_status(
         // Conversas lidas no próprio site (ou no celular) saem das não lidas.
         if let Some(list) = list.filter(|_| own_site) {
             chat_changed |= inner.apply_chat_list(&id, &list);
+        }
+        // Contador da caixa de entrada informado pela página. Na tela de
+        // login, o número antigo não vale mais.
+        if own_site && logged_out && inner.page_unread.remove(&id) {
+            chat_changed |= inner.unread.insert(id.clone(), 0) != Some(0);
+        } else if let Some(count) = unread.filter(|_| own_site) {
+            let count = count.min(crate::webviews::UNREAD_MAX);
+            inner.page_unread.insert(id.clone());
+            chat_changed |= inner.unread.insert(id.clone(), count) != Some(count);
         }
         // A página está pronta: abre a conversa que esperava por ela.
         let pending = own_site.then(|| inner.pending_chat.remove(&id)).flatten();

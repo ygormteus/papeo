@@ -89,15 +89,84 @@
     true,
   );
 
-  // Tela de login/QR visível = sessão desconectada (só mensageiros conhecidos).
+  // Site conhecido: o domínio, ou o tipo de webmail (o Roundcube roda no
+  // domínio de cada provedor, então é reconhecido pela própria página).
+  const site = () => {
+    const host = location.hostname;
+    if (host === "mail.google.com") return "gmail";
+    if (window.rcmail || document.querySelector("#rcmloginuser")) return "roundcube";
+    return host;
+  };
+  const visible = (el) => Boolean(el && el.getClientRects?.().length);
+  const firstVisible = (sel, root = document) => [...root.querySelectorAll(sel)].find(visible) || null;
+
+  // Tela de login/QR visível = sessão desconectada (só sites conhecidos).
   const LOGGED_OUT_SELECTORS = {
     "web.whatsapp.com": '[data-ref] canvas, canvas[aria-label*="QR" i], canvas[aria-label*="scan" i]',
     "web.telegram.org": "#auth-qr-form, #auth-phone-number-form, #auth-code-form, #auth-password-form",
     "discord.com": '[class*="authBox"]',
+    roundcube: "#rcmloginuser",
   };
   const loggedOut = () => {
-    const selector = LOGGED_OUT_SELECTORS[location.hostname];
+    // Gmail desconectado cai nas páginas de login do Google.
+    if (location.hostname === "accounts.google.com") {
+      return /^\/(v\d\/)?(signin|ServiceLogin|AccountChooser)/i.test(location.pathname || "");
+    }
+    const selector = LOGGED_OUT_SELECTORS[site()];
     return Boolean(selector && document.querySelector(selector));
+  };
+
+  // Caixas de e-mail: o assunto do e-mail aberto faz as vezes da conversa
+  // ("" = nenhum aberto) e a página informa as não lidas da caixa de entrada.
+  const clean = (text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const roundcubeSubject = () => {
+    const own = firstVisible("h2.subject");
+    if (own) return own;
+    try {
+      const frame = document.querySelector("#messagecontframe");
+      // Escondido (tela estreita), o quadro ainda guarda o último e-mail.
+      const doc = visible(frame) ? frame.contentDocument : null;
+      return doc?.querySelector("h2.subject") || null;
+    } catch (_) {
+      return null; // quadro de outro domínio
+    }
+  };
+  const MAIL_SUBJECT = {
+    gmail: () => firstVisible("h2.hP"),
+    // Login do Google (Gmail desconectado): nenhum e-mail aberto.
+    "accounts.google.com": () => null,
+    roundcube: roundcubeSubject,
+  };
+  // Número com separador de milhar ("1.234", "1 234"); sem número: undefined.
+  const digits = (text) => {
+    const m = String(text || "").match(/\d[\d.,\u00a0\u202f ]*/);
+    return m ? Number(m[0].replace(/\D/g, "")) || 0 : undefined;
+  };
+  const MAIL_UNREAD = {
+    gmail: () => {
+      const inbox = document.querySelector('a[href$="#inbox"]');
+      if (!inbox) return undefined;
+      // Item da caixa de entrada reconhecido: sem o número, nenhuma não lida.
+      const item = inbox.closest?.(".aim");
+      if (item) return digits(item.querySelector(".bsU")?.textContent) ?? 0;
+      // Estrutura desconhecida: só com o número no rótulo; senão vale o título.
+      return digits(inbox.getAttribute("aria-label"));
+    },
+    roundcube: () => {
+      const rc = window.rcmail;
+      if (!rc || rc.env?.task !== "mail") return undefined;
+      const known = rc.env.unread_counts?.INBOX;
+      if (typeof known === "number") return known;
+      return digits(document.querySelector("#mailboxlist li.inbox .unreadcount")?.textContent) ?? 0;
+    },
+  };
+  const pageUnread = () => {
+    try {
+      const n = MAIL_UNREAD[site()]?.();
+      return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 999999) : undefined;
+    } catch (_) {
+      return undefined;
+    }
   };
 
   // Chamada, microfone/câmera, tela compartilhada ou áudio/vídeo com som:
@@ -144,6 +213,15 @@
   // Conversa aberta (nome no cabeçalho), para o painel do contato no
   // Papeo. Só nos mensageiros conhecidos; "" = nenhuma conversa aberta.
   const currentChat = () => {
+    const mail = MAIL_SUBJECT[site()];
+    if (mail) {
+      try {
+        const el = mail();
+        return el ? clean(el.getAttribute("title") || el.textContent) : "";
+      } catch (_) {
+        return undefined;
+      }
+    }
     const sel = CHAT_HEADER[location.hostname];
     if (!sel) return undefined;
     try {
@@ -182,16 +260,24 @@
     return out;
   };
   let lastList = "";
+  const pageState = () => JSON.stringify([chatList(), pageUnread(), MAIL_SUBJECT[site()] ? currentChat() : null]);
   const heartbeat = () => {
     lastChat = currentChat();
     const list = chatList();
-    lastList = JSON.stringify(list);
-    invoke("service_status", { loggedOut: loggedOut(), media: mediaActive(), chat: lastChat ?? null, list });
+    const unread = pageUnread();
+    lastList = pageState();
+    invoke("service_status", {
+      loggedOut: loggedOut(),
+      media: mediaActive(),
+      chat: lastChat ?? null,
+      list,
+      unread: unread ?? null,
+    });
   };
   setInterval(heartbeat, 20000);
-  // A lista mudou (conversa lida, mensagem nova): avisa logo.
+  // A lista mudou (conversa lida, mensagem nova, e-mail aberto): avisa logo.
   setInterval(() => {
-    if (JSON.stringify(chatList()) !== lastList) heartbeat();
+    if (pageState() !== lastList) heartbeat();
   }, 5000);
   // Trocou de conversa (clique ou teclado): avisa logo.
   const chatChanged = () =>
@@ -201,6 +287,11 @@
     }, 400);
   document.addEventListener("click", chatChanged, true);
   document.addEventListener("keyup", (e) => e.key === "Enter" || e.key === "Escape" ? chatChanged() : undefined, true);
+  // O Gmail navega pelo endereço (#inbox/…) e demora um pouco a desenhar.
+  window.addEventListener("hashchange", () => {
+    chatChanged();
+    setTimeout(chatChanged, 1500);
+  });
   // Uma mídia começou: avisa logo (no máximo a cada 5 s).
   let lastPlayBeat = 0;
   document.addEventListener(
@@ -284,8 +375,56 @@
     press(hit.el);
     return true;
   };
+  // E-mail: busca o texto (assunto ou remetente) na caixa do próprio site e
+  // abre o e-mail se a busca trouxer um só, que contenha o texto.
+  const MAIL_SEARCH = {
+    gmail: {
+      ready: () => Boolean(document.querySelector('a[href$="#inbox"]')),
+      search: (q) => {
+        const phrase = `"${q.replace(/"/g, " ").trim()}"`;
+        location.hash = "#search/" + encodeURIComponent(phrase).replace(/%20/g, "+");
+      },
+      rows: () => [...document.querySelectorAll('div[role="main"] tr.zA')].filter(visible),
+    },
+    roundcube: {
+      ready: () => Boolean(window.rcmail?.gui_objects?.qsearchbox),
+      search: (q) => {
+        const rc = window.rcmail;
+        const box = rc.gui_objects.qsearchbox;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+        setter.call(box, q);
+        rc.command("search", q);
+      },
+      rows: () => [...document.querySelectorAll("#messagelist tbody tr")].filter(visible),
+    },
+  };
+  const openMail = (provider, name) => {
+    let tries = 0;
+    const step = () => {
+      if (!provider.ready()) {
+        if (++tries < 40) setTimeout(step, 500);
+        return;
+      }
+      provider.search(name);
+      const q = fold(name);
+      let picks = 0;
+      const pick = () => {
+        const rows = provider.rows();
+        if (rows.length === 1 && fold(rows[0].textContent || "").includes(q)) {
+          press(rows[0]);
+          return;
+        }
+        if (++picks < 16) setTimeout(pick, 500);
+      };
+      setTimeout(pick, 1200);
+    };
+    step();
+  };
   const openChat = (query, exact) => {
     const name = String(query || "").trim();
+    const mail = MAIL_SEARCH[site()];
+    // Assunto longo chega encurtado ("…"): busca só o começo.
+    if (name && mail) return openMail(mail, name.replace(/\s*…$/, ""));
     if (!name || !SEARCH_BOX[location.hostname]) return;
     let tries = 0;
     const step = () => {

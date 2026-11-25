@@ -3,6 +3,7 @@
   import {
     ChevronRight,
     LogIn,
+    Mail,
     MessagesSquare,
     RotateCw,
     FolderOpen,
@@ -22,6 +23,7 @@
     STATUS_LABEL,
     api,
     formatBytes,
+    isEmail,
     isMuted,
     type ServiceView,
     type Snapshot,
@@ -201,6 +203,16 @@
     }
   }
 
+  const mailboxes = $derived(snap.services.filter(isEmail));
+  const mailUnread = $derived(mailboxes.reduce((a, s) => a + s.unread, 0));
+
+  function mailState(s: ServiceView): string {
+    if (s.status === "loggedOut") return "Desconectado: abra para entrar";
+    if (!s.loaded) return "Hibernado: abra para atualizar";
+    if (s.chat) return `Aberto: ${s.chat}`;
+    return s.unread ? `${s.unread} ${s.unread === 1 ? "não lida" : "não lidas"}` : "Nenhuma não lida";
+  }
+
   function serviceOf(id: string) {
     return snap.services.find((s) => s.id === id);
   }
@@ -235,6 +247,30 @@
   {/if}
 
   {@render today?.()}
+
+  {#if mailboxes.length}
+    <section class="card block" aria-labelledby="mail-title">
+      <div class="block-head">
+        <h2 id="mail-title"><Mail size={18} /> E-mail</h2>
+        {#if mailUnread}<span class="hint">{mailUnread} {mailUnread === 1 ? "não lida" : "não lidas"}</span>{/if}
+      </div>
+      <ul class="mailboxes">
+        {#each mailboxes as s (s.id)}
+          <li>
+            <ServiceAvatar service={s} size={26} dimmed={!s.loaded} />
+            <span class="mailbox-text">
+              <span class="svc-name">{s.name}</span>
+              <span class="mailbox-state" class:warn-text={s.status === "loggedOut"} title={mailState(s)}>
+                {mailState(s)}
+              </span>
+            </span>
+            {#if s.unread && s.loaded}<span class="count-badge" aria-hidden="true">{s.unread}</span>{/if}
+            <button class="btn small" onclick={() => onopen(s.id)} aria-label="Abrir {s.name}">Abrir</button>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 
   {#if snap.recent.length}
     <section class="card block" aria-labelledby="recent-title">
@@ -748,6 +784,58 @@
     gap: 12px;
     padding: 32px 0 28px;
     color: var(--text-muted);
+  }
+
+  .mailboxes {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+
+  .mailboxes li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .mailboxes li:first-child {
+    border-top: 0;
+  }
+
+  .mailbox-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mailbox-state {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mailbox-state.warn-text {
+    color: var(--warn-text);
+  }
+
+  .count-badge {
+    flex: none;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 11px;
+    display: inline-grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   .downloads {

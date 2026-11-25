@@ -57,6 +57,9 @@ pub fn open_external(app: &AppHandle, url: &str) {
     }
 }
 
+/// Teto das não lidas vindas do site (título ou página).
+pub const UNREAD_MAX: u32 = 999_999;
+
 pub fn create_service_webview(
     app: &AppHandle,
     service: &Service,
@@ -79,11 +82,13 @@ pub fn create_service_webview(
         .disable_drag_drop_handler()
         .on_document_title_changed(|webview, title| {
             let app = webview.app_handle().clone();
-            let count = papeo_core::parse_unread(&title);
+            let count = papeo_core::parse_unread(&title).min(UNREAD_MAX);
             let changed = {
                 let state = app.state::<AppState>();
                 let mut inner = state.lock();
-                inner.unread.insert(webview.label().to_owned(), count) != Some(count)
+                let id = webview.label();
+                !inner.page_unread.contains(id)
+                    && inner.unread.insert(id.to_owned(), count) != Some(count)
             };
             if changed {
                 publish(&app);
@@ -233,8 +238,14 @@ pub fn reload(app: &AppHandle, id: &str) -> Result<bool, String> {
     let Some(webview) = app.get_webview(id) else {
         return Ok(false);
     };
-    if let Some(health) = app.state::<AppState>().lock().health.get_mut(id) {
-        *health = Health::new();
+    {
+        let state = app.state::<AppState>();
+        let mut inner = state.lock();
+        if let Some(health) = inner.health.get_mut(id) {
+            *health = Health::new();
+        }
+        // A página volta a informar o contador (ou o título, se não informar).
+        inner.page_unread.remove(id);
     }
     webview.reload().map_err(|e| e.to_string())?;
     Ok(true)
@@ -358,6 +369,7 @@ pub fn hibernate(app: &AppHandle, id: &str) {
     let state = app.state::<AppState>();
     let mut inner = state.lock();
     inner.unread.remove(id);
+    inner.page_unread.remove(id);
     inner.health.remove(id);
     inner.last_reload.remove(id);
     inner.pending_chat.remove(id);

@@ -1,13 +1,13 @@
 <script lang="ts">
   import Modal from "./Modal.svelte";
-  import { KIND_META, errorMessage, type ServiceKind } from "./api";
+  import { KIND_META, errorMessage, needsUrl, type ServiceKind } from "./api";
 
   let {
     onclose,
     onsubmit,
   }: { onclose: () => void; onsubmit: (kind: ServiceKind, name: string, url: string) => Promise<void> } = $props();
 
-  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "custom"];
+  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "gmail", "email", "custom"];
   let kind = $state<ServiceKind>("whatsapp");
   let name = $state("");
   let url = $state("");
@@ -16,14 +16,14 @@
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    if (kind === "custom" && !url.trim()) {
-      error = "Informe o endereço do site.";
+    if (needsUrl(kind) && !url.trim()) {
+      error = kind === "email" ? "Informe o endereço do webmail." : "Informe o endereço do site.";
       return;
     }
     busy = true;
     error = "";
     try {
-      await onsubmit(kind, name.trim(), kind === "custom" ? url.trim() : "");
+      await onsubmit(kind, name.trim(), needsUrl(kind) ? url.trim() : "");
     } catch (err) {
       error = errorMessage(err);
       busy = false;
@@ -48,11 +48,23 @@
       {/each}
     </fieldset>
 
-    {#if kind === "custom"}
+    {#if needsUrl(kind)}
       <div class="field">
-        <label for="svc-url">Endereço</label>
+        <label for="svc-url">{kind === "email" ? "Endereço do webmail" : "Endereço"}</label>
         <!-- svelte-ignore a11y_autofocus -->
-        <input id="svc-url" class="input" bind:value={url} placeholder="app.exemplo.com" autofocus />
+        <input
+          id="svc-url"
+          class="input"
+          bind:value={url}
+          placeholder={kind === "email" ? "webmail.seudominio.com.br" : "app.exemplo.com"}
+          autofocus
+        />
+        {#if kind === "email"}
+          <p class="note">
+            O mesmo endereço em que você lê esse e-mail no navegador. No Roundcube, o Papeo também lê o assunto
+            aberto e as não lidas.
+          </p>
+        {/if}
         {#if url.trim().toLowerCase().startsWith("http://")}
           <p class="warn" role="note">
             Endereço sem criptografia (http): mensagens e senhas podem ser lidas por quem estiver na mesma
@@ -60,6 +72,11 @@
           </p>
         {/if}
       </div>
+    {:else if kind === "gmail"}
+      <p class="note">
+        Para receber avisos de e-mails novos, ligue no Gmail: Configurações → Ver todas as configurações →
+        Notificações da área de trabalho.
+      </p>
     {/if}
 
     <div class="field">
@@ -68,7 +85,11 @@
         id="svc-name"
         class="input"
         bind:value={name}
-        placeholder={kind === "custom" ? "Ex.: Slack da empresa" : `Ex.: ${KIND_META[kind].label} trabalho`}
+        placeholder={kind === "custom"
+          ? "Ex.: Slack da empresa"
+          : kind === "email"
+            ? "Ex.: E-mail da empresa"
+            : `Ex.: ${KIND_META[kind].label} trabalho`}
       />
     </div>
 
@@ -156,6 +177,16 @@
   .error {
     margin: 0;
     color: var(--danger);
+  }
+
+  .note {
+    margin: 6px 0 0;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+
+  .kinds + .note {
+    margin: 0;
   }
 
   .warn {

@@ -11,6 +11,11 @@ pub enum ServiceKind {
     Whatsapp,
     Telegram,
     Discord,
+    /// Gmail na web.
+    Gmail,
+    /// Webmail de qualquer provedor (Roundcube e outros, contas IMAP):
+    /// o endereço é informado pela pessoa.
+    Email,
     Custom,
 }
 
@@ -22,12 +27,18 @@ impl ServiceKind {
         matches!(self, ServiceKind::Whatsapp | ServiceKind::Telegram)
     }
 
+    /// Caixas de e-mail: o assunto aberto faz as vezes da conversa.
+    pub fn is_email(self) -> bool {
+        matches!(self, ServiceKind::Gmail | ServiceKind::Email)
+    }
+
     fn default_name(self) -> Option<&'static str> {
         match self {
             Self::Whatsapp => Some("WhatsApp"),
             Self::Telegram => Some("Telegram"),
             Self::Discord => Some("Discord"),
-            Self::Custom => None,
+            Self::Gmail => Some("Gmail"),
+            Self::Email | Self::Custom => None,
         }
     }
 
@@ -36,7 +47,8 @@ impl ServiceKind {
             Self::Whatsapp => Some("https://web.whatsapp.com/"),
             Self::Telegram => Some("https://web.telegram.org/a/"),
             Self::Discord => Some("https://discord.com/app"),
-            Self::Custom => None,
+            Self::Gmail => Some("https://mail.google.com/mail/u/0/"),
+            Self::Email | Self::Custom => None,
         }
     }
 }
@@ -138,10 +150,10 @@ impl Service {
     }
 
     /// Mensageiros conhecidos liberam microfone/câmera (mensagens de voz);
-    /// sites personalizados perguntam.
+    /// e-mail e sites personalizados perguntam.
     pub fn media_policy(&self) -> MediaPolicy {
         self.media.unwrap_or(match self.kind {
-            ServiceKind::Custom => MediaPolicy::Ask,
+            ServiceKind::Custom | ServiceKind::Gmail | ServiceKind::Email => MediaPolicy::Ask,
             _ => MediaPolicy::Allow,
         })
     }
@@ -334,6 +346,31 @@ mod tests {
         assert!(ServiceKind::Telegram.supports_chat());
         let kind: ServiceKind = serde_json::from_str(r#""discord""#).unwrap();
         assert_eq!(kind, ServiceKind::Discord);
+    }
+
+    #[test]
+    fn email_kinds() {
+        let gmail = Service::new(ServiceKind::Gmail, None, None).unwrap();
+        assert_eq!(gmail.name, "Gmail");
+        assert_eq!(gmail.url, "https://mail.google.com/mail/u/0/");
+        assert_eq!(gmail.media_policy(), MediaPolicy::Ask);
+        // Webmail genérico: o endereço é obrigatório e o nome vem dele.
+        assert!(Service::new(ServiceKind::Email, None, None).is_err());
+        let webmail = Service::new(
+            ServiceKind::Email,
+            None,
+            Some("webmail.exemplo.com.br".into()),
+        )
+        .unwrap();
+        assert_eq!(webmail.name, "webmail.exemplo.com.br");
+        assert!(ServiceKind::Gmail.is_email() && ServiceKind::Email.is_email());
+        assert!(!ServiceKind::Gmail.supports_chat() && !ServiceKind::Whatsapp.is_email());
+        let kind: ServiceKind = serde_json::from_str(r#""email""#).unwrap();
+        assert_eq!(kind, ServiceKind::Email);
+        assert_eq!(
+            serde_json::to_string(&ServiceKind::Gmail).unwrap(),
+            r#""gmail""#
+        );
     }
 
     #[test]

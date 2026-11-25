@@ -5,6 +5,7 @@
   import TaskForm from "./TaskForm.svelte";
   import TaskList, { type TaskActions } from "./TaskList.svelte";
   import { contactFor, tasksFor } from "./tasks";
+  import { isEmail, isMessenger } from "./api";
 
   let {
     service,
@@ -24,8 +25,10 @@
     onclose: () => void;
   } = $props();
 
-  const messenger = $derived(service.kind === "whatsapp" || service.kind === "telegram");
-  const chat = $derived(messenger ? (service.chat ?? "") : "");
+  const messenger = $derived(isMessenger(service));
+  const email = $derived(isEmail(service));
+  const chat = $derived(messenger || email ? (service.chat ?? "") : "");
+  const noneOpen = $derived(email ? "Nenhum e-mail aberto" : "Nenhuma conversa aberta");
   const link = $derived<ChatLink>({ serviceId: service.id, chat });
   const key = $derived(`${service.id}\u0000${chat}`);
   const title = $derived(chat || service.name);
@@ -104,7 +107,7 @@
     <NotebookPen size={16} />
     <div class="titles">
       <strong title={title}>{title}</strong>
-      <span>{chat ? service.name : messenger ? "Nenhuma conversa aberta" : "Conta inteira"}</span>
+      <span>{chat ? service.name : messenger || email ? noneOpen : "Conta inteira"}</span>
     </div>
     <button class="icon-btn ghost close" onclick={onclose} aria-label="Fechar o painel">
       <X size={16} />
@@ -114,6 +117,12 @@
   <div class="scroll">
     {#if messenger && !chat}
       <p class="hint">Abra uma conversa para ligar tarefas e anotações a ela. Aqui ficam as da conta.</p>
+    {:else if email && !chat}
+      <p class="hint">
+        Abra um e-mail para ligar tarefas e anotações a ele{service.kind === "email"
+          ? " (no Roundcube; em outros webmails, ficam na conta)"
+          : ""}. Aqui ficam as da conta.
+      </p>
     {/if}
 
     {#key key}
@@ -134,7 +143,9 @@
         {actions}
         {now}
         showContact={false}
-        empty={chat ? "Nenhuma tarefa ligada a esta conversa." : "Nenhuma tarefa ligada a esta conta."}
+        empty={chat
+          ? `Nenhuma tarefa ligada a ${email ? "este e-mail" : "esta conversa"}.`
+          : "Nenhuma tarefa ligada a esta conta."}
       />
     </div>
 

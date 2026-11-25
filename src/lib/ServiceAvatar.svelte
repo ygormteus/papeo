@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Globe, Headphones, MessageCircle, Send } from "@lucide/svelte";
+  import { Globe, Headphones, Mail, MessageCircle, Send } from "@lucide/svelte";
   import { serviceColor, type ServiceView } from "./api";
 
   let {
@@ -15,7 +15,9 @@
         ? Send
         : service.kind === "discord"
           ? Headphones
-          : Globe,
+          : service.kind === "gmail" || service.kind === "email"
+            ? Mail
+            : Globe,
   );
 </script>
 

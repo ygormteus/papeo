@@ -7,7 +7,7 @@
 
 use papeo_core::{Config, Organizer, Service, Settings};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -173,6 +173,9 @@ pub struct Inner {
     pub autostart: bool,
     pub last_used: HashMap<String, Instant>,
     pub unread: HashMap<String, u32>,
+    /// Serviços cuja página informa as não lidas (Gmail, Roundcube): o
+    /// título deixa de valer (o Gmail tira o número ao abrir um e-mail).
+    pub page_unread: HashSet<String>,
     pub last_notified: HashMap<String, Instant>,
     /// Última notificação mostrada com o app em segundo plano.
     pub last_notification: Option<(String, Instant)>,
@@ -217,6 +220,7 @@ impl Inner {
             autostart: false,
             last_used: HashMap::new(),
             unread: HashMap::new(),
+            page_unread: HashSet::new(),
             last_notified: HashMap::new(),
             last_notification: None,
             health: HashMap::new(),

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Component } from "svelte";
 
-export type ServiceKind = "whatsapp" | "telegram" | "discord" | "custom";
+export type ServiceKind = "whatsapp" | "telegram" | "discord" | "gmail" | "email" | "custom";
 export type MediaPolicy = "ask" | "allow" | "block";
 export type Appearance = "system" | "light" | "dark" | "oled";
 /** Conteúdo nas notificações: completo · só remetente · oculto. */
@@ -35,7 +35,8 @@ export interface ServiceView {
   status: ServiceStatus;
   /** Minutos desde o último uso nesta sessão (0 = em uso). */
   idleMinutes?: number | null;
-  /** Conversa aberta no site (nome no cabeçalho); só WhatsApp/Telegram. */
+  /** Conversa aberta no site (nome no cabeçalho; nas caixas de e-mail, o
+   *  assunto do e-mail aberto). Só WhatsApp, Telegram, Gmail e Roundcube. */
   chat?: string | null;
 }
 
@@ -450,6 +451,8 @@ export const KIND_META: Record<ServiceKind, { label: string; color: string; hint
   whatsapp: { label: "WhatsApp", color: "#25d366", hint: "web.whatsapp.com" },
   telegram: { label: "Telegram", color: "#2aabee", hint: "web.telegram.org" },
   discord: { label: "Discord", color: "#5865f2", hint: "discord.com" },
+  gmail: { label: "Gmail", color: "#ea4335", hint: "mail.google.com" },
+  email: { label: "Outro e-mail", color: "#0f766e", hint: "Webmail (Roundcube e outros)" },
   custom: { label: "Outro site", color: "#8b5cf6", hint: "Qualquer endereço https" },
 };
 
@@ -474,7 +477,22 @@ export function serviceColor(service: Pick<ServiceView, "kind" | "color">): stri
 }
 
 export function mediaPolicy(service: Pick<ServiceView, "kind" | "media">): MediaPolicy {
-  return service.media ?? (service.kind === "custom" ? "ask" : "allow");
+  return service.media ?? (isMessenger(service) || service.kind === "discord" ? "allow" : "ask");
+}
+
+/** WhatsApp e Telegram: conversas que dá para abrir e responder. */
+export function isMessenger(service: Pick<ServiceView, "kind">): boolean {
+  return service.kind === "whatsapp" || service.kind === "telegram";
+}
+
+/** Caixas de e-mail: o assunto aberto faz as vezes da conversa. */
+export function isEmail(service: Pick<ServiceView, "kind">): boolean {
+  return service.kind === "gmail" || service.kind === "email";
+}
+
+/** Tipos em que a pessoa informa o endereço. */
+export function needsUrl(kind: ServiceKind): boolean {
+  return kind === "custom" || kind === "email";
 }
 
 export const MEDIA_OPTIONS: { value: MediaPolicy; label: string }[] = [
@@ -511,7 +529,7 @@ export function isInsecure(service: Pick<ServiceView, "url">): boolean {
 
 /** Serviços em que a busca de conversas funciona (WhatsApp e Telegram). */
 export function searchable(service: Pick<ServiceView, "kind">): boolean {
-  return service.kind === "whatsapp" || service.kind === "telegram";
+  return isMessenger(service);
 }
 
 /** Créditos e links mostrados em Configurações → Sobre. */
