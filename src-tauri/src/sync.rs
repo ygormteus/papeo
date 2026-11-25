@@ -79,6 +79,8 @@ pub struct SyncRuntime {
     gate: tauri::async_runtime::Mutex<()>,
     /// Arquivos dos outros computadores já abertos (id → data na nuvem).
     cache: Mutex<HashMap<String, (String, DeviceFile)>>,
+    /// `meta.json` já lido (id, data na nuvem): não baixa de novo a cada rodada.
+    meta: Mutex<Option<(String, String, SyncMeta)>>,
     stored: Mutex<Stored>,
     access: Mutex<Option<(String, Instant)>>,
     running: AtomicBool,
@@ -151,6 +153,7 @@ pub fn init(app: &AppHandle, dir: PathBuf) {
         path,
         gate: tauri::async_runtime::Mutex::new(()),
         cache: Mutex::new(HashMap::new()),
+        meta: Mutex::new(None),
         stored: Mutex::new(stored),
         access: Mutex::new(None),
         running: AtomicBool::new(false),
@@ -188,18 +191,33 @@ pub fn status(app: &AppHandle) -> SyncStatus {
     let error = lock(&rt.error).clone();
     let devices = *lock(&rt.devices);
     let running = rt.running.load(Ordering::Relaxed);
-    let stored = lock(&rt.stored).clone();
+    // Só os campos usados: `Stored` guarda também a base inteira das tarefas.
+    let (signed_in, has_key, last_sync, device_name) = {
+        let stored = lock(&rt.stored);
+        (
+            stored.refresh_token.is_some(),
+            stored.key.is_some(),
+            stored.last_sync,
+            stored.device_name.clone(),
+        )
+    };
     SyncStatus {
         available: drive::client().is_some(),
-        signed_in: stored.refresh_token.is_some(),
-        connected: stored.refresh_token.is_some() && stored.key.is_some(),
+        signed_in,
+        connected: signed_in && has_key,
         needs_passphrase,
         running,
-        last_sync: stored.last_sync,
+        last_sync,
         error,
-        device_name: stored.device_name,
+        device_name,
         devices,
     }
+}
+
+/// Conectado (conta e frase-senha), sem montar o status inteiro.
+fn connected(rt: &SyncRuntime) -> bool {
+    let stored = lock(&rt.stored);
+    stored.refresh_token.is_some() && stored.key.is_some()
 }
 
 fn emit(app: &AppHandle) {
@@ -219,7 +237,7 @@ pub fn tick(app: &AppHandle, woke: bool) {
     let Some(rt) = app.try_state::<SyncRuntime>() else {
         return;
     };
-    if !status(app).connected || rt.running.load(Ordering::Relaxed) {
+    if !connected(&rt) || rt.running.load(Ordering::Relaxed) {
         return;
     }
     let dirty = lock(&rt.dirty_at).is_some_and(|t| t.elapsed() >= AFTER_CHANGE);
@@ -310,10 +328,25 @@ async fn read_meta(
         return Ok(None);
     };
     let id = file.id.clone();
+    let modified = file.modified_time.clone();
+    let cached = lock(&rt(app).meta)
+        .as_ref()
+        .filter(|(at_id, at, _)| !modified.is_empty() && *at_id == id && *at == modified)
+        .map(|(_, _, meta)| meta.clone());
+    if let Some(meta) = cached {
+        return Ok(Some((id, meta)));
+    }
     let bytes = with_token!(app, |t| drive::download(&t, &id))?;
-    serde_json::from_slice(&bytes)
-        .map(|m| Some((id, m)))
-        .map_err(|_| "Dados de sincronização inválidos no Google Drive.".into())
+    let meta: SyncMeta = serde_json::from_slice(&bytes)
+        .map_err(|_| String::from("Dados de sincronização inválidos no Google Drive."))?;
+    *lock(&rt(app).meta) = Some((id.clone(), modified, meta.clone()));
+    Ok(Some((id, meta)))
+}
+
+/// Esquece o que já foi baixado (frase-senha nova, recomeço, saída).
+fn forget_downloads(rt: &SyncRuntime) {
+    lock(&rt.cache).clear();
+    *lock(&rt.meta) = None;
 }
 
 /// Apaga da nuvem, sem parar se falhar (limpeza).
@@ -409,7 +442,7 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
         }
         _ => {
             lock(&rt.stored).key = None;
-            lock(&rt.cache).clear();
+            forget_downloads(&rt);
             *lock(&rt.needs) = Some("enter".into());
             let _ = save(app);
             return Err(
@@ -517,13 +550,18 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
         }
         core::dedupe_contacts(&mut acc, now_ms);
         let changed = acc != inner.organizer;
-        if changed {
+        let staged = if changed {
             inner.organizer = acc.clone();
-            state.persist_organizer(&inner)?;
-        }
-        (acc, changed)
+            Some(state.stage_organizer(&inner)?)
+        } else {
+            None
+        };
+        (acc, changed, staged)
     };
-    let (merged, changed) = merged;
+    let (merged, changed, staged) = merged;
+    if let Some(staged) = staged {
+        app.state::<AppState>().write(staged)?;
+    }
     if changed {
         crate::organizer::publish_organizer(app);
     }
@@ -602,7 +640,7 @@ pub async fn sync_connect(app: AppHandle) -> Result<SyncStatus, String> {
     }
     let rt = rt(&app);
     let _gate = rt.gate.lock().await;
-    lock(&rt.cache).clear();
+    forget_downloads(&rt);
     let refresh = tokens
         .refresh_token
         .clone()
@@ -687,7 +725,7 @@ async fn use_passphrase(app: &AppHandle, passphrase: String) -> Result<SyncStatu
         // Primeira rodada com este conjunto: sem base (nada de "conflito").
         stored.base = Organizer::default();
     }
-    lock(&rt.cache).clear();
+    forget_downloads(&rt);
     *lock(&rt.needs) = None;
     save(app)?;
     round(app).await?;
@@ -732,7 +770,7 @@ pub async fn sync_disconnect(app: AppHandle, forget: bool) -> Result<SyncStatus,
     ensure_unlocked(&app)?;
     let rt = rt(&app);
     let _gate = rt.gate.lock().await;
-    lock(&rt.cache).clear();
+    forget_downloads(&rt);
     if forget {
         let own = lock(&rt.stored).own_file_id.clone();
         if let Some(id) = own {

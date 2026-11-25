@@ -2,10 +2,12 @@
 //! recentes com resposta rápida. Criada no primeiro clique e depois só
 //! escondida, para abrir na hora.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 
 pub const POPOVER: &str = "popover";
@@ -17,6 +19,14 @@ const GAP: f64 = 6.0;
 /// Quando a janela foi escondida por perder o foco. O clique no ícone que a
 /// esconde chega depois do "perdeu o foco": sem isto ela reabriria na hora.
 static HIDDEN_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Aberta (ou talvez aberta): só então recebe cada estado publicado. Ao
+/// abrir, recebe o estado atual antes de aparecer.
+static SHOWN: AtomicBool = AtomicBool::new(false);
+
+pub fn is_shown() -> bool {
+    SHOWN.load(Ordering::SeqCst)
+}
 
 fn window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(window) = app.get_webview_window(POPOVER) {
@@ -83,16 +93,24 @@ pub fn toggle(app: &AppHandle, icon: Rect) {
         }
     };
     if just_hidden || window.is_visible().unwrap_or(false) {
+        SHOWN.store(false, Ordering::SeqCst);
         let _ = window.hide();
         return;
     }
     place(app, &window, icon);
+    SHOWN.store(true, Ordering::SeqCst);
+    let _ = app.emit_to(
+        POPOVER,
+        crate::state::STATE_EVENT,
+        crate::state::snapshot(app),
+    );
     let _ = window.show();
     let _ = window.set_focus();
 }
 
 pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(POPOVER) {
+        SHOWN.store(false, Ordering::SeqCst);
         let _ = window.hide();
     }
 }
@@ -101,6 +119,7 @@ pub fn hide(app: &AppHandle) {
 pub fn on_blur(window: &tauri::Window) {
     if window.is_visible().unwrap_or(false) {
         *HIDDEN_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+        SHOWN.store(false, Ordering::SeqCst);
         let _ = window.hide();
     }
 }

@@ -9,6 +9,7 @@ use papeo_core::{Config, Organizer, Service, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -398,6 +399,25 @@ pub struct AppState {
     pub organizer_path: PathBuf,
     pub sessions_dir: PathBuf,
     pub inner: Mutex<Inner>,
+    pub config_disk: DiskWriter,
+    pub organizer_disk: DiskWriter,
+}
+
+/// Grava um arquivo fora do `AppState::lock()` sem trocar a ordem: cada
+/// versão recebe um número sob o lock, e uma versão mais velha que a já
+/// gravada é descartada (a nova já contém a alteração dela).
+#[derive(Default)]
+pub struct DiskWriter {
+    next: AtomicU64,
+    written: Mutex<u64>,
+}
+
+/// Arquivo pronto para gravar, preparado sob o lock.
+#[must_use = "grave com AppState::write depois de soltar o lock"]
+pub struct Staged {
+    organizer: bool,
+    ticket: u64,
+    body: Vec<u8>,
 }
 
 impl AppState {
@@ -405,22 +425,58 @@ impl AppState {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    pub fn persist(&self, inner: &Inner) -> Result<(), String> {
-        papeo_core::save(&self.store_path, &inner.config)
+    /// Prepara `config.json`. Chamar com o lock (recebe `&Inner` dele).
+    pub fn stage(&self, inner: &Inner) -> Result<Staged, String> {
+        Ok(Staged {
+            organizer: false,
+            ticket: self.config_disk.next.fetch_add(1, Ordering::SeqCst) + 1,
+            body: papeo_core::encode_config(&inner.config)?,
+        })
     }
 
-    pub fn persist_organizer(&self, inner: &Inner) -> Result<(), String> {
+    /// Prepara `organizer.json`. Chamar com o lock (recebe `&Inner` dele).
+    pub fn stage_organizer(&self, inner: &Inner) -> Result<Staged, String> {
         if let Some(err) = &inner.organizer_error {
             return Err(err.clone());
         }
-        papeo_core::save_organizer(&self.organizer_path, &inner.organizer)
+        Ok(Staged {
+            organizer: true,
+            ticket: self.organizer_disk.next.fetch_add(1, Ordering::SeqCst) + 1,
+            body: papeo_core::encode_organizer(&inner.organizer)?,
+        })
     }
 
-    /// Altera a configuração e grava em seguida.
+    /// Grava o que foi preparado, já sem o `AppState::lock()`.
+    pub fn write(&self, staged: Staged) -> Result<(), String> {
+        let (disk, path) = if staged.organizer {
+            (&self.organizer_disk, &self.organizer_path)
+        } else {
+            (&self.config_disk, &self.store_path)
+        };
+        let mut written = disk.written.lock().unwrap_or_else(|e| e.into_inner());
+        if staged.ticket <= *written {
+            return Ok(());
+        }
+        papeo_core::write_atomic(path, &staged.body)?;
+        *written = staged.ticket;
+        Ok(())
+    }
+
+    /// Grava `config.json` na hora. Só na inicialização, antes de qualquer
+    /// outra thread usar o estado.
+    pub fn persist(&self, inner: &Inner) -> Result<(), String> {
+        self.write(self.stage(inner)?)
+    }
+
+    /// Altera a configuração e grava em seguida (fora do lock).
     pub fn update<T>(&self, f: impl FnOnce(&mut Inner) -> Result<T, String>) -> Result<T, String> {
-        let mut inner = self.lock();
-        let out = f(&mut inner)?;
-        self.persist(&inner)?;
+        let (out, staged) = {
+            let mut inner = self.lock();
+            let out = f(&mut inner)?;
+            let staged = self.stage(&inner)?;
+            (out, staged)
+        };
+        self.write(staged)?;
         Ok(out)
     }
 }
@@ -593,11 +649,17 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
 /// Envia o estado à interface e atualiza badge e bandeja.
 pub fn publish(app: &AppHandle) -> Snapshot {
     let snap = snapshot(app);
-    let _ = app.emit_to(UI_WEBVIEW, STATE_EVENT, snap.clone());
-    let _ = app.emit_to(crate::popover::POPOVER, STATE_EVENT, snap.clone());
+    let _ = app.emit_to(UI_WEBVIEW, STATE_EVENT, &snap);
+    // Fechada, a mini janela recebe o estado atual ao abrir.
+    if crate::popover::is_shown() {
+        let _ = app.emit_to(crate::popover::POPOVER, STATE_EVENT, &snap);
+    }
+    static BADGE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
     if let Some(window) = app.get_window(MAIN_WINDOW) {
-        let count = (snap.total_unread > 0).then_some(i64::from(snap.total_unread));
-        let _ = window.set_badge_count(count);
+        let total = i64::from(snap.total_unread);
+        if BADGE.swap(total, Ordering::SeqCst) != total {
+            let _ = window.set_badge_count((total > 0).then_some(total));
+        }
     }
     crate::tray::refresh(app, &snap);
     snap

@@ -36,11 +36,17 @@ pub fn client() -> Option<(&'static str, &'static str)> {
 }
 
 fn http() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    // Um cliente só (pool de conexões reaproveitado); clonar é barato (Arc).
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .user_agent(concat!("Papeo/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(CLIENT.get_or_init(|| client).clone())
 }
 
 fn random_text(bytes: usize) -> String {
@@ -334,15 +340,19 @@ pub async fn download(token: &str, id: &str) -> Result<Vec<u8>, String> {
         .send()
         .await
         .map_err(|e| format!("Sem conexão ({e})."))?;
-    let resp = check(resp).await?;
+    let mut resp = check(resp).await?;
     if resp.content_length().is_some_and(|n| n as usize > MAX_FILE) {
         return Err("Arquivo grande demais na nuvem.".into());
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    if bytes.len() > MAX_FILE {
-        return Err("Arquivo grande demais na nuvem.".into());
+    // Para no limite mesmo sem `Content-Length` (não lê o resto).
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if body.len() + chunk.len() > MAX_FILE {
+            return Err("Arquivo grande demais na nuvem.".into());
+        }
+        body.extend_from_slice(&chunk);
     }
-    Ok(bytes.to_vec())
+    Ok(body)
 }
 
 /// Cria (`id` nulo) ou substitui um arquivo JSON na pasta do app.

@@ -19,6 +19,7 @@
   import TaskList, { type TaskActions } from "./lib/TaskList.svelte";
   import Tasks from "./lib/Tasks.svelte";
   import { groupOf } from "./lib/tasks";
+  import { minuteTick } from "./lib/when";
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
   import CustomizeDialog from "./lib/CustomizeDialog.svelte";
@@ -142,7 +143,7 @@
 
   $effect(() => {
     // Ao bloquear, fecha tudo o que estava aberto por cima.
-    if (snap.locked) {
+    if (locked) {
       menu = null;
       addOpen = paletteOpen = false;
       confirmRemove = confirmClear = customizing = null;
@@ -164,9 +165,14 @@
     else api.getOrganizer().then((o) => (org = o)).catch(showError);
   });
 
+  // Com a barra recolhida, o menu de contexto não cabe à esquerda da
+  // webview do serviço, que é nativa e ficaria por cima dele.
+  const menuCovers = $derived(!!menu && collapsed);
+  const overlay = $derived(modalOpen || menuCovers);
+
   $effect(() => {
     // A webview do serviço fica por cima da interface; some enquanto há um modal aberto.
-    if (ready) api.setOverlay(modalOpen).catch(() => {});
+    if (ready) api.setOverlay(overlay).catch(() => {});
   });
 
   function showToast(next: Toast, ms = 5000) {
@@ -265,10 +271,22 @@
     if (snap.active !== null) run(api.activate(null));
   }
 
+  // Durante o redimensionamento chegam vários avisos por quadro: envia no
+  // máximo um por quadro e só quando a área mudou.
+  let areaFrame = 0;
+  let lastArea = "";
   function reportArea() {
-    if (!content) return;
-    const r = content.getBoundingClientRect();
-    api.setContentArea({ x: r.left, y: r.top, width: r.width, height: r.height }).catch(() => {});
+    if (areaFrame) return;
+    areaFrame = requestAnimationFrame(() => {
+      areaFrame = 0;
+      if (!content) return;
+      const r = content.getBoundingClientRect();
+      const area = { x: r.left, y: r.top, width: r.width, height: r.height };
+      const key = JSON.stringify(area);
+      if (key === lastArea) return;
+      lastArea = key;
+      api.setContentArea(area).catch(() => (lastArea = ""));
+    });
   }
 
   /** Botão da barra superior: Sistema → Claro → Escuro → OLED → Sistema. */
@@ -438,7 +456,7 @@
     const onScheme = (e: MediaQueryListEvent) => (systemIsDark = e.matches);
     systemDark.addEventListener("change", onScheme);
 
-    const clock = setInterval(() => (now = new Date()), 30_000);
+    const clock = setInterval(() => (now = minuteTick(now)), 30_000);
     const observer = new ResizeObserver(reportArea);
     if (content) observer.observe(content);
     window.addEventListener("resize", reportArea);
@@ -448,6 +466,7 @@
       systemDark.removeEventListener("change", onScheme);
       observer.disconnect();
       clearInterval(clock);
+      cancelAnimationFrame(areaFrame);
       window.removeEventListener("resize", reportArea);
     };
   });
@@ -494,7 +513,9 @@
     <section class="content" bind:this={content} aria-live="polite">
       {#if active}
         <div class="placeholder">
-          {#if modalOpen}
+          {#if menuCovers && !modalOpen}
+            {active.name} oculto enquanto o menu está aberto.
+          {:else if modalOpen}
             {active.name} oculto enquanto a janela de diálogo está aberta.
           {:else}
             Carregando {active.name}…

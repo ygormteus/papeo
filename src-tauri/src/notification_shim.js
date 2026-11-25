@@ -260,31 +260,44 @@
     return out;
   };
   let lastList = "";
-  const pageState = () => JSON.stringify([chatList(), pageUnread(), MAIL_SUBJECT[site()] ? currentChat() : null]);
-  const heartbeat = () => {
-    lastChat = currentChat();
+  // Lê a página uma vez só por tique: lista, não lidas e conversa aberta.
+  const pageState = () => {
+    const chat = currentChat();
     const list = chatList();
     const unread = pageUnread();
-    lastList = pageState();
+    const key = JSON.stringify([list, unread, MAIL_SUBJECT[site()] ? chat : null]);
+    return { chat, list, unread, key };
+  };
+  const report = (page) => {
+    lastChat = page.chat;
+    lastList = page.key;
     invoke("service_status", {
       loggedOut: loggedOut(),
       media: mediaActive(),
       chat: lastChat ?? null,
-      list,
-      unread: unread ?? null,
+      list: page.list,
+      unread: page.unread ?? null,
     });
   };
+  // Sempre completo: também desfaz não lidas que a página já mostra lidas.
+  const heartbeat = () => report(pageState());
   setInterval(heartbeat, 20000);
   // A lista mudou (conversa lida, mensagem nova, e-mail aberto): avisa logo.
+  // Vale também oculta: é o que mantém o contador da bandeja em dia.
   setInterval(() => {
-    if (pageState() !== lastList) heartbeat();
+    const page = pageState();
+    if (page.key !== lastList) report(page);
   }, 5000);
-  // Trocou de conversa (clique ou teclado): avisa logo.
-  const chatChanged = () =>
-    setTimeout(() => {
+  // Trocou de conversa (clique ou teclado): avisa logo. Cliques seguidos
+  // viram uma verificação só.
+  let chatTimer = 0;
+  const chatChanged = () => {
+    clearTimeout(chatTimer);
+    chatTimer = setTimeout(() => {
       const chat = currentChat();
       if (chat !== undefined && chat !== lastChat) heartbeat();
     }, 400);
+  };
   document.addEventListener("click", chatChanged, true);
   document.addEventListener("keyup", (e) => e.key === "Enter" || e.key === "Escape" ? chatChanged() : undefined, true);
   // O Gmail navega pelo endereço (#inbox/…) e demora um pouco a desenhar.

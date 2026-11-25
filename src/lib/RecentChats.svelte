@@ -70,8 +70,11 @@
   const matches = $derived(
     open && dismissed !== (drafts[open] ?? "") ? matchQuickReplies(quickReplies, drafts[open] ?? "") : [],
   );
+  // A prop chega nova a cada estado publicado: só volta ao topo quando a
+  // lista de sugestões muda de fato.
+  const matchKey = $derived(matches.map((r) => r.shortcut).join("\u0000"));
   $effect(() => {
-    void matches;
+    void matchKey;
     pick = 0;
   });
 
@@ -106,9 +109,15 @@
     if (open && !visible.some((c) => keyOf(c) === open)) open = null;
   });
 
-  // Mostra sempre a mensagem mais nova.
+  // Mostra sempre a mensagem mais nova, só quando a conversa aberta muda ou
+  // recebe mensagem (não a cada estado publicado, para não tirar a leitura).
+  const openTail = $derived.by(() => {
+    const c = open ? visible.find((v) => keyOf(v) === open) : undefined;
+    const last = c?.messages[c.messages.length - 1];
+    return c ? `${c.messages.length}:${last?.at ?? c.at}:${last?.body.length ?? 0}` : "";
+  });
   $effect(() => {
-    void visible;
+    void openTail;
     void open;
     tick().then(() => thread?.scrollTo({ top: thread.scrollHeight }));
   });
@@ -174,12 +183,12 @@
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }
 
-  function ago(at: number): string {
-    const s = Math.max(0, Date.now() / 1000 - at);
+  function ago(at: number, nowMs: number): string {
+    const s = Math.max(0, nowMs / 1000 - at);
     if (s < 60) return "agora";
     if (s < 3600) return `${Math.floor(s / 60)} min`;
     const d = new Date(at * 1000);
-    const today = new Date().toDateString() === d.toDateString();
+    const today = new Date(nowMs).toDateString() === d.toDateString();
     return today
       ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
       : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -193,7 +202,7 @@
   });
 </script>
 
-<ul class="chats" data-now={now}>
+<ul class="chats">
   {#each visible as c (keyOf(c))}
     {@const service = byId.get(c.serviceId)!}
     {@const key = keyOf(c)}
@@ -205,7 +214,7 @@
         <span class="text">
           <span class="line">
             <span class="title">{c.title}</span>
-            <span class="time">{ago(c.at)}</span>
+            <span class="time">{ago(c.at, now)}</span>
           </span>
           <span class="preview">
             {#if last?.mine}
@@ -223,7 +232,7 @@
             <div class="thread" bind:this={thread}>
               {#each c.messages as m, i (i)}
                 <p class="bubble" class:mine={m.mine}>
-                  {m.body}<time>{ago(m.at)}</time>
+                  {m.body}<time>{ago(m.at, now)}</time>
                 </p>
               {/each}
             </div>

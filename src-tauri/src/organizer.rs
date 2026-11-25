@@ -219,16 +219,17 @@ fn change<T>(
     f: impl FnOnce(&mut Inner, u64) -> Result<T, String>,
 ) -> Result<T, String> {
     let state = app.state::<AppState>();
-    let out = {
+    let (out, staged) = {
         let mut inner = state.lock();
         // Arquivo não lido: nada muda (nem na memória).
         if let Some(err) = &inner.organizer_error {
             return Err(err.clone());
         }
         let out = f(&mut inner, now_ms())?;
-        state.persist_organizer(&inner)?;
-        out
+        let staged = state.stage_organizer(&inner)?;
+        (out, staged)
     };
+    state.write(staged)?;
     crate::sync::mark_dirty(app);
     publish_organizer(app);
     Ok(out)
@@ -398,7 +399,7 @@ pub async fn save_note(
 /// Avisa os lembretes que venceram. Chamado pela manutenção (a cada 15 s).
 pub fn tick(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let notices = {
+    let (notices, staged) = {
         let mut inner = state.lock();
         let now = now_ms();
         let due: Vec<_> = inner
@@ -413,16 +414,14 @@ pub fn tick(app: &AppHandle) {
         for task in &due {
             inner.organizer.mark_reminded(&task.id, now);
         }
-        if let Err(err) = state.persist_organizer(&inner) {
-            eprintln!("papeo: não foi possível gravar as tarefas ({err})");
-        }
+        let staged = state.stage_organizer(&inner);
         crate::sync::mark_dirty(app);
         let preview = if inner.locked {
             NotificationPreview::Hidden
         } else {
             inner.config.settings.notification_preview
         };
-        if due.len() > GROUP_ABOVE {
+        let notices = if due.len() > GROUP_ABOVE {
             let target = Target {
                 service_id: String::new(),
                 chat: None,
@@ -473,8 +472,12 @@ pub fn tick(app: &AppHandle) {
                     (title, body, target)
                 })
                 .collect()
-        }
+        };
+        (notices, staged)
     };
+    if let Err(err) = staged.and_then(|s| state.write(s)) {
+        eprintln!("papeo: não foi possível gravar as tarefas ({err})");
+    }
     publish_organizer(app);
     for (title, body, target) in notices {
         // Lembrete toca mesmo no "não perturbe": foi você quem marcou.

@@ -27,6 +27,8 @@ let watchers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 function refresh() {
+  // Janela na bandeja ou minimizada: ninguém vê a medição.
+  if (document.hidden) return;
   api
     .getMemory()
     .then((m) => (home.memory = m))
@@ -38,9 +40,13 @@ export function watchMemory(): () => void {
   if (watchers++ === 0) {
     refresh();
     timer = setInterval(refresh, 10_000);
+    document.addEventListener("visibilitychange", refresh);
   }
   return () => {
-    if (--watchers === 0) clearInterval(timer);
+    if (--watchers === 0) {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    }
   };
 }
 

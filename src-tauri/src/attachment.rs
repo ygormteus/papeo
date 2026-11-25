@@ -63,6 +63,8 @@ struct Pending {
 
 static CURRENT: Mutex<Option<Current>> = Mutex::new(None);
 static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
+/// Downloads que nunca terminam (o site cancelou) não acumulam para sempre.
+const MAX_PENDING: usize = 32;
 static WINDOWS: AtomicU64 = AtomicU64::new(0);
 /// Janela viva (0 = nenhuma ou fechando): uma janela já pedida para fechar
 /// ainda aparece em `get_window` até o `Destroyed` e não é reaproveitada.
@@ -117,11 +119,15 @@ pub fn intercept(app: &AppHandle, service_id: &str, url: &str, file_name: &str) 
     let dir = temp_root(app)?.join(papeo_core::new_item_id());
     std::fs::create_dir_all(&dir).ok()?;
     let path = dir.join(file_name);
-    pending().push(Pending {
+    let mut list = pending();
+    list.push(Pending {
         service_id: service_id.to_owned(),
         url: url.to_owned(),
         path: path.clone(),
     });
+    if list.len() > MAX_PENDING {
+        list.remove(0);
+    }
     Some(path)
 }
 
@@ -594,6 +600,16 @@ fn open_in_app(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Roda trabalho de disco fora do executor assíncrono.
+async fn blocking<F>(f: F) -> Result<(), String>
+where
+    F: FnOnce() -> Result<(), String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Anexo aberto, para a barra ao montar.
 #[tauri::command]
 pub fn attachment_state() -> AttachmentInfo {
@@ -605,14 +621,15 @@ pub fn attachment_state() -> AttachmentInfo {
 
 #[tauri::command]
 pub async fn attachment_save(app: AppHandle) -> Result<(), String> {
-    save(&app).map(|_| ())
+    blocking(move || save(&app).map(|_| ())).await
 }
 
 /// Salva na pasta de downloads, abre essa cópia no app padrão (Excel,
 /// Numbers, leitor de PDF) e fecha a visualização.
 #[tauri::command]
 pub async fn attachment_open_app(app: AppHandle) -> Result<(), String> {
-    open_in_app(&app)?;
+    let handle = app.clone();
+    blocking(move || open_in_app(&handle)).await?;
     close(&app);
     Ok(())
 }
@@ -620,10 +637,13 @@ pub async fn attachment_open_app(app: AppHandle) -> Result<(), String> {
 /// Mostra o arquivo salvo na pasta (Finder/Explorer).
 #[tauri::command]
 pub async fn attachment_reveal(app: AppHandle) -> Result<(), String> {
-    let path = save(&app)?;
-    app.opener()
-        .reveal_item_in_dir(path)
-        .map_err(|e| e.to_string())
+    blocking(move || {
+        let path = save(&app)?;
+        app.opener()
+            .reveal_item_in_dir(path)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]

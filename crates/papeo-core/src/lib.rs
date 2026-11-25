@@ -11,8 +11,8 @@ pub mod sync;
 mod util;
 
 pub use organizer::{
-    clean_chat, is_date, is_item_id, load_organizer, new_item_id, save_organizer, Contact,
-    ContactRef, Organizer, Repeat, Task, TaskInput, CHAT_MAX, NOTE_MAX, TASK_TEXT_MAX,
+    clean_chat, encode_organizer, is_date, is_item_id, load_organizer, new_item_id, save_organizer,
+    Contact, ContactRef, Organizer, Repeat, Task, TaskInput, CHAT_MAX, NOTE_MAX, TASK_TEXT_MAX,
 };
 pub use privacy::{
     is_session_id, new_session, notification_text, recent_text, same_site, session_from_bytes,
@@ -26,5 +26,8 @@ pub use settings::{
     should_notify, AppLock, Appearance, AttachmentMode, LinkTarget, QuickReply, QuietHours,
     Settings, UpdatePrefs, DND_FOREVER, LOCK_MAX_MINUTES,
 };
-pub use store::{export_backup, load, read_backup, save, Backup, Config, STORE_VERSION};
+pub use store::{
+    encode_config, export_backup, load, read_backup, save, write_atomic, Backup, Config,
+    STORE_VERSION,
+};
 pub use util::{attachment_view, clip, parse_unread, safe_file_name, unique_path, AttachmentView};

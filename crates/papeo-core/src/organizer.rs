@@ -611,13 +611,25 @@ pub fn load_organizer(path: &Path, now_ms: u64) -> Result<Organizer, String> {
     }
 }
 
-pub fn save_organizer(path: &Path, organizer: &Organizer) -> Result<(), String> {
-    let body = serde_json::to_vec(&OrganizerFile {
+/// Mesmo formato de `OrganizerFile`, sem copiar as tarefas para gravar.
+#[derive(Serialize)]
+struct OrganizerFileRef<'a> {
+    version: u32,
+    #[serde(flatten)]
+    organizer: &'a Organizer,
+}
+
+/// Conteúdo de `organizer.json` (para gravar com `write_file`).
+pub fn encode_organizer(organizer: &Organizer) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(&OrganizerFileRef {
         version: ORGANIZER_VERSION,
-        organizer: organizer.clone(),
+        organizer,
     })
-    .map_err(|e| e.to_string())?;
-    crate::store::write_atomic(path, &body)
+    .map_err(|e| e.to_string())
+}
+
+pub fn save_organizer(path: &Path, organizer: &Organizer) -> Result<(), String> {
+    crate::store::write_atomic(path, &encode_organizer(organizer)?)
 }
 
 #[cfg(test)]

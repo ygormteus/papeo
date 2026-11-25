@@ -16,7 +16,7 @@ use base64::Engine;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Frase-senha mínima (caracteres).
 pub const PASSPHRASE_MIN: usize = 10;
@@ -228,12 +228,23 @@ pub fn is_device_id(id: &str) -> bool {
 
 /// Mais novo vence; empate: apagado vence, depois o maior conteúdo (para
 /// todos os computadores chegarem ao mesmo resultado).
-fn newer<T: Serialize>(a: &T, a_at: u64, a_del: bool, b: &T, b_at: u64, b_del: bool) -> bool {
+fn newer<T: Serialize + PartialEq>(
+    a: &T,
+    a_at: u64,
+    a_del: bool,
+    b: &T,
+    b_at: u64,
+    b_del: bool,
+) -> bool {
     if a_at != b_at {
         return a_at > b_at;
     }
     if a_del != b_del {
         return a_del;
+    }
+    // Iguais: o desempate abaixo daria `>=` verdadeiro; evita serializar.
+    if a == b {
+        return true;
     }
     serde_json::to_string(a).unwrap_or_default() >= serde_json::to_string(b).unwrap_or_default()
 }
@@ -334,12 +345,16 @@ pub fn forget_purged(local: &mut Organizer, base: &Organizer, remotes: &[Organiz
     if remotes.is_empty() {
         return;
     }
-    let seen_task = |id: &str| remotes.iter().any(|r| r.tasks.iter().any(|t| t.id == id));
-    let seen_contact = |id: &str| {
-        remotes
-            .iter()
-            .any(|r| r.contacts.iter().any(|c| c.id == id))
-    };
+    let task_ids: HashSet<&str> = remotes
+        .iter()
+        .flat_map(|r| r.tasks.iter().map(|t| t.id.as_str()))
+        .collect();
+    let contact_ids: HashSet<&str> = remotes
+        .iter()
+        .flat_map(|r| r.contacts.iter().map(|c| c.id.as_str()))
+        .collect();
+    let seen_task = |id: &str| task_ids.contains(id);
+    let seen_contact = |id: &str| contact_ids.contains(id);
     local.tasks.retain(|t| {
         let unchanged = base.tasks.iter().any(|b| b == t);
         !(unchanged && !seen_task(&t.id))
@@ -574,6 +589,21 @@ mod tests {
         let mut alone = base.clone();
         forget_purged(&mut alone, &base, &[]);
         assert_eq!(alone, base);
+    }
+
+    #[test]
+    fn newer_on_equal_items_is_true() {
+        let mut org = Organizer::default();
+        let id = org.add_task(&text("igual"), NOW).unwrap();
+        let t = org.task(&id).unwrap().clone();
+        assert!(newer(
+            &t,
+            t.updated_at,
+            t.deleted,
+            &t.clone(),
+            t.updated_at,
+            t.deleted
+        ));
     }
 
     #[test]

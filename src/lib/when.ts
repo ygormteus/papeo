@@ -160,3 +160,9 @@ export function parseWhen(input: string, now: Date): ParsedWhen | null {
   }
   return null;
 }
+
+/** Relógio da interface: devolve a mesma data enquanto o minuto não muda,
+ * para não recalcular listas inteiras a cada tique. */
+export function minuteTick(prev: Date, now = new Date()): Date {
+  return Math.floor(now.getTime() / 60_000) === Math.floor(prev.getTime() / 60_000) ? prev : now;
+}

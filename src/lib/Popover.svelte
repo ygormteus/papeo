@@ -14,6 +14,7 @@
     type Snapshot,
   } from "./api";
   import { groupOf, sortTasks, whenLabel } from "./tasks";
+  import { minuteTick } from "./when";
 
   // Mini janela da barra de menus (macOS) / bandeja (Windows): conversas
   // recentes com resposta rápida. Some ao perder o foco (backend).
@@ -65,7 +66,7 @@
     const offOrg = onOrganizer((o) => {
       if (!snap.locked) org = o;
     });
-    const clock = setInterval(() => (now = new Date()), 30_000);
+    const clock = setInterval(() => (now = minuteTick(now)), 30_000);
     const onScheme = (e: MediaQueryListEvent) => (systemIsDark = e.matches);
     systemDark.addEventListener("change", onScheme);
     const onKey = (e: KeyboardEvent) => {

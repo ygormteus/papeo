@@ -558,9 +558,14 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         // Tarefas primeiro (grava e troca na memória sob o mesmo lock, antes
         // de mexer na configuração): se falhar, nada mudou. Backup sem
         // tarefas (versão antiga): as atuais continuam.
+        // Grava pela mesma fila das outras gravações (ainda sob o lock): uma
+        // versão anterior já preparada não sobrescreve a restaurada.
         if let Some(organizer) = backup.organizer {
-            papeo_core::save_organizer(&state.organizer_path, &organizer)?;
-            inner.organizer = organizer;
+            let old = std::mem::replace(&mut inner.organizer, organizer);
+            if let Err(err) = state.stage_organizer(inner).and_then(|s| state.write(s)) {
+                inner.organizer = old;
+                return Err(err);
+            }
         }
         // A limpeza pendente é deste computador; o backup não a traz.
         let pending = std::mem::take(&mut inner.config.pending_removal);

@@ -172,10 +172,16 @@ fn to_json(
 
 /// Grava de forma atômica (arquivo temporário + rename).
 pub fn save(path: &Path, config: &Config) -> Result<(), String> {
-    write_atomic(path, &to_json(config, None, None)?)
+    write_atomic(path, &encode_config(config)?)
 }
 
-pub(crate) fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
+/// Conteúdo de `config.json` (para gravar com `write_file`).
+pub fn encode_config(config: &Config) -> Result<Vec<u8>, String> {
+    to_json(config, None, None)
+}
+
+/// Grava inteiro ou nada (arquivo temporário, `fsync` e troca).
+pub fn write_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }

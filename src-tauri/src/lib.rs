@@ -318,6 +318,8 @@ pub fn run() {
                 organizer_path,
                 sessions_dir: data_dir.join("sessions"),
                 inner: Mutex::new(Inner::new(config)),
+                config_disk: Default::default(),
+                organizer_disk: Default::default(),
             };
             {
                 let mut inner = state.lock();

@@ -373,15 +373,24 @@ pub fn hibernate(app: &AppHandle, id: &str) {
     inner.health.remove(id);
     inner.last_reload.remove(id);
     inner.pending_chat.remove(id);
-    if let Some(pos) = inner.config.open.iter().position(|s| s == id) {
-        inner.config.open.remove(pos);
-        let _ = state.persist(&inner);
-    }
+    let staged = inner
+        .config
+        .open
+        .iter()
+        .position(|s| s == id)
+        .and_then(|pos| {
+            inner.config.open.remove(pos);
+            state.stage(&inner).ok()
+        });
     // Downloads em andamento são interrompidos junto com a webview.
     for d in inner.downloads.iter_mut() {
         if d.service_id == id && d.state == DownloadState::Downloading {
             d.state = DownloadState::Failed;
         }
+    }
+    drop(inner);
+    if let Some(staged) = staged {
+        let _ = state.write(staged);
     }
 }
 

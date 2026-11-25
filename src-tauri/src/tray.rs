@@ -3,6 +3,7 @@
 
 use crate::state::{now_secs, publish, snapshot, AppState, Snapshot, MAIN_WINDOW};
 use papeo_core::DND_FOREVER;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -279,16 +280,22 @@ pub fn refresh(app: &AppHandle, snap: &Snapshot) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    let tooltip = match snap.total_unread {
-        0 => "Papeo".to_owned(),
-        1 => "Papeo — 1 não lida".to_owned(),
-        n => format!("Papeo — {n} não lidas"),
-    };
-    let _ = tray.set_tooltip(Some(tooltip));
-    #[cfg(target_os = "macos")]
+    // Dica e número só quando o total muda (cada um espera a thread principal).
+    static SHOWN_UNREAD: AtomicU64 = AtomicU64::new(u64::MAX);
+    if SHOWN_UNREAD.swap(u64::from(snap.total_unread), Ordering::SeqCst)
+        != u64::from(snap.total_unread)
     {
-        let title = (snap.total_unread > 0).then(|| snap.total_unread.to_string());
-        let _ = tray.set_title(title);
+        let tooltip = match snap.total_unread {
+            0 => "Papeo".to_owned(),
+            1 => "Papeo — 1 não lida".to_owned(),
+            n => format!("Papeo — {n} não lidas"),
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
+        #[cfg(target_os = "macos")]
+        {
+            let title = (snap.total_unread > 0).then(|| snap.total_unread.to_string());
+            let _ = tray.set_title(title);
+        }
     }
     let Some(handles) = app.try_state::<TrayHandles>() else {
         return;
