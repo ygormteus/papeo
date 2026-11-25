@@ -15,19 +15,31 @@
   };
 
   // Links externos: o Papeo nega janelas novas e manda o endereço para o
-  // navegador padrão. Alguns sites (o WhatsApp) abrem antes uma janela em
-  // branco e só depois definem o endereço; o Papeo veria só "about:blank" e o
-  // link não abriria. Aqui a janela em branco é de mentira e, quando o site
-  // define o endereço, a abertura vai com ele.
+  // navegador padrão (ou para a prévia). Dois jeitos de os sites fugirem disso:
+  // - abrir uma janela em branco e só depois definir o endereço: o Papeo veria
+  //   só "about:blank". Aqui a janela em branco é de mentira e, quando o site
+  //   define o endereço, a abertura vai com ele;
+  // - o WhatsApp cancela o clique no link e clica num link invisível, que
+  //   também sai cancelado no Papeo: nenhuma janela é pedida. Clique num link
+  //   externo que termina cancelado sem nada aberto: o Papeo abre o link.
   const nativeOpen = window.open;
+  let lastOpen = { url: "", at: 0 };
+  const openUrl = (url) => {
+    lastOpen = { url: String(url), at: Date.now() };
+    return nativeOpen.call(window, String(url), "_blank", "noopener");
+  };
   const isBlank = (url) => url === undefined || url === null || String(url) === "" || String(url) === "about:blank";
   window.open = function (url, target, features) {
-    if (!isBlank(url) || typeof nativeOpen !== "function") return nativeOpen?.call(window, url, target, features) ?? null;
+    if (typeof nativeOpen !== "function") return null;
+    if (!isBlank(url)) {
+      lastOpen = { url: String(url), at: Date.now() };
+      return nativeOpen.call(window, url, target, features);
+    }
     let sent = false;
     const go = (next) => {
       if (sent || isBlank(next)) return;
       sent = true;
-      nativeOpen.call(window, String(next), "_blank", "noopener");
+      openUrl(next);
     };
     const loc = { assign: go, replace: go, reload() {}, toString: () => "about:blank" };
     Object.defineProperty(loc, "href", { get: () => "about:blank", set: go });
@@ -45,6 +57,37 @@
     Object.defineProperty(popup, "location", { get: () => loc, set: go });
     return popup;
   };
+
+  // Links que o próprio site trata (abrir conversa, convite de grupo/canal).
+  const INTERNAL_HOSTS = /(^|\.)(whatsapp\.com|whatsapp\.net|wa\.me|t\.me|telegram\.me|telegram\.org|discord\.gg|discord\.com|discordapp\.com)$/i;
+  const externalLink = (e) => {
+    const a = e.target?.closest?.("a[href]");
+    if (!a || (a.target || "").toLowerCase() !== "_blank") return null;
+    let url;
+    try {
+      url = new URL(a.href, location.href);
+    } catch (_) {
+      return null;
+    }
+    if (!/^https?:$/.test(url.protocol) || url.origin === location.origin || INTERNAL_HOSTS.test(url.hostname)) return null;
+    return url.href;
+  };
+  window.addEventListener(
+    "click",
+    (e) => {
+      const href = e.button === 0 ? externalLink(e) : null;
+      if (!href) return;
+      // Depois de o clique passar por todos (o site pode cancelá-lo).
+      setTimeout(() => {
+        if (!e.defaultPrevented) return; // segue o caminho normal (janela nova)
+        // O clique invisível do site pode vir segundos depois do da pessoa.
+        const recent = Date.now() - lastOpen.at < (e.isTrusted ? 2000 : 10000);
+        if (lastOpen.url === href && recent) return;
+        openUrl(href);
+      }, 0);
+    },
+    true,
+  );
 
   // Tela de login/QR visível = sessão desconectada (só mensageiros conhecidos).
   const LOGGED_OUT_SELECTORS = {

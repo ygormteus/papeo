@@ -208,6 +208,34 @@ const unused = window.open("");
 unused.close();
 check(opened.length === 4 && unused.closed, "janela em branco fechada não abre nada");
 
+// Clique em link externo cancelado pelo site (WhatsApp): o Papeo abre uma vez.
+const clickOn = (href, { target = "_blank", prevented = true, trusted = true } = {}) =>
+  listeners.click({
+    button: 0,
+    isTrusted: trusted,
+    defaultPrevented: prevented,
+    target: { closest: () => ({ href, target }) },
+  });
+const tick = () => new Promise((r) => setTimeout(r, 5));
+let before = opened.length;
+clickOn("https://app.example/agenda");
+await tick();
+check(opened.length === before + 1 && opened.at(-1)[0] === "https://app.example/agenda", "clique cancelado abre o link");
+clickOn("https://app.example/agenda", { trusted: false });
+await tick();
+check(opened.length === before + 1, "clique invisível do site logo depois não abre de novo");
+before = opened.length;
+clickOn("https://other.example/", { prevented: false });
+await tick();
+check(opened.length === before, "clique não cancelado segue o caminho normal");
+clickOn("https://wa.me/5585999999999");
+clickOn("https://chat.whatsapp.com/convite");
+await tick();
+check(opened.length === before, "links do próprio WhatsApp ficam com ele");
+clickOn("https://other.example/", { target: "" });
+await tick();
+check(opened.length === before, "link sem nova aba não é aberto pelo Papeo");
+
 if (failures.length) {
   console.error("FALHOU:", failures.join("; "));
   process.exit(1);
