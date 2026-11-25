@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "preview",
+  "description": "Barra da prévia de links (interface local `preview-bar`): mostra o endereço, leva ao navegador e fecha. A página do link (`preview-page`) não recebe comando nenhum.",
+  "webviews": ["preview-bar"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "allow-preview-state",
+    "allow-preview-open-browser",
+    "allow-preview-close"
+  ]
+}

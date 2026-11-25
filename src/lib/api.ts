@@ -127,7 +127,11 @@ export interface Settings {
   updates: { check: boolean; noticeSeen: boolean };
   /** Recarrega serviço em segundo plano acima deste uso (MB); 0 = desligado. */
   reloadAboveMb: number;
+  /** Links que os sites abrem fora: navegador padrão ou prévia do Papeo. */
+  openLinks: LinkTarget;
 }
+
+export type LinkTarget = "browser" | "preview";
 
 export type UpdateStatus =
   | { state: "idle" | "checking" | "upToDate" }
@@ -222,6 +226,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     appearance: "system",
     updates: { check: true, noticeSeen: false },
     reloadAboveMb: 2048,
+    openLinks: "browser",
   },
   dndActive: false,
   autostart: false,
@@ -281,6 +286,7 @@ export const api = {
         | "notificationPreview"
         | "protectScreen"
         | "reloadAboveMb"
+        | "openLinks"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
@@ -332,6 +338,10 @@ export const api = {
       contactId: target.contactId ?? null,
       note,
     }),
+  /** Barra da prévia de links (só a webview `preview-bar` pode chamar). */
+  previewState: () => invoke<PreviewInfo>("preview_state"),
+  previewOpenBrowser: () => invoke<void>("preview_open_browser"),
+  previewClose: () => invoke<void>("preview_close"),
 };
 
 /** Sincronização pelo Google Drive. */
@@ -361,6 +371,20 @@ export const syncApi = {
   /** `forget`: apaga da nuvem a cópia deste computador. */
   syncDisconnect: (forget: boolean) => invoke<SyncStatus>("sync_disconnect", { forget }),
 };
+
+export interface PreviewInfo {
+  url: string;
+  title: string;
+}
+
+export function onPreview(cb: (p: PreviewInfo) => void): Promise<UnlistenFn> {
+  return listen<PreviewInfo>("papeo://preview", (e) => cb(e.payload));
+}
+
+export const LINK_OPTIONS: { value: LinkTarget; label: string }[] = [
+  { value: "browser", label: "No navegador" },
+  { value: "preview", label: "Na prévia do Papeo" },
+];
 
 export function onSync(cb: (s: SyncStatus) => void): Promise<UnlistenFn> {
   return listen<SyncStatus>("papeo://sync", (e) => cb(e.payload));

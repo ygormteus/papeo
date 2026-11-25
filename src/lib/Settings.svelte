@@ -25,6 +25,7 @@
     LOCK_OPTIONS,
     PREVIEW_OPTIONS,
     RELOAD_OPTIONS,
+    LINK_OPTIONS,
     THEME_OPTIONS,
     api,
     errorMessage,
@@ -33,6 +34,7 @@
     parseClock,
     untilLabel,
     updateLabel,
+    type LinkTarget,
     type Snapshot,
   } from "./api";
 
@@ -379,6 +381,26 @@
       >
         {#each RELOAD_OPTIONS as option (option.mb)}
           <option value={option.mb}>{option.label}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Abrir links</span>
+        <span class="hint">
+          Na prévia, o link abre numa janela pequena sobre o Papeo, sem login e sem guardar nada.
+          Fechar a prévia libera a memória; "Abrir no navegador" continua de onde parou.
+        </span>
+      </div>
+      <select
+        class="select"
+        aria-label="Abrir links"
+        value={settings.openLinks}
+        onchange={(e) => run(api.setPreferences({ openLinks: e.currentTarget.value as LinkTarget }))}
+      >
+        {#each LINK_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
         {/each}
       </select>
     </div>

@@ -1,6 +1,7 @@
 /// Comandos do app. Com o manifesto, cada um só fica disponível para quem a
 /// capability liberar: a interface recebe todos os outros; os sites dos
-/// serviços, só `service_notify` e `service_status` (ver `capabilities/`).
+/// serviços, só `service_notify` e `service_status`; a barra da prévia de
+/// links, só os `preview_*` (ver `capabilities/`).
 const COMMANDS: &[&str] = &[
     "get_state",
     "add_service",
@@ -58,6 +59,9 @@ const COMMANDS: &[&str] = &[
     "sync_disconnect",
     "service_notify",
     "service_status",
+    "preview_state",
+    "preview_open_browser",
+    "preview_close",
 ];
 
 fn main() {

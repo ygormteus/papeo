@@ -33,6 +33,19 @@ pub struct Settings {
     /// Recarrega um serviço em segundo plano que passar deste uso de
     /// memória, em MB (o WhatsApp Web cresce com o tempo). 0 = desligado.
     pub reload_above_mb: u32,
+    /// Onde abrem os links que os sites mandam abrir fora.
+    pub open_links: LinkTarget,
+}
+
+/// Destino dos links externos clicados dentro dos serviços.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LinkTarget {
+    /// Navegador padrão do sistema.
+    #[default]
+    Browser,
+    /// Janela pequena do Papeo, sem login nem dados guardados.
+    Preview,
 }
 
 /// Limite padrão e faixa aceita para `reload_above_mb`.
@@ -121,6 +134,7 @@ impl Default for Settings {
             appearance: Appearance::System,
             updates: UpdatePrefs::default(),
             reload_above_mb: RELOAD_DEFAULT_MB,
+            open_links: LinkTarget::Browser,
         }
     }
 }
@@ -280,6 +294,14 @@ mod tests {
         assert_eq!(off.sanitized().reload_above_mb, 0);
         let low: Settings = serde_json::from_str(r#"{"reloadAboveMb":10}"#).unwrap();
         assert_eq!(low.sanitized().reload_above_mb, RELOAD_MIN_MB);
+    }
+
+    #[test]
+    fn links_open_in_browser_by_default() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.open_links, LinkTarget::Browser);
+        let preview: Settings = serde_json::from_str(r#"{"openLinks":"preview"}"#).unwrap();
+        assert_eq!(preview.open_links, LinkTarget::Preview);
     }
 
     #[test]

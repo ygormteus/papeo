@@ -311,6 +311,8 @@ export function installDevMock() {
       case "clear_downloads":
         downloads.splice(0, downloads.length, ...downloads.filter((d) => d.state === "downloading"));
         return snap();
+      case "preview_state":
+        return { url: "https://example.com/artigo", title: "Um artigo de exemplo" };
       case "get_memory":
         return {
           services: Object.fromEntries(

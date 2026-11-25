@@ -14,7 +14,7 @@ const SERVICE_SCRIPT: &str = include_str!("notification_shim.js");
 /// WKWebView (macOS) e WebKitGTK (Linux) não trazem o token "Safari" no
 /// user-agent padrão, e o WhatsApp Web recusa o navegador sem ele.
 #[cfg(not(windows))]
-const SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15";
+pub(crate) const SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15";
 
 /// Decide pedidos de permissão do site conforme a política do serviço.
 /// Microfone e câmera só valem para o próprio site do serviço: uma página de
@@ -81,8 +81,16 @@ pub fn create_service_webview(
         .on_new_window({
             let app = app.clone();
             move |url, _features| {
-                // Links "abrir em nova janela" vão para o navegador padrão.
-                if matches!(url.scheme(), "http" | "https" | "mailto") {
+                // Links "abrir em nova janela" vão para o navegador padrão ou,
+                // se escolhido, para a prévia do Papeo (só páginas web).
+                let preview = matches!(url.scheme(), "http" | "https")
+                    && app.state::<AppState>().lock().config.settings.open_links
+                        == papeo_core::LinkTarget::Preview;
+                if preview {
+                    // Fora da thread principal: criar a janela espera por ela.
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move { crate::preview::open(&app, url) });
+                } else if matches!(url.scheme(), "http" | "https" | "mailto") {
                     let _ = app.opener().open_url(url.as_str(), None::<&str>);
                 }
                 NewWindowResponse::Deny

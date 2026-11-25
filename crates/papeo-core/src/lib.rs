@@ -23,7 +23,7 @@ pub use service::{
     Service, ServiceKind, ZOOM_MAX, ZOOM_MIN,
 };
 pub use settings::{
-    should_notify, AppLock, Appearance, QuietHours, Settings, UpdatePrefs, DND_FOREVER,
+    should_notify, AppLock, Appearance, LinkTarget, QuietHours, Settings, UpdatePrefs, DND_FOREVER,
     LOCK_MAX_MINUTES,
 };
 pub use store::{export_backup, load, read_backup, save, Backup, Config, STORE_VERSION};

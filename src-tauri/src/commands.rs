@@ -350,6 +350,7 @@ pub struct Preferences {
     notification_preview: Option<NotificationPreview>,
     protect_screen: Option<bool>,
     reload_above_mb: Option<u32>,
+    open_links: Option<papeo_core::LinkTarget>,
 }
 
 #[tauri::command]
@@ -376,6 +377,9 @@ pub async fn set_preferences(
         if let Some(v) = prefs.protect_screen {
             s.protect_screen = v;
         }
+        if let Some(v) = prefs.open_links {
+            s.open_links = v;
+        }
         if let Some(v) = prefs.reload_above_mb {
             s.reload_above_mb = v;
             *s = std::mem::take(s).sanitized();
@@ -386,6 +390,12 @@ pub async fn set_preferences(
         if let Some(window) = app.get_window(crate::state::MAIN_WINDOW) {
             window.set_content_protected(v).map_err(|e| e.to_string())?;
         }
+        if let Some(window) = app.get_window(crate::preview::PREVIEW) {
+            let _ = window.set_content_protected(v);
+        }
+    }
+    if prefs.open_links == Some(papeo_core::LinkTarget::Browser) {
+        crate::preview::close(&app);
     }
     Ok(publish(&app))
 }
@@ -662,6 +672,9 @@ pub async fn set_appearance(
         window
             .set_theme(crate::window_theme(appearance))
             .map_err(|e| e.to_string())?;
+    }
+    if let Some(window) = app.get_window(crate::preview::PREVIEW) {
+        let _ = window.set_theme(crate::window_theme(appearance));
     }
     Ok(publish(&app))
 }

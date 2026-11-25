@@ -10,6 +10,7 @@ mod notifications;
 mod notify;
 mod organizer;
 mod popover;
+mod preview;
 mod reply;
 mod sessions;
 mod state;
@@ -395,6 +396,9 @@ pub fn run() {
             sync::sync_disconnect,
             notify::service_notify,
             notify::service_status,
+            preview::preview_state,
+            preview::preview_open_browser,
+            preview::preview_close,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Papeo");

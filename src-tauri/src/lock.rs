@@ -133,6 +133,8 @@ pub fn lock_app(app: &AppHandle) {
         }
         inner.locked = true;
     }
+    // Bloqueado: nenhum conteúdo fica à vista, nem a prévia de um link.
+    crate::preview::close(app);
     crate::webviews::apply_layout(app);
     crate::state::publish(app);
 }
