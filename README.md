@@ -50,7 +50,7 @@ Abra a [página de download](https://github.com/ygormteus/papeo/releases/latest)
 3. Vá em **Ajustes do Sistema → Privacidade e Segurança**, desça até a mensagem sobre o Papeo e clique em **Abrir Mesmo Assim**.
 
 <details>
-<summary>Apareceu "o Papeo está danificado e não pode ser aberto"?</summary>
+<summary>Apareceu "o Papeo está danificado e não pode ser aberto" ou a atualização falhou com "Read-only file system"?</summary>
 
 É uma trava do Mac para arquivos baixados da internet. Abra o aplicativo **Terminal**, cole a linha abaixo e aperte Enter:
 

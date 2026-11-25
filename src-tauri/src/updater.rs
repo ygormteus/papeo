@@ -82,6 +82,19 @@ pub async fn check(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// No Mac, app aberto de um lugar que não pode ser trocado: a cópia
+/// temporária do Gatekeeper (app ainda marcado como baixado da internet) ou
+/// o próprio `.dmg`.
+fn blocked_location(exe: &str) -> Option<&'static str> {
+    if exe.contains("/AppTranslocation/") {
+        Some("O Mac está abrindo o Papeo de uma cópia temporária, que não pode ser atualizada. Feche o Papeo, abra o Terminal e rode: xattr -dr com.apple.quarantine /Applications/Papeo.app — depois abra o Papeo e atualize de novo.")
+    } else if exe.starts_with("/Volumes/") {
+        Some("O Papeo está aberto direto do instalador. Arraste-o para a pasta Aplicativos, abra de lá e atualize de novo.")
+    } else {
+        None
+    }
+}
+
 /// Baixa, confere a assinatura, instala e reinicia o app.
 pub async fn install(app: &AppHandle) -> Result<(), String> {
     if !begin(app, UpdateStatus::Installing { percent: None }) {
@@ -96,6 +109,12 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
         );
         Err(message)
     };
+    if let Some(message) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| blocked_location(&exe.to_string_lossy()))
+    {
+        return fail(message.to_owned());
+    }
     let mut update = match find(app).await {
         Ok(Some(update)) => update,
         Ok(None) => {
@@ -158,5 +177,21 @@ pub fn tick(app: &AppHandle, started: Instant) {
         tauri::async_runtime::spawn(async move {
             let _ = check(&app).await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::blocked_location;
+
+    #[test]
+    fn spots_places_that_cannot_be_updated() {
+        assert!(blocked_location(
+            "/private/var/folders/3v/x/T/AppTranslocation/F1/d/Papeo.app/Contents/MacOS/papeo"
+        )
+        .is_some());
+        assert!(blocked_location("/Volumes/Papeo/Papeo.app/Contents/MacOS/papeo").is_some());
+        assert!(blocked_location("/Applications/Papeo.app/Contents/MacOS/papeo").is_none());
+        assert!(blocked_location("C:\\Users\\a\\AppData\\Local\\Papeo\\papeo.exe").is_none());
     }
 }
