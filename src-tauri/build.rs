@@ -50,11 +50,20 @@ const COMMANDS: &[&str] = &[
     "delete_task",
     "save_note",
     "show_task",
+    "sync_status",
+    "sync_connect",
+    "sync_passphrase",
+    "sync_now",
+    "sync_reset",
+    "sync_disconnect",
     "service_notify",
     "service_status",
 ];
 
 fn main() {
+    // ID do cliente OAuth do Google (sincronização), lido no build.
+    println!("cargo:rerun-if-env-changed=PAPEO_GOOGLE_CLIENT_ID");
+    println!("cargo:rerun-if-env-changed=PAPEO_GOOGLE_CLIENT_SECRET");
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),

@@ -133,6 +133,12 @@ jobs:
           # está em `plugins.updater.pubkey` de tauri.conf.json.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Cliente OAuth do Google (app de computador) para a sincronização
+          # de tarefas. Sem os secrets, o app sai com a sincronização
+          # indisponível. Para app de computador o "segredo" não é
+          # confidencial (vai dentro do app), mas fica fora do código.
+          PAPEO_GOOGLE_CLIENT_ID: ${{ secrets.PAPEO_GOOGLE_CLIENT_ID }}
+          PAPEO_GOOGLE_CLIENT_SECRET: ${{ secrets.PAPEO_GOOGLE_CLIENT_SECRET }}
         with:
           # Vazio na execução manual: só gera os arquivos, sem release.
           releaseId: ${{ needs.create-release.outputs.release_id }}

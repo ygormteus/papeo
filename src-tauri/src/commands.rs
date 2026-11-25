@@ -533,6 +533,7 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         inner.current_chat.clear();
         Ok(())
     })?;
+    crate::sync::mark_dirty(&app);
     crate::organizer::publish_organizer(&app);
     activate(&app, None)
 }

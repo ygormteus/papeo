@@ -54,11 +54,13 @@ pnpm build                      # build da interface
 
 ## Modelo de segurança
 
-- **ACL de comandos.** Todos os comandos passam pelo manifesto de `src-tauri/build.rs`. A interface (`ui`) recebe os comandos pela capability `default`; a mini janela (`popover`), só ler o estado, responder, abrir o app, não perturbe e bloquear. Os sites recebem **apenas** `service_notify` e `service_status`, então um site não fala em nome de outro nem aciona outros comandos.
+- **ACL de comandos.** Todos os comandos passam pelo manifesto de `src-tauri/build.rs`. A interface (`ui`) recebe os comandos pela capability `default`; a mini janela (`popover`), só ler o estado, responder, abrir o app, não perturbe, bloquear e ver/concluir os próximos lembretes. Os sites recebem **apenas** `service_notify` e `service_status`, então um site não fala em nome de outro nem aciona outros comandos.
 - **Resposta rápida.** O Papeo pede ao script injetado (`__papeoReply`) para abrir a conversa exata, conferir o nome no cabeçalho, escrever no campo do próprio site e enviar; nunca escreve por cima de um rascunho, recusa nomes de conversa repetidos e tem prazo: depois dele (ou se o Papeo cancelar) nada é escrito nem enviado, para uma nova tentativa não duplicar a mensagem. Como o site roda no mesmo contexto do script, ele poderia forjar o resultado "enviado" (efeito: só uma entrada errada nas conversas recentes, na memória); o texto só é entregue se a página aberta for do próprio site do serviço. O andamento é lido da página (`eval_with_callback`), sem comando novo para os sites. Só WhatsApp e Telegram, só desbloqueado e, na notificação, só se a prévia não estiver oculta. As conversas recentes ficam só na memória.
 - **Origem.** Notificações, "desconectado" e microfone/câmera só valem quando a página aberta é do próprio site do serviço (`same_site`, comparação aproximada de domínio).
 - **Arquivos.** Nomes de download passam por `safe_file_name` e nunca sobrescrevem arquivos existentes.
 - **CSP** da interface em `src-tauri/tauri.conf.json`: só recursos locais e IPC.
+- **Tarefas e anotações.** Ficam em `organizer.json`; o conteúdo só vai para a interface com o app desbloqueado (evento próprio; o estado geral leva só contagens). O site informa só o nome da conversa aberta, pelo sinal de vida. Lembretes seguem a prévia escolhida e escondem o texto com o app bloqueado.
+- **Sincronização (Google Drive).** Login de app de computador (navegador do sistema, retorno em `127.0.0.1`, PKCE), escopo `drive.appdata`: o Papeo só vê a pasta oculta dele no Drive. Tudo é cifrado antes de sair (XChaCha20-Poly1305, chave por Argon2id da frase-senha com sal comum à conta em `meta.json`, que também guarda uma prova cifrada para conferir a frase). Cada computador grava só o próprio arquivo (`device-<id>.json`, nome do arquivo amarrado ao conteúdo cifrado) e lê os outros; a junção é por registro (`updatedAt` mais novo; anotação mudada nos dois lados guarda as duas versões). Registros apagados somem de vez em 90 dias; por isso o arquivo de um computador que não grava há mais de 80 dias entra na junção uma última vez e sai da nuvem (com mais de 88, só sai), e um computador que volta depois de mais de 80 dias esquece o que não mudou desde a última sincronização e não existe mais nos outros (só se todos os arquivos foram lidos). Reconectar depois de muito tempo desconectado começa sem base: o que esse computador tinha volta para todos. Rodadas e comandos da sincronização passam por uma trava assíncrona (um de cada vez); com dois `meta.json`, vale o mais antigo. O token de renovação e a chave (não a frase) ficam em `sync.json` (0600) na pasta local do app, fora do chaveiro do sistema e da trava do app (limitação conhecida). Prioridade por registro: escritas automáticas (lembrete já avisado) também contam como mudança.
 
 Limites conhecidos: os dados das sessões não têm criptografia própria (use FileVault/BitLocker); o backup é um JSON legível (sem logins nem conversas); notificações disparadas pelo service worker do site (push) não passam pelo Papeo; a resposta rápida depende dos seletores do WhatsApp Web/Telegram Web (se o site mudar, o Papeo avisa e oferece abrir a conversa). No macOS, "Responder" na notificação só existe no app instalado (`.app`); fora dele as notificações usam o plugin, sem resposta.
 
@@ -69,7 +71,7 @@ Limites conhecidos: os dados das sessões não têm criptografia própria (use F
 | macOS | `~/Library/Application Support/io.github.ygormteus.papeo/` (sessões no armazenamento do WebKit, por conta) |
 | Windows | `%APPDATA%\io.github.ygormteus.papeo\` |
 
-`services.json` guarda serviços e configurações; `sessions/<id>/`, logins, cookies e cache de cada conta.
+`services.json` guarda serviços e configurações; `organizer.json`, tarefas e anotações; `sessions/<id>/`, logins, cookies e cache de cada conta. Com a sincronização ligada, `sync.json` fica na pasta local do app (no Windows, `%LOCALAPPDATA%`).
 
 No macOS, `webcrypto-master.key` (permissão 0600) guarda a chave com que o WebKit cifra as chaves criptográficas dos sites (o login do WhatsApp Web). Por padrão o WebKit a guardaria nas Chaves, liberada só para o build exato do app: sem assinatura com ID de equipe da Apple, cada atualização pediria a senha das Chaves. O Papeo a entrega pelo delegate privado `webCryptoMasterKey:` do `WKWebsiteDataStore` (macOS 15+; `src-tauri/src/webcrypto.rs`). Na primeira abertura com esse recurso, a chave antiga é lida uma vez das Chaves, para os logins continuarem valendo.
 
@@ -84,6 +86,17 @@ Conferir um instalador baixado (com o [GitHub CLI](https://cli.github.com)):
 ```sh
 gh attestation verify Papeo_0.1.0_aarch64.dmg -R ygormteus/papeo
 ```
+
+## Sincronização: acesso ao Google
+
+Sem as variáveis abaixo no build, o app mostra a sincronização como indisponível. Para ligar:
+
+1. No [Google Cloud Console](https://console.cloud.google.com), crie um projeto e ative a **Google Drive API**.
+2. Em **Google Auth Platform**, configure a tela de consentimento (tipo externo, nome Papeo) e adicione o escopo `https://www.googleapis.com/auth/drive.appdata`.
+3. Em **Clientes**, crie um cliente do tipo **App para computador**.
+4. Cadastre o ID e o segredo nos secrets do repositório `PAPEO_GOOGLE_CLIENT_ID` e `PAPEO_GOOGLE_CLIENT_SECRET` (o workflow os passa ao build). Para testar localmente, exporte as duas variáveis antes de `pnpm tauri dev` ou `pnpm build:local`.
+
+Enquanto o app estiver em modo de teste no Google, só as contas cadastradas como testadoras (até 100) conseguem entrar, e o acesso expira em 7 dias. Para liberar a todos, publique o app na tela de consentimento; confira no console se o Google pede verificação para o escopo escolhido.
 
 ## Publicar uma versão
 

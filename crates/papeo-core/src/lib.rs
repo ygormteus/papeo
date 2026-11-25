@@ -7,6 +7,7 @@ mod privacy;
 mod service;
 mod settings;
 mod store;
+pub mod sync;
 mod util;
 
 pub use organizer::{

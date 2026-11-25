@@ -1,5 +1,6 @@
 mod commands;
 mod downloads;
+mod drive;
 mod idle;
 mod lock;
 mod memory;
@@ -12,6 +13,7 @@ mod popover;
 mod reply;
 mod sessions;
 mod state;
+mod sync;
 mod tray;
 mod updater;
 #[cfg(target_os = "macos")]
@@ -140,6 +142,7 @@ fn spawn_maintenance(app: AppHandle) {
             std::thread::sleep(Duration::from_secs(15));
             tick += 1;
             let now = std::time::SystemTime::now();
+            let woke = resume_pending;
             if resume_pending {
                 resume_pending = false;
                 for id in resume_due(&app) {
@@ -218,6 +221,7 @@ fn spawn_maintenance(app: AppHandle) {
                 }
             }
             organizer::tick(&app);
+            sync::tick(&app, woke);
             updater::tick(&app, started);
         }
     });
@@ -325,6 +329,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 sessions::retry_pending(&cleanup).await;
             });
+            sync::init(handle, app.path().app_local_data_dir()?);
             notifications::init(handle);
             tray::install(handle)?;
             #[cfg(target_os = "macos")]
@@ -382,6 +387,12 @@ pub fn run() {
             organizer::delete_task,
             organizer::save_note,
             organizer::show_task,
+            sync::sync_status,
+            sync::sync_connect,
+            sync::sync_passphrase,
+            sync::sync_now,
+            sync::sync_reset,
+            sync::sync_disconnect,
             notify::service_notify,
             notify::service_status,
         ])

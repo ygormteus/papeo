@@ -334,6 +334,38 @@ export const api = {
     }),
 };
 
+/** Sincronização pelo Google Drive. */
+export interface SyncStatus {
+  available: boolean;
+  signedIn: boolean;
+  connected: boolean;
+  /** Falta a frase-senha: criar (primeiro computador) ou digitar. */
+  needsPassphrase?: "create" | "enter" | null;
+  running: boolean;
+  /** Segundos Unix. */
+  lastSync?: number | null;
+  error?: string | null;
+  deviceName: string;
+  /** Outros computadores sincronizando. */
+  devices: number;
+}
+
+export const syncApi = {
+  syncStatus: () => invoke<SyncStatus>("sync_status"),
+  /** Abre o navegador para entrar na conta Google. */
+  syncConnect: () => invoke<SyncStatus>("sync_connect"),
+  syncPassphrase: (passphrase: string) => invoke<SyncStatus>("sync_passphrase", { passphrase }),
+  syncNow: () => invoke<SyncStatus>("sync_now"),
+  /** Esqueceu a frase: apaga a nuvem e recomeça com outra. */
+  syncReset: (passphrase: string) => invoke<SyncStatus>("sync_reset", { passphrase }),
+  /** `forget`: apaga da nuvem a cópia deste computador. */
+  syncDisconnect: (forget: boolean) => invoke<SyncStatus>("sync_disconnect", { forget }),
+};
+
+export function onSync(cb: (s: SyncStatus) => void): Promise<UnlistenFn> {
+  return listen<SyncStatus>("papeo://sync", (e) => cb(e.payload));
+}
+
 export function onOrganizer(cb: (o: Organizer) => void): Promise<UnlistenFn> {
   return listen<Organizer>("papeo://organizer", (e) => cb(e.payload));
 }

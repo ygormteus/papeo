@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import SyncSettings from "./SyncSettings.svelte";
   import {
     BellOff,
     Bug,
@@ -438,6 +439,8 @@
       </div>
     </div>
   </section>
+
+  <SyncSettings />
 
   <section class="card" aria-labelledby="s-backup">
     <h2 id="s-backup"><Download size={18} /> Backup</h2>

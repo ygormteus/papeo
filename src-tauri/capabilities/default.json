@@ -52,6 +52,12 @@
     "allow-set-task-done",
     "allow-snooze-task",
     "allow-delete-task",
-    "allow-save-note"
+    "allow-save-note",
+    "allow-sync-status",
+    "allow-sync-connect",
+    "allow-sync-passphrase",
+    "allow-sync-now",
+    "allow-sync-reset",
+    "allow-sync-disconnect"
   ]
 }

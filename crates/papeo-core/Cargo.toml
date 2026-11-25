@@ -9,3 +9,8 @@ publish = false
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
+# Sincronização: chave da frase-senha (Argon2id) e cifra (XChaCha20-Poly1305).
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+base64 = "0.21"
+getrandom = "0.3"

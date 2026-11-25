@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-passphrase"
+description = "Enables the sync_passphrase command without any pre-configured scope."
+commands.allow = ["sync_passphrase"]
+
+[[permission]]
+identifier = "deny-sync-passphrase"
+description = "Denies the sync_passphrase command without any pre-configured scope."
+commands.deny = ["sync_passphrase"]

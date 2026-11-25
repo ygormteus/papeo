@@ -139,6 +139,19 @@ export function installDevMock() {
     services[0].chat = "Ana Souza";
   }
   const visible = (): Organizer => structuredClone(org);
+  // Sincronização (`?semsync`: versão sem o acesso ao Google).
+  const sync = {
+    available: !new URLSearchParams(location.search).has("semsync"),
+    signedIn: false,
+    connected: false,
+    needsPassphrase: null as "create" | "enter" | null,
+    running: false,
+    lastSync: null as number | null,
+    error: null as string | null,
+    deviceName: "MacBook de Ana",
+    devices: 0,
+  };
+  const syncState = () => ({ ...sync });
   const taskById = (id: unknown) => {
     const t = org.tasks.find((x) => x.id === id);
     if (!t) throw "Tarefa não encontrada.";
@@ -344,6 +357,29 @@ export function installDevMock() {
         return snap();
       case "preview_backup":
         return { services: services.map((s) => s.name), tasks: org.tasks.filter((t) => !t.done).length, notes: 1 };
+      case "sync_status":
+        return syncState();
+      case "sync_connect":
+        return new Promise((resolve) =>
+          setTimeout(() => {
+            sync.signedIn = true;
+            sync.needsPassphrase = new URLSearchParams(location.search).has("outro") ? "enter" : "create";
+            resolve(syncState());
+          }, 700),
+        );
+      case "sync_passphrase":
+      case "sync_reset":
+        if (String(args.passphrase).length < 10) throw "Use uma frase-senha com pelo menos 10 caracteres.";
+        if (cmd === "sync_passphrase" && sync.needsPassphrase === "enter" && args.passphrase !== "frase de teste 123")
+          throw "Frase-senha incorreta.";
+        Object.assign(sync, { connected: true, needsPassphrase: null, lastSync: Math.floor(ms() / 1000), devices: 1 });
+        return syncState();
+      case "sync_now":
+        sync.lastSync = Math.floor(ms() / 1000);
+        return syncState();
+      case "sync_disconnect":
+        Object.assign(sync, { signedIn: false, connected: false, needsPassphrase: null, lastSync: null, devices: 0 });
+        return syncState();
       case "get_organizer":
         if (locked) throw "Desbloqueie o Papeo primeiro.";
         return visible();

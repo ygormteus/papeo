@@ -229,6 +229,7 @@ fn change<T>(
         state.persist_organizer(&inner)?;
         out
     };
+    crate::sync::mark_dirty(app);
     publish_organizer(app);
     Ok(out)
 }
@@ -415,6 +416,7 @@ pub fn tick(app: &AppHandle) {
         if let Err(err) = state.persist_organizer(&inner) {
             eprintln!("papeo: não foi possível gravar as tarefas ({err})");
         }
+        crate::sync::mark_dirty(app);
         let preview = if inner.locked {
             NotificationPreview::Hidden
         } else {

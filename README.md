@@ -98,6 +98,17 @@ Clique no ícone do Papeo na **barra de menus** (Mac, lá em cima) ou na **bande
 
 Nas notificações do WhatsApp e do Telegram também aparece **Responder**: digite ali mesmo e envie.
 
+### Tarefas, lembretes e anotações
+
+Conversando com alguém, clique no botão de **bloco de notas** na barra do topo (ou `⌘ ⇧ N` / `Ctrl Shift N`). Abre um painel ao lado da conversa, que continua à vista:
+
+- **Nova tarefa:** escreva e, se quiser, escolha quando avisar (*Em 1 h*, *Hoje 18h*, *Amanhã 9h*…). Dá também para escrever a data no texto: "retornar orçamento **amanhã 15h**", "pagar boleto **dia 5**", "ligar **em 30 min**".
+- A tarefa fica **ligada à conversa**: na hora marcada chega um lembrete, e um clique abre aquela conversa na conta certa. Para uma tarefa solta, tire o vínculo no ✕.
+- **Repetir:** todo dia, dias úteis, toda semana ou todo mês.
+- **Anotações:** um bloquinho por contato (preferências, combinados, histórico), salvo sozinho.
+
+Tudo aparece também em **Tarefas** (barra lateral), no cartão **Para hoje** do Início, na janelinha da barra de menus e na busca (`⌘ K`). Nos lembretes, **Adiar 1 h** e **Concluir** funcionam direto na notificação.
+
 ### Tema escuro
 
 ![Papeo no tema escuro](assets/screenshots/inicio-escuro.png)
@@ -121,11 +132,13 @@ Para economizar:
 | Adicionar serviço | `⌘ N` | `Ctrl N` |
 | Configurações | `⌘ ,` | `Ctrl ,` |
 | Bloquear agora | `⌘ L` | `Ctrl L` |
+| Tarefas e anotações da conversa | `⌘ ⇧ N` | `Ctrl Shift N` |
+| Aumentar / diminuir o zoom | `⌘ +` / `⌘ −` | `Ctrl +` / `Ctrl −` |
 
 ## Perguntas frequentes
 
 **Minhas conversas passam pelo Papeo ou por algum servidor dele?**
-Não. O Papeo só abre os sites oficiais (como o WhatsApp Web) dentro dele. Não existe servidor do Papeo, não há propaganda nem coleta de dados. A única coisa que ele consulta por conta própria é se existe versão nova — e dá para desligar em **Configurações → Sistema**.
+Não. O Papeo só abre os sites oficiais (como o WhatsApp Web) dentro dele. Não existe servidor do Papeo, não há propaganda nem coleta de dados. A única coisa que ele consulta por conta própria é se existe versão nova — e dá para desligar em **Configurações → Sistema**. Se você ligar a sincronização das tarefas, ele também conversa com o seu Google Drive (com tudo cifrado).
 
 **Como atualizo?**
 O Papeo confere a cada 2 horas se há versão nova. Quando houver, aparece **Atualizar e reiniciar** na barra lateral, com **Ver o que mudou** para conhecer as novidades antes. É só clicar; seus logins continuam. Depois de atualizar, o Papeo mostra uma vez o que mudou.
@@ -140,7 +153,10 @@ O login expirou. Abra a conta e entre de novo.
 Clique com o botão direito na conta → **Personalizar…** e libere microfone e câmera. Confira também a permissão do sistema (Mac: **Ajustes → Privacidade e Segurança**; Windows: **Configurações → Privacidade**).
 
 **Como passo para outro computador?**
-Em **Configurações → Backup**, exporte o arquivo e importe no outro computador. Os logins não vão junto: entre de novo em cada conta.
+Em **Configurações → Backup**, exporte o arquivo e importe no outro computador. Vão junto as contas, as preferências, as tarefas e as anotações; os logins não: entre de novo em cada conta.
+
+**Dá para ter as tarefas em todos os meus computadores?**
+Sim: **Configurações → Sincronização → Conectar Google Drive**. O Papeo usa uma pasta oculta só dele no seu Drive (não vê seus outros arquivos) e cifra tudo com uma **frase-senha** que só você sabe: nem o Google consegue ler. A frase é pedida uma vez em cada computador. Se esquecê-la, dá para recomeçar a sincronização com outra (as tarefas de cada computador continuam). Com a sincronização ligada, restaurar um backup não apaga dos outros computadores as tarefas que não estavam nele: elas voltam na próxima sincronização.
 
 **Como desinstalo e apago tudo?**
 Antes de desinstalar, remova cada conta (botão direito → **Remover…**); isso apaga os logins daquele computador. Depois apague o aplicativo normalmente.
@@ -152,6 +168,7 @@ Antes de desinstalar, remova cada conta (botão direito → **Remover…**); iss
 - Você escolhe o que aparece nas notificações: a mensagem inteira, só quem mandou, ou nada.
 - O bloqueio esconde todas as conversas até você usar o Touch ID, a senha ou o Windows Hello.
 - Dá para esconder a janela do Papeo em gravações e compartilhamentos de tela.
+- Tarefas e anotações ficam no seu computador. Se você ligar a sincronização, vão para o seu Google Drive **cifradas** com a sua frase-senha.
 
 ## Para desenvolvedores
 
