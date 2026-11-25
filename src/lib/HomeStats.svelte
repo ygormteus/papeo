@@ -2,7 +2,8 @@
   import { onMount } from "svelte";
   import { Bell, FileDown, Layers, MemoryStick } from "@lucide/svelte";
   import { api, formatBytes, type Snapshot } from "./api";
-  import { freeMemory, heavyIds, home, watchMemory } from "./homeState.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { freeMemory, heavyIds, home, setConfirmFree, watchMemory } from "./homeState.svelte";
 
   // Resumo do Início na barra do topo: cada item é um atalho.
   let {
@@ -29,6 +30,30 @@
   );
   const heavy = $derived(heavyIds(snap));
   const freeing = $derived(Object.values(home.reloading).some(Boolean));
+  /** Contas a recarregar, fixadas no clique até o usuário confirmar. */
+  let pending = $state<string[] | null>(null);
+  let dontAsk = $state(false);
+  const pendingList = $derived(
+    (pending ?? [])
+      .map((id) => snap.services.find((s) => s.id === id))
+      .filter((s) => s !== undefined)
+      .map((s) => `${s.name} (${formatBytes(home.memory?.services[s.id] ?? 0)})`)
+      .join(", "),
+  );
+
+  function confirmFree() {
+    const ids = pending ?? [];
+    pending = null;
+    if (dontAsk) setConfirmFree(false);
+    freeMemory(ids, run);
+  }
+
+  function askFree() {
+    if (!home.confirmFree) return freeMemory(heavy, run);
+    dontAsk = false;
+    pending = [...heavy];
+  }
+
   const done = $derived(snap.downloads.filter((d) => d.state === "done").length);
   const downloading = $derived(snap.downloads.some((d) => d.state === "downloading"));
 
@@ -62,7 +87,7 @@
         (heavy.length
           ? "Clique para liberar memória (recarrega as contas paradas; as notificações continuam)."
           : "Nenhuma conta pesada em segundo plano."),
-      onclick: () => freeMemory(heavy, run),
+      onclick: askFree,
       disabled: freeing || heavy.length === 0,
       tone: heavy.length && !freeing ? "heavy" : "",
     },
@@ -93,6 +118,22 @@
     </button>
   {/each}
 </div>
+
+{#if pending}
+  <ConfirmDialog
+    title="Liberar memória?"
+    message="{pending.length === 1 ? 'Esta conta parada será recarregada' : 'Estas contas paradas serão recarregadas'}: {pendingList}. O que não foi enviado nelas pode se perder; as notificações continuam."
+    confirmLabel="Liberar"
+    danger={false}
+    onclose={() => (pending = null)}
+    onconfirm={confirmFree}
+  >
+    <label class="dont-ask">
+      <input type="checkbox" bind:checked={dontAsk} />
+      Não perguntar de novo
+    </label>
+  </ConfirmDialog>
+{/if}
 
 <style>
   .stats {
@@ -139,6 +180,15 @@
 
   .chip.heavy strong {
     color: var(--warn-text);
+  }
+
+  .dont-ask {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -8px 0 20px;
+    color: var(--text-muted);
+    font-size: 13px;
   }
 
   /* Janela estreita: só o número. */

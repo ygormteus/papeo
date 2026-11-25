@@ -18,6 +18,7 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import Switch from "./Switch.svelte";
+  import { home, setConfirmFree } from "./homeState.svelte";
   import { bundledNotes } from "./bundledNotes";
   import {
     ABOUT,
@@ -380,6 +381,18 @@
           <option value={option.mb}>{option.label}</option>
         {/each}
       </select>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Confirmar antes de liberar memória</span>
+        <span class="hint">Ao clicar no indicador de memória no topo, pergunta antes de recarregar as contas.</span>
+      </div>
+      <Switch
+        checked={home.confirmFree}
+        label="Confirmar antes de liberar memória"
+        onchange={setConfirmFree}
+      />
     </div>
 
     <div class="row">

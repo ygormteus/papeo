@@ -5,7 +5,19 @@ import { api, type MemoryReport, type Snapshot } from "./api";
 /** Acima disso, um serviço em segundo plano vale ser recarregado. */
 export const HEAVY_BYTES = 300 * 1024 ** 2;
 
+const CONFIRM_FREE_KEY = "papeo.confirmFreeMemory";
+
+function readConfirmFree(): boolean {
+  try {
+    return localStorage.getItem(CONFIRM_FREE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 export const home = $state({
+  /** Perguntar antes de liberar memória pelo resumo do topo (preferência local). */
+  confirmFree: readConfirmFree(),
   memory: null as MemoryReport | null,
   /** Contas recarregando para liberar memória (o site leva alguns segundos). */
   reloading: {} as Record<string, boolean>,
@@ -30,6 +42,16 @@ export function watchMemory(): () => void {
   return () => {
     if (--watchers === 0) clearInterval(timer);
   };
+}
+
+export function setConfirmFree(value: boolean) {
+  home.confirmFree = value;
+  try {
+    if (value) localStorage.removeItem(CONFIRM_FREE_KEY);
+    else localStorage.setItem(CONFIRM_FREE_KEY, "off");
+  } catch {
+    /* preferência local apenas */
+  }
 }
 
 /** Recarregar zera a memória acumulada pelo site; as notificações continuam. */

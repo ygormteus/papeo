@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import Modal from "./Modal.svelte";
 
   let {
@@ -10,6 +11,7 @@
     onclose,
     oncancel,
     onconfirm,
+    children,
   }: {
     title: string;
     message: string;
@@ -22,12 +24,15 @@
     /** Botão secundário, quando ele não equivale a só fechar. */
     oncancel?: () => void;
     onconfirm: () => void;
+    /** Conteúdo extra entre a mensagem e os botões. */
+    children?: Snippet;
   } = $props();
 </script>
 
 <Modal {onclose} label={title} width={400}>
   <h2>{title}</h2>
   <p>{message}</p>
+  {@render children?.()}
   <div class="actions">
     <!-- svelte-ignore a11y_autofocus -->
     <button class="btn" onclick={oncancel ?? onclose} autofocus>{cancelLabel}</button>
