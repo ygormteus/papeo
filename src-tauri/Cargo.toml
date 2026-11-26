@@ -1,6 +1,6 @@
 [package]
 name = "papeo"
-version = "0.10.0"
+version = "0.11.0"
 authors = ["Ygor Moura"]
 description = "Mensageiros num só lugar, leve e rápido"
 edition = "2021"
