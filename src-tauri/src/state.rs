@@ -419,6 +419,10 @@ impl Inner {
     }
 }
 
+/// Configuração desta sessão quando `services.json` existe mas está preso
+/// por outro programa (ver `papeo_core::load_guarded`).
+pub const FALLBACK_STORE: &str = "services.sessao.json";
+
 pub struct AppState {
     pub store_path: PathBuf,
     pub organizer_path: PathBuf,
@@ -446,6 +450,14 @@ pub struct Staged {
 }
 
 impl AppState {
+    /// Sessão com a configuração provisória: as contas reais estão em
+    /// `services.json`, que não pôde ser lido.
+    pub fn config_fallback(&self) -> bool {
+        self.store_path
+            .file_name()
+            .is_some_and(|n| n == FALLBACK_STORE)
+    }
+
     pub fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -658,7 +670,13 @@ pub struct Snapshot {
     pub mode: Mode,
     /// O modo foi trocado à mão no automático (até o expediente mudar).
     pub mode_manual: bool,
+    /// Versão do estado: sobe a cada mudança enviada. A interface ignora um
+    /// estado mais velho que chegue depois (resposta de comando atrasada).
+    pub rev: u64,
 }
+
+/// Versão do último estado enviado (ver `Snapshot::rev`).
+static REV: AtomicU64 = AtomicU64::new(1);
 
 pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
     if !loaded {
@@ -755,17 +773,35 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         tasks: crate::organizer::counts(&inner),
         mode,
         mode_manual: inner.mode_manual(),
+        rev: REV.load(Ordering::SeqCst),
     }
 }
 
 /// Envia o estado à interface e atualiza badge e bandeja.
+/// Só envia se o estado mudou desde o último envio: a interface não refaz a
+/// tela à toa (muitos avisos do site não mudam nada visível). Convertido
+/// uma vez só para a janela principal e a mini janela.
 pub fn publish(app: &AppHandle) -> Snapshot {
-    let snap = snapshot(app);
-    let _ = app.emit_to(UI_WEBVIEW, STATE_EVENT, &snap);
-    // Fechada, a mini janela recebe o estado atual ao abrir.
-    if crate::popover::is_shown() {
-        let _ = app.emit_to(crate::popover::POPOVER, STATE_EVENT, &snap);
+    // Último estado enviado (com a versão de então). Montar, comparar e
+    // enviar sob o mesmo lock: dois envios simultâneos não chegam trocados.
+    // Ordem: este lock e depois o do estado; quem segura o do estado nunca
+    // chama `publish`.
+    static LAST: Mutex<String> = Mutex::new(String::new());
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let mut snap = snapshot(app);
+    let body = serde_json::to_string(&snap).unwrap_or_default();
+    if body != *last {
+        snap.rev = REV.fetch_add(1, Ordering::SeqCst) + 1;
+        *last = serde_json::to_string(&snap).unwrap_or_default();
+        if let Ok(raw) = serde_json::value::RawValue::from_string(last.clone()) {
+            let _ = app.emit_to(UI_WEBVIEW, STATE_EVENT, &raw);
+            // Fechada, a mini janela recebe o estado atual ao abrir.
+            if crate::popover::is_shown() {
+                let _ = app.emit_to(crate::popover::POPOVER, STATE_EVENT, &raw);
+            }
+        }
     }
+    drop(last);
     static BADGE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
     if let Some(window) = app.get_window(MAIN_WINDOW) {
         let total = i64::from(snap.total_unread);

@@ -133,11 +133,55 @@ fn sanitize(file: StoreFile, strict: bool) -> Result<(Config, usize), String> {
     Ok((config, dropped))
 }
 
+/// Lê o arquivo, tentando de novo por um instante se ele estiver preso
+/// (antivírus ou indexador com o arquivo aberto, no Windows).
+fn read_retrying(path: &Path) -> std::io::Result<Vec<u8>> {
+    let mut tries = 0;
+    loop {
+        match fs::read(path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound && tries < 5 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Onde guardar um arquivo ilegível ou inválido: `.corrompido`, ou com a
+/// hora no nome se já houver um (o mais antigo não é substituído).
+fn kept_path(path: &Path) -> std::path::PathBuf {
+    let kept = path.with_extension("json.corrompido");
+    if !kept.exists() {
+        return kept;
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    path.with_extension(format!("json.corrompido-{secs}"))
+}
+
 /// Lê a configuração. Na primeira execução, cria WhatsApp e Telegram.
 /// Um arquivo ilegível ou inválido é preservado como `.corrompido`.
 pub fn load(path: &Path) -> Config {
-    let Ok(bytes) = fs::read(path) else {
-        return defaults();
+    load_guarded(path).0
+}
+
+/// Como `load`, dizendo também se dá para gravar em `path`. `false`: o
+/// arquivo existe, não abre e não pôde ser tirado do caminho (preso por
+/// outro programa); gravar ali substituiria as contas reais pelos padrões.
+pub fn load_guarded(path: &Path) -> (Config, bool) {
+    let bytes = match read_retrying(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return (defaults(), true),
+        // Existe mas não abre: tira do caminho antes de seguir com os
+        // padrões, senão a próxima gravação substituiria as contas reais.
+        Err(err) => {
+            eprintln!("papeo: não foi possível ler services.json ({err}); usando padrões");
+            let moved = fs::rename(path, kept_path(path)).is_ok();
+            return (defaults(), moved);
+        }
     };
     let parsed = serde_json::from_slice::<StoreFile>(&bytes)
         .map_err(|e| e.to_string())
@@ -146,14 +190,14 @@ pub fn load(path: &Path) -> Config {
         Ok((config, dropped)) => {
             if dropped > 0 {
                 // Guarda o original antes que o app regrave sem os descartados.
-                let _ = fs::copy(path, path.with_extension("json.corrompido"));
+                let _ = fs::copy(path, kept_path(path));
             }
-            config
+            (config, true)
         }
         Err(err) => {
             eprintln!("papeo: services.json inválido ({err}); usando padrões");
-            let _ = fs::rename(path, path.with_extension("json.corrompido"));
-            defaults()
+            let moved = fs::rename(path, kept_path(path)).is_ok();
+            (defaults(), moved)
         }
     }
 }
@@ -266,6 +310,38 @@ mod tests {
         fs::write(&path, b"{oops").unwrap();
         assert_eq!(load(&path).services.len(), 2);
         assert!(path.with_extension("json.corrompido").exists());
+        // Outro arquivo inválido não substitui o guardado antes.
+        fs::write(&path, b"{oops2").unwrap();
+        assert_eq!(load(&path).services.len(), 2);
+        assert_eq!(
+            fs::read(path.with_extension("json.corrompido")).unwrap(),
+            b"{oops"
+        );
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Arquivo que existe mas não abre: as contas reais saem do caminho
+    /// antes que a próxima gravação as substitua pelos padrões.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_file_is_kept() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir();
+        let path = dir.join("services.json");
+        save(&path, &defaults()).unwrap();
+        let original = fs::read(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&path).is_ok() {
+            // Rodando como root: a permissão não impede a leitura.
+            let _ = fs::remove_dir_all(dir);
+            return;
+        }
+        assert_eq!(load(&path).services.len(), 2);
+        assert!(!path.exists());
+        let kept = path.with_extension("json.corrompido");
+        fs::set_permissions(&kept, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(fs::read(&kept).unwrap(), original);
         let _ = fs::remove_dir_all(dir);
     }
 

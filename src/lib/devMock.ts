@@ -197,6 +197,8 @@ export function installDevMock() {
   };
 
   const now = () => Date.now() / 1000;
+  // Versão do estado (como `Snapshot::rev` no app).
+  let rev = 0;
   // Modos (mesmas regras de `papeo_core::Settings::current_mode`).
   let manual: { mode: Mode; scheduled: Mode } | null = null;
   const scheduledMode = (): Mode => {
@@ -223,6 +225,7 @@ export function installDevMock() {
     const list = structuredClone(services).map((s) => ({ ...s, inMode: inMode(s, mode) }));
     const hidden = new Set(list.filter((s) => !s.inMode).map((s) => s.id));
     return {
+      rev: ++rev,
       mode,
       modeManual: settings.mode === "auto" && manual?.scheduled === scheduledMode(),
       tasks: locked ? { overdue: 0, today: 0 } : counts(),

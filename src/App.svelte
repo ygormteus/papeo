@@ -48,6 +48,7 @@
     onDownload,
     onOrganizer,
     onState,
+    fresher,
     type ChatLink,
     type Contact,
     type Organizer,
@@ -198,12 +199,15 @@
 
   const showError = (err: unknown) => showToast({ text: errorMessage(err) });
 
-  async function run(action: Promise<Snapshot | void>) {
+  /** Executa a ação; `false` se falhou (o erro já apareceu). */
+  async function run(action: Promise<Snapshot | void>): Promise<boolean> {
     try {
       const next = await action;
-      if (next) snap = next;
+      if (next) snap = fresher(next, snap);
+      return true;
     } catch (err) {
       showError(err);
+      return false;
     }
   }
 
@@ -343,7 +347,7 @@
 
   async function addService(kind: ServiceKind, name: string, url: string) {
     // Erros sobem para o diálogo, que os mostra no próprio formulário.
-    snap = await api.addService(kind, name || undefined, url || undefined);
+    snap = fresher(await api.addService(kind, name || undefined, url || undefined), snap);
     addOpen = false;
   }
 
@@ -461,7 +465,7 @@
 
   onMount(() => {
     const unlisten = [
-      onState((s) => (snap = s)),
+      onState((s) => (snap = fresher(s, snap))),
       onOrganizer((o) => {
         if (!snap.locked) org = o;
       }),
@@ -482,7 +486,7 @@
     api
       .getState()
       .then((s) => {
-        snap = s;
+        snap = fresher(s, snap);
         ready = true;
         // Versões antigas guardavam o tema só na interface: leva para o app.
         const legacy = store.get("papeo.theme");
@@ -692,8 +696,9 @@
     onconfirm={async () => {
       const { id, name } = service;
       confirmClear = null;
-      await run(api.clearServiceData(id));
-      showToast({ text: `Dados de ${name} apagados deste computador.` });
+      if (await run(api.clearServiceData(id))) {
+        showToast({ text: `Dados de ${name} apagados deste computador.` });
+      }
     }}
   />
 {/if}
@@ -712,9 +717,10 @@
     onconfirm={async () => {
       const { path } = backup;
       restoring = null;
-      await run(api.importConfig(path));
-      page = "home";
-      showToast({ text: "Configuração restaurada." });
+      if (await run(api.importConfig(path))) {
+        page = "home";
+        showToast({ text: "Configuração restaurada." });
+      }
     }}
   />
 {/if}
@@ -726,8 +732,8 @@
     onclose={() => (customizing = null)}
     onsubmit={async (name, color, emoji, media, context) => {
       // Erros sobem para o diálogo, que os mostra no formulário.
-      snap = await api.customizeService(target.id, name, color, emoji, context);
-      if (media !== mediaPolicy(target)) snap = await api.setMediaPolicy(target.id, media);
+      snap = fresher(await api.customizeService(target.id, name, color, emoji, context), snap);
+      if (media !== mediaPolicy(target)) snap = fresher(await api.setMediaPolicy(target.id, media), snap);
       customizing = null;
     }}
   />
@@ -768,10 +774,10 @@
   <LockScreen
     method={snap.lockMethod}
     onunlock={async (pin) => {
-      snap = await api.unlock(pin);
+      snap = fresher(await api.unlock(pin), snap);
     }}
     onforget={async () => {
-      snap = await api.forgetLockPin();
+      snap = fresher(await api.forgetLockPin(), snap);
     }}
   />
 {/if}

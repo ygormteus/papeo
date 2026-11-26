@@ -114,6 +114,11 @@ pub async fn retry_pending(app: &AppHandle) -> usize {
 /// Sessões no disco que nenhum serviço usa (ex.: restos de antes de
 /// restaurar um backup).
 pub async fn orphans(app: &AppHandle) -> Vec<String> {
+    // Configuração provisória (services.json preso): as sessões das contas
+    // reais pareceriam sobras e a limpeza apagaria os logins delas.
+    if app.state::<AppState>().config_fallback() {
+        return Vec::new();
+    }
     let used = in_use(app);
     let mut found = BTreeSet::new();
     let dir = app.state::<AppState>().sessions_dir.clone();

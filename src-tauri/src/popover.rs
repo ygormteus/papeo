@@ -1,8 +1,9 @@
 //! Mini janela da barra de menus (macOS) / bandeja (Windows): conversas
-//! recentes com resposta rápida. Criada no primeiro clique e depois só
-//! escondida, para abrir na hora.
+//! recentes com resposta rápida. Criada no clique; escondida, continua
+//! pronta por 5 minutos (reabrir na hora) e depois é fechada de verdade,
+//! para não deixar um processo do navegador ocupando memória o dia todo.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{
@@ -23,6 +24,34 @@ static HIDDEN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 /// Aberta (ou talvez aberta): só então recebe cada estado publicado. Ao
 /// abrir, recebe o estado atual antes de aparecer.
 static SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Muda a cada abrir/esconder: o fechamento agendado só vale se nada
+/// aconteceu desde que ela foi escondida.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Escondida há este tempo: fecha a janela (libera o processo dela).
+const CLOSE_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// Marca como escondida e agenda o fechamento de verdade.
+fn hidden(app: &AppHandle) {
+    SHOWN.store(false, Ordering::SeqCst);
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(CLOSE_AFTER);
+        // Confere e fecha na thread principal, a mesma do clique no ícone:
+        // um clique não cabe entre a conferência e o fechamento.
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if GENERATION.load(Ordering::SeqCst) != generation || is_shown() {
+                return;
+            }
+            if let Some(window) = handle.get_webview_window(POPOVER) {
+                let _ = window.destroy();
+            }
+        });
+    });
+}
 
 pub fn is_shown() -> bool {
     SHOWN.load(Ordering::SeqCst)
@@ -93,11 +122,12 @@ pub fn toggle(app: &AppHandle, icon: Rect) {
         }
     };
     if just_hidden || window.is_visible().unwrap_or(false) {
-        SHOWN.store(false, Ordering::SeqCst);
         let _ = window.hide();
+        hidden(app);
         return;
     }
     place(app, &window, icon);
+    GENERATION.fetch_add(1, Ordering::SeqCst);
     SHOWN.store(true, Ordering::SeqCst);
     let _ = app.emit_to(
         POPOVER,
@@ -110,8 +140,8 @@ pub fn toggle(app: &AppHandle, icon: Rect) {
 
 pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(POPOVER) {
-        SHOWN.store(false, Ordering::SeqCst);
         let _ = window.hide();
+        hidden(app);
     }
 }
 
@@ -119,7 +149,7 @@ pub fn hide(app: &AppHandle) {
 pub fn on_blur(window: &tauri::Window) {
     if window.is_visible().unwrap_or(false) {
         *HIDDEN_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
-        SHOWN.store(false, Ordering::SeqCst);
         let _ = window.hide();
+        hidden(window.app_handle());
     }
 }

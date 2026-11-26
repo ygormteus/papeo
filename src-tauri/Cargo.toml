@@ -29,7 +29,7 @@ tauri-plugin-updater = { version = "2", default-features = false, features = ["n
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 papeo-core = { path = "../crates/papeo-core" }
 # Sincronização pelo Google Drive (o mesmo reqwest do atualizador).
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "query", "system-proxy"] }

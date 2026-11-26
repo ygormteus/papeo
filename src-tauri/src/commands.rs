@@ -598,25 +598,24 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
     ensure_unlocked(&app)?;
     let backup = papeo_core::read_backup(&PathBuf::from(path), crate::organizer::now_ms())?;
     let config = backup.config;
-    if backup.organizer.is_some() {
-        if let Some(err) = &state.lock().organizer_error {
+    // Tarefas primeiro (grava e troca na memória sob o mesmo lock, antes de
+    // fechar as contas e mexer na configuração): se falhar, nada mudou.
+    // Backup sem tarefas (versão antiga): as atuais continuam.
+    // Grava pela mesma fila das outras gravações (ainda sob o lock): uma
+    // versão anterior já preparada não sobrescreve a restaurada.
+    if let Some(organizer) = backup.organizer {
+        let mut inner = state.lock();
+        if let Some(err) = &inner.organizer_error {
             return Err(err.clone());
+        }
+        let old = std::mem::replace(&mut inner.organizer, organizer);
+        if let Err(err) = state.stage_organizer(&inner).and_then(|s| state.write(s)) {
+            inner.organizer = old;
+            return Err(err);
         }
     }
     close_all(&app);
     state.update(|inner| {
-        // Tarefas primeiro (grava e troca na memória sob o mesmo lock, antes
-        // de mexer na configuração): se falhar, nada mudou. Backup sem
-        // tarefas (versão antiga): as atuais continuam.
-        // Grava pela mesma fila das outras gravações (ainda sob o lock): uma
-        // versão anterior já preparada não sobrescreve a restaurada.
-        if let Some(organizer) = backup.organizer {
-            let old = std::mem::replace(&mut inner.organizer, organizer);
-            if let Err(err) = state.stage_organizer(inner).and_then(|s| state.write(s)) {
-                inner.organizer = old;
-                return Err(err);
-            }
-        }
         // A limpeza pendente é deste computador; o backup não a traz.
         let pending = std::mem::take(&mut inner.config.pending_removal);
         // O aviso e a escolha sobre atualizações valem para este computador.

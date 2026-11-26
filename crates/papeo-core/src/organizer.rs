@@ -216,7 +216,7 @@ impl Organizer {
             !deleted || now_ms.saturating_sub(updated) < TOMBSTONE_KEEP_MS
         };
         let mut seen = HashSet::new();
-        let mut contacts: Vec<Contact> = self
+        let contacts: Vec<Contact> = self
             .contacts
             .into_iter()
             .filter(|c| is_item_id(&c.id) && keep(c.deleted, c.updated_at))
@@ -233,7 +233,13 @@ impl Organizer {
                 c
             })
             .collect();
+        // Limite conta só os valendo; os apagados têm o próprio limite (senão
+        // apagados recentes empurravam anotações antigas para fora).
+        let (mut contacts, mut gone): (Vec<Contact>, Vec<Contact>) =
+            contacts.into_iter().partition(|c| !c.deleted);
         newest_first(&mut contacts, |c| c.updated_at, MAX_CONTACTS);
+        newest_first(&mut gone, |c| c.updated_at, MAX_CONTACTS);
+        contacts.extend(gone);
         let live: HashSet<&str> = contacts
             .iter()
             .filter(|c| !c.deleted)
@@ -652,6 +658,38 @@ mod tests {
             text: text.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn contact_limit_counts_only_live() {
+        let contact = |n: u64, deleted: bool| Contact {
+            id: format!("{n:032x}"),
+            service_id: "svc-a".into(),
+            service_kind: "whatsapp".into(),
+            service_name: "Pessoal".into(),
+            chat: format!("c{n}"),
+            note: if deleted {
+                String::new()
+            } else {
+                "nota".into()
+            },
+            updated_at: NOW - 1_000_000 + n,
+            deleted,
+        };
+        // Vivos mais antigos, apagados mais recentes: nenhum vivo pode sair.
+        let mut org = Organizer::default();
+        for n in 0..MAX_CONTACTS as u64 {
+            org.contacts.push(contact(n, false));
+        }
+        for n in 0..100 {
+            org.contacts.push(contact(MAX_CONTACTS as u64 + n, true));
+        }
+        let org = org.sanitized(NOW);
+        assert_eq!(
+            org.contacts.iter().filter(|c| !c.deleted).count(),
+            MAX_CONTACTS
+        );
+        assert_eq!(org.contacts.iter().filter(|c| c.deleted).count(), 100);
     }
 
     #[test]

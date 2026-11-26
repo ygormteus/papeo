@@ -10,6 +10,7 @@
     modKey,
     onOrganizer,
     onState,
+    fresher,
     type Organizer,
     type Snapshot,
   } from "./api";
@@ -61,8 +62,8 @@
   }
 
   onMount(() => {
-    api.getState().then((s) => (snap = s));
-    const off = onState((s) => (snap = s));
+    api.getState().then((s) => (snap = fresher(s, snap)));
+    const off = onState((s) => (snap = fresher(s, snap)));
     const offOrg = onOrganizer((o) => {
       if (!snap.locked) org = o;
     });
@@ -90,11 +91,11 @@
     api.showApp(id, chat).catch(() => {});
 
   async function toggleDnd() {
-    snap = await api.setDnd(snap.dndActive ? null : 60).catch(() => snap);
+    snap = fresher(await api.setDnd(snap.dndActive ? null : 60).catch(() => snap), snap);
   }
 
   async function lockNow() {
-    snap = await api.lockNow().catch(() => snap);
+    snap = fresher(await api.lockNow().catch(() => snap), snap);
   }
 
 </script>
@@ -141,7 +142,7 @@
         bind:this={list}
         {chats}
         services={snap.services}
-        onsnap={(s) => (snap = s)}
+        onsnap={(s) => (snap = fresher(s, snap))}
         onopen={(id, chat) => go(id, chat)}
         autoOpen
         onlater={async (id, chat, at) => {

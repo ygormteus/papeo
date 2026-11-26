@@ -36,6 +36,7 @@
   import QuickReplies from "./QuickReplies.svelte";
   import { home, setConfirmFree } from "./homeState.svelte";
   import { notesHistory } from "./bundledNotes";
+  import { dateKey } from "./tasks";
   import {
     ABOUT,
     LOCK_OPTIONS,
@@ -70,7 +71,7 @@
     target = null,
   }: {
     snap: Snapshot;
-    run: (action: Promise<Snapshot | void>) => Promise<void>;
+    run: (action: Promise<Snapshot | void>) => Promise<unknown>;
     onrestore: (path: string, preview: { services: string[]; tasks?: number | null; notes?: number | null }) => void;
     onnotes: (mode: "available" | "installed") => void;
     /** Opção a mostrar ao abrir (vinda da busca): troca de aba, rola e destaca a linha. */
@@ -172,7 +173,8 @@
   async function exportBackup() {
     backupMessage = "";
     try {
-      const date = new Date().toISOString().slice(0, 10);
+      // Data local (o ISO é UTC: à noite no Brasil já seria amanhã).
+      const date = dateKey(new Date());
       const path = await save({
         title: "Exportar configuração",
         defaultPath: `papeo-backup-${date}.json`,

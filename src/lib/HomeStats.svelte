@@ -12,7 +12,7 @@
     onopen,
   }: {
     snap: Snapshot;
-    run: (action: Promise<Snapshot | void>) => Promise<void>;
+    run: (action: Promise<Snapshot | void>) => Promise<unknown>;
     onopen: (id: string) => void;
   } = $props();
 

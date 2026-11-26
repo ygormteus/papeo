@@ -74,6 +74,45 @@ const RESUME_MAX_WAIT_TICKS: u32 = 8;
 /// Tempo máximo para checar se os sites das contas respondem.
 const NET_CHECK: Duration = Duration::from_secs(4);
 
+/// Reabre as contas na volta do repouso: a conta à vista na hora; as outras
+/// espaçadas, como ao abrir o app, para não disputarem CPU e rede. Num
+/// thread à parte, para não atrasar bloqueio, sincronização e o resto da
+/// manutenção. Conta aberta pela pessoa enquanto esperava fica como está
+/// (se travou, o Recarregar dela também reabre do zero).
+fn resume_restart(app: &AppHandle, ids: Vec<String>) {
+    // Outra volta do repouso no meio desta (tampa fechada e aberta de novo):
+    // só a mais nova continua, sem reabrir a mesma conta duas vezes.
+    static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let active = app.state::<AppState>().lock().active.clone();
+        let (first, rest): (Vec<_>, Vec<_>) =
+            ids.into_iter().partition(|id| Some(id) == active.as_ref());
+        for (n, id) in first.into_iter().chain(rest).enumerate() {
+            if n > 0 {
+                std::thread::sleep(webviews::RESTORE_GAP);
+                if GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation {
+                    return;
+                }
+                let used = {
+                    let state = app.state::<AppState>();
+                    let inner = state.lock();
+                    inner.active.as_deref() == Some(id.as_str())
+                        || inner.last_used.get(&id).is_some_and(|t| *t > started)
+                };
+                if used {
+                    continue;
+                }
+            }
+            if webviews::restart(&app, &id).unwrap_or(false) {
+                publish(&app);
+            }
+        }
+    });
+}
+
 fn user_present() -> bool {
     !idle::display_asleep() && idle::system_idle().is_none_or(|t| t < PRESENT_IDLE)
 }
@@ -220,10 +259,7 @@ fn spawn_maintenance(app: AppHandle) {
                     resume_pending = false;
                     resume_waited = 0;
                     woke = true;
-                    for id in ids {
-                        let _ = webviews::restart(&app, &id);
-                    }
-                    publish(&app);
+                    resume_restart(&app, ids);
                 }
             }
             if slept(wall, now) {
@@ -303,8 +339,10 @@ fn spawn_maintenance(app: AppHandle) {
             }
             if tick % 4 == 0 {
                 let away = idle::system_idle().is_some_and(|t| t >= AWAY_AFTER);
+                // Reabrir do zero: a recarga simples mantém o processo do
+                // site, e a memória quase não baixa.
                 for id in reload_due(&app, visible, away) {
-                    if webviews::reload(&app, &id).unwrap_or(false) {
+                    if webviews::restart(&app, &id).unwrap_or(false) {
                         state
                             .lock()
                             .last_reload
@@ -390,8 +428,14 @@ pub fn run() {
             let (config_dir, data_dir) = (selftest::base_dir(), selftest::base_dir());
             #[cfg(not(feature = "selftest"))]
             let (config_dir, data_dir) = (app.path().app_config_dir()?, app.path().app_data_dir()?);
-            let store_path = config_dir.join("services.json");
-            let config = papeo_core::load(&store_path);
+            let mut store_path = config_dir.join("services.json");
+            let (config, writable) = papeo_core::load_guarded(&store_path);
+            // services.json existe, não abre e não saiu do caminho (preso por
+            // outro programa): esta sessão grava ao lado, sem substituir as
+            // contas reais; ao reabrir, o app lê o original de novo.
+            if !writable {
+                store_path = config_dir.join(state::FALLBACK_STORE);
+            }
             let started_hidden =
                 config.settings.start_hidden && std::env::args().any(|a| a == HIDDEN_ARG);
             let protected = config.settings.protect_screen;

@@ -460,6 +460,8 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
     let mut remotes = Vec::new();
     let mut own_files = Vec::new();
     let mut seen = Vec::new();
+    // Computadores parados há muito tempo, tirados da nuvem no fim.
+    let mut stale = Vec::new();
     for f in &files {
         let Some(dev) = device_name_of(&f.name).filter(|d| core::is_device_id(d)) else {
             continue;
@@ -506,10 +508,11 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
         };
         // Computador parado há muito tempo: junta uma última vez (enquanto os
         // apagados ainda valem) e tira da nuvem; volta inteiro se ele
-        // sincronizar de novo. Velho demais: só tira.
+        // sincronizar de novo. Velho demais: só tira. Só sai da nuvem depois
+        // que a rodada inteira der certo: se ela falhar no meio, os dados
+        // dele ainda não estão em nenhum outro lugar.
         if file.written_at < stale_before {
-            delete_quietly(app, &f.id).await;
-            lock(&rt.cache).remove(&f.id);
+            stale.push(f.id.clone());
             if file.written_at < too_old {
                 continue;
             }
@@ -596,7 +599,12 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
         stored.base = merged;
         stored.last_sync = Some(now_secs());
     }
-    save(app)
+    save(app)?;
+    for id in stale {
+        delete_quietly(app, &id).await;
+        lock(&rt.cache).remove(&id);
+    }
+    Ok(())
 }
 
 // ── Comandos da interface ────────────────────────────────────────────────

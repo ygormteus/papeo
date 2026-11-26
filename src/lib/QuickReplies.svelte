@@ -9,7 +9,7 @@
     run,
   }: {
     replies: QuickReply[];
-    run: (action: Promise<Snapshot | void>) => Promise<void>;
+    run: (action: Promise<Snapshot | void>) => Promise<unknown>;
   } = $props();
 
   let shortcut = $state("");

@@ -67,16 +67,30 @@ fn voice_script(mode: papeo_core::VoiceCapture) -> &'static str {
     }
 }
 
+/// A limpeza do Papeo (com o RNNoise, ~150 KB) só entra no WhatsApp e só com
+/// esse modo escolhido; o script não roda duas vezes na mesma página.
+fn wants_enhance(kind: papeo_core::ServiceKind, mode: papeo_core::VoiceCapture) -> bool {
+    kind == papeo_core::ServiceKind::Whatsapp && mode == papeo_core::VoiceCapture::Enhanced
+}
+
 /// Aplica o modo de gravação nos serviços já abertos (os novos recebem na criação).
 pub fn set_voice_capture(app: &AppHandle, mode: papeo_core::VoiceCapture) {
-    let ids: Vec<String> = {
+    let services: Vec<(String, papeo_core::ServiceKind)> = {
         let state = app.state::<AppState>();
         let inner = state.lock();
-        inner.config.services.iter().map(|s| s.id.clone()).collect()
+        inner
+            .config
+            .services
+            .iter()
+            .map(|s| (s.id.clone(), s.kind))
+            .collect()
     };
-    for id in ids {
+    for (id, kind) in services {
         if let Some(webview) = app.get_webview(&id) {
             let _ = webview.eval(voice_script(mode));
+            if wants_enhance(kind, mode) {
+                let _ = webview.eval(voice_enhance_script());
+            }
         }
     }
 }
@@ -111,6 +125,7 @@ pub fn create_service_webview(
         .map_err(|_| "URL inválida.".to_owned())?;
     let state = app.state::<AppState>();
     let voice = state.lock().config.settings.voice_capture;
+    let kind = service.kind;
 
     let mut builder = WebviewBuilder::new(&service.id, WebviewUrl::External(url))
         .data_directory(state.sessions_dir.join(&service.session))
@@ -118,7 +133,8 @@ pub fn create_service_webview(
         .initialization_script(SERVICE_SCRIPT)
         // O script de inicialização guarda o modo de quando a webview nasceu;
         // a cada página carregada (o site ou o Papeo recarregam), vale o atual.
-        .on_page_load(|webview, payload| {
+        // A limpeza escolhida depois da criação também entra a cada página.
+        .on_page_load(move |webview, payload| {
             if payload.event() == PageLoadEvent::Finished {
                 let mode = webview
                     .state::<AppState>()
@@ -127,6 +143,9 @@ pub fn create_service_webview(
                     .settings
                     .voice_capture;
                 let _ = webview.eval(voice_script(mode));
+                if wants_enhance(kind, mode) {
+                    let _ = webview.eval(voice_enhance_script());
+                }
             }
         })
         // Sem isto o Tauri captura arquivos soltos na janela e o site
@@ -172,7 +191,7 @@ pub fn create_service_webview(
         builder = builder.data_store_identifier(service.session_bytes());
     }
 
-    if service.kind == papeo_core::ServiceKind::Whatsapp {
+    if wants_enhance(kind, voice) {
         builder = builder.initialization_script(voice_enhance_script());
     }
 
@@ -211,7 +230,7 @@ pub fn create_service_webview(
 }
 
 /// Intervalo entre as contas reabertas ao iniciar.
-const RESTORE_GAP: Duration = Duration::from_secs(3);
+pub const RESTORE_GAP: Duration = Duration::from_secs(3);
 
 /// Ao iniciar, recarrega (escondidos) os serviços que estavam carregados
 /// quando o app foi fechado, para as notificações continuarem chegando.
@@ -317,7 +336,7 @@ pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
         return Ok(false);
     }
     let state = app.state::<AppState>();
-    let (service, area, shown) = {
+    let (service, area, shown, focus) = {
         let mut inner = state.lock();
         let downloading = inner
             .downloads
@@ -332,7 +351,9 @@ pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
         // A página nova volta a informar o contador (ou o título).
         inner.page_unread.remove(id);
         inner.last_reload.insert(id.to_owned(), Instant::now());
-        (service, inner.area, shown)
+        // Foco só com a janela em foco: escondida (bandeja), nada aparece.
+        let focus = shown && inner.window_focused;
+        (service, inner.area, shown, focus)
     };
     if let Some(old) = app.get_webview(id) {
         let _ = old.close();
@@ -356,7 +377,7 @@ pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
         return Ok(false);
     }
     apply_layout(app);
-    if shown {
+    if focus {
         let _ = webview.set_focus();
     }
     Ok(true)
@@ -536,6 +557,18 @@ mod voice_tests {
             .decode(&script[start..end])
             .unwrap();
         assert_eq!(wasm, RNNOISE_WASM);
+    }
+
+    #[test]
+    fn enhance_only_for_whatsapp_with_cleaning() {
+        use papeo_core::{ServiceKind, VoiceCapture};
+        assert!(wants_enhance(ServiceKind::Whatsapp, VoiceCapture::Enhanced));
+        assert!(!wants_enhance(ServiceKind::Whatsapp, VoiceCapture::Instant));
+        assert!(!wants_enhance(ServiceKind::Whatsapp, VoiceCapture::Clean));
+        assert!(!wants_enhance(
+            ServiceKind::Telegram,
+            VoiceCapture::Enhanced
+        ));
     }
 
     #[test]

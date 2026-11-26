@@ -216,6 +216,8 @@ export interface Snapshot {
   mode: Mode;
   /** Trocado à mão no automático (vale até o expediente mudar). */
   modeManual: boolean;
+  /** Versão do estado: um estado com versão menor que a atual chegou atrasado. */
+  rev: number;
 }
 
 export interface ChatMessage {
@@ -300,6 +302,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   tasks: { overdue: 0, today: 0 },
   mode: "all",
   modeManual: false,
+  rev: 0,
 };
 
 export const api = {
@@ -500,6 +503,11 @@ export function onSync(cb: (s: SyncStatus) => void): Promise<UnlistenFn> {
 
 export function onOrganizer(cb: (o: Organizer) => void): Promise<UnlistenFn> {
   return listen<Organizer>("papeo://organizer", (e) => cb(e.payload));
+}
+
+/** O estado recebido é o atual ou mais novo (não uma resposta atrasada)? */
+export function fresher(next: Snapshot, current: Snapshot): Snapshot {
+  return next.rev >= current.rev ? next : current;
 }
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {

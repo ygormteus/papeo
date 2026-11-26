@@ -61,7 +61,8 @@
     saving++;
     return onnote(target, text)
       .then(() => {
-        status = "saved";
+        // Já em outra conversa: não marca a nova como salva.
+        if (noteKey === sentKey) status = "saved";
       })
       .catch(() => {
         // Ainda na mesma conversa: o rascunho continua no campo. Já em

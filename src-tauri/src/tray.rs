@@ -414,10 +414,10 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                 });
             }
         }
-        // A mini janela nunca fecha de verdade (Alt+F4, Cmd+W): só esconde.
+        // Alt+F4/Cmd+W na mini janela só esconde (ela fecha sozinha depois).
         WindowEvent::CloseRequested { api, .. } if window.label() == crate::popover::POPOVER => {
             api.prevent_close();
-            let _ = window.hide();
+            crate::popover::hide(window.app_handle());
         }
         WindowEvent::Focused(false) if window.label() == crate::popover::POPOVER => {
             crate::popover::on_blur(window);

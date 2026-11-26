@@ -65,7 +65,7 @@ export function setConfirmFree(value: boolean) {
 }
 
 /** Recarregar zera a memória acumulada pelo site; as notificações continuam. */
-export function freeMemory(ids: string[], run: (action: Promise<Snapshot | void>) => Promise<void>) {
+export function freeMemory(ids: string[], run: (action: Promise<Snapshot | void>) => Promise<unknown>) {
   for (const id of ids) {
     home.reloading[id] = true;
     run(api.reload(id));

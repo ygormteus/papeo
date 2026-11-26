@@ -46,7 +46,7 @@
     onlater,
   }: {
     snap: Snapshot;
-    run: (action: Promise<Snapshot | void>) => Promise<void>;
+    run: (action: Promise<Snapshot | void>) => Promise<unknown>;
     onadd: () => void;
     onopen: (id: string) => void;
     onremove: (service: ServiceView) => void;
