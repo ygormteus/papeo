@@ -434,6 +434,8 @@ mod tests {
             port: 993,
             user: "ana@gmail.com".into(),
             sleep_site: true,
+            starttls: false,
+            whole_inbox: false,
         };
         let mut gmail = Service::new(ServiceKind::Gmail, None, None).unwrap();
         gmail.mail = Some(account.clone());

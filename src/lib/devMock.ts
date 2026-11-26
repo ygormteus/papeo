@@ -361,7 +361,14 @@ export function installDevMock() {
           return snap();
         }
         if (!input.password && !s.mail) throw "Digite a senha: ela vale só para o servidor e o usuário em que foi informada.";
-        s.mail = { host: input.host, port: input.port || 993, user: input.user, sleepSite: input.sleepSite };
+        s.mail = {
+          host: input.host,
+          port: input.port || (input.starttls ? 143 : 993),
+          user: input.user,
+          sleepSite: input.sleepSite,
+          starttls: input.starttls || undefined,
+          wholeInbox: (s.kind === "gmail" && input.wholeInbox) || undefined,
+        };
         s.mailStatus = input.password === "errada" ? { state: "auth" } : { state: "ok" };
         return snap();
       }

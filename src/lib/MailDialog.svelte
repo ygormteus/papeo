@@ -2,7 +2,15 @@
   import { CircleAlert, CircleCheck, KeyRound, LoaderCircle, WifiOff } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import Switch from "./Switch.svelte";
-  import { GMAIL_IMAP, api, errorMessage, type MailInput, type ServiceView } from "./api";
+  import {
+    GMAIL_IMAP,
+    MAIL_PRESETS,
+    api,
+    errorMessage,
+    presetForAddress,
+    type MailInput,
+    type ServiceView,
+  } from "./api";
 
   let {
     service,
@@ -27,6 +35,37 @@
   let user = $state(start?.user ?? "");
   let password = $state("");
   let sleepSite = $state(start?.sleepSite ?? true);
+  let starttls = $state(start?.starttls ?? false);
+  let wholeInbox = $state(start?.wholeInbox ?? false);
+  // Provedor conhecido escolhido na lista (só preenche servidor e porta).
+  // svelte-ignore state_referenced_locally
+  let presetId = $state(MAIL_PRESETS.find((p) => p.host === start?.host)?.id ?? "");
+  const preset = $derived(MAIL_PRESETS.find((p) => p.id === presetId));
+
+  function choosePreset(id: string) {
+    presetId = id;
+    const chosen = MAIL_PRESETS.find((p) => p.id === id);
+    if (chosen) {
+      host = chosen.host;
+      port = "993";
+      starttls = false;
+    }
+  }
+
+  // Endereço de um provedor conhecido (uol.com.br…) com o servidor vazio:
+  // preenche sozinho.
+  function guessFromUser() {
+    if (gmail || host.trim()) return;
+    const found = presetForAddress(user);
+    if (found) choosePreset(found.id);
+  }
+
+  function chooseSecurity(useStarttls: boolean) {
+    starttls = useStarttls;
+    // Troca a porta só se ela ainda era a padrão do outro modo.
+    if (useStarttls && port === "993") port = "143";
+    if (!useStarttls && port === "143") port = "993";
+  }
   let error = $state("");
   let busy = $state(false);
   // Salvo nesta abertura: o diálogo fica aberto mostrando a conexão.
@@ -47,7 +86,9 @@
       host.trim().toLowerCase() !== service.mail?.host ||
       user.trim() !== service.mail?.user ||
       Number(port) !== service.mail?.port ||
-      sleepSite !== service.mail?.sleepSite,
+      sleepSite !== service.mail?.sleepSite ||
+      starttls !== (service.mail?.starttls ?? false) ||
+      wholeInbox !== (service.mail?.wholeInbox ?? false),
   );
   const canSave = $derived(
     !busy && dirty && !!host.trim() && !!user.trim() && (!needsPassword || password !== ""),
@@ -69,6 +110,8 @@
         user: user.trim(),
         password: password || undefined,
         sleepSite,
+        starttls,
+        wholeInbox: gmail && wholeInbox,
       });
       password = "";
       saved = true;
@@ -153,6 +196,23 @@
     {/if}
 
     <section aria-label="Conta">
+      {#if !gmail}
+        <div class="field">
+          <label for="ml-preset">Provedor</label>
+          <select
+            id="ml-preset"
+            class="select"
+            value={presetId}
+            onchange={(e) => choosePreset(e.currentTarget.value)}
+          >
+            <option value="">Outro (preencher à mão)</option>
+            {#each MAIL_PRESETS as p (p.id)}
+              <option value={p.id}>{p.label}</option>
+            {/each}
+          </select>
+          {#if preset?.note}<p class="note">{preset.note}</p>{/if}
+        </div>
+      {/if}
       <div class="row">
         <div class="field grow">
           <label for="ml-host">Servidor IMAP</label>
@@ -160,6 +220,7 @@
             id="ml-host"
             class="input"
             bind:value={host}
+            oninput={() => (presetId = MAIL_PRESETS.find((p) => p.host === host.trim().toLowerCase())?.id ?? "")}
             placeholder="imap.seuprovedor.com.br"
             autocomplete="off"
             autocapitalize="off"
@@ -178,6 +239,7 @@
           id="ml-user"
           class="input"
           bind:value={user}
+          onblur={guessFromUser}
           placeholder="voce@exemplo.com"
           autocomplete="off"
           autocapitalize="off"
@@ -197,9 +259,46 @@
         />
       </div>
       {#if !gmail}
-        <p class="note">Use os dados de IMAP do seu provedor (conexão segura, normalmente na porta 993).</p>
+        <fieldset>
+          <legend>Conexão segura</legend>
+          <div class="segmented">
+            <label class:selected={!starttls}>
+              <input type="radio" name="ml-sec" checked={!starttls} onchange={() => chooseSecurity(false)} class="sr-only" />
+              TLS (porta 993)
+            </label>
+            <label class:selected={starttls}>
+              <input type="radio" name="ml-sec" checked={starttls} onchange={() => chooseSecurity(true)} class="sr-only" />
+              STARTTLS (porta 143)
+            </label>
+          </div>
+          <p class="note">
+            {starttls
+              ? "Para provedores sem TLS direto. Se o servidor não aceitar STARTTLS, o Papeo não conecta: a senha nunca vai sem criptografia."
+              : "O comum. Use os dados de IMAP do seu provedor."}
+          </p>
+        </fieldset>
       {/if}
     </section>
+
+    {#if gmail}
+      <section aria-label="Contador">
+        <div class="toggle">
+          <div>
+            <span class="toggle-label">Contar a Caixa de Entrada inteira</span>
+            <p class="note">
+              {wholeInbox
+                ? "Conta e avisa de tudo o que chega à Caixa de Entrada, inclusive Promoções e Social."
+                : "Desligado, conta e avisa só da aba Principal, como o site. Ligue se você não usa as abas do Gmail."}
+            </p>
+          </div>
+          <Switch
+            checked={wholeInbox}
+            label="Contar a Caixa de Entrada inteira"
+            onchange={(v) => (wholeInbox = v)}
+          />
+        </div>
+      </section>
+    {/if}
 
     <section aria-label="Site">
       <div class="toggle">
@@ -217,7 +316,6 @@
     <p class="privacy">
       A senha fica só neste computador, fora do backup e da sincronização. O Papeo lê só o remetente e o assunto dos
       e-mails novos e não marca nada como lido.
-      {#if gmail}No Gmail, o contador segue a aba Principal.{/if}
     </p>
 
     <div class="footer">
@@ -357,6 +455,55 @@
   .port {
     width: 84px;
     flex: none;
+  }
+
+  fieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  legend {
+    padding: 0;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .segmented {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    padding: 3px;
+    gap: 2px;
+    border-radius: 10px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+  }
+
+  .segmented label {
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    text-align: center;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .segmented label.selected {
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: var(--shadow-card), 0 0 0 1px var(--border);
+    font-weight: 550;
+  }
+
+  .segmented label:has(:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
 
   .toggle {

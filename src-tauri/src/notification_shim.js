@@ -527,6 +527,8 @@
     press(hit.el);
     return true;
   };
+  const outlookSearchBox = () =>
+    document.querySelector('#topSearchInput, input[aria-label="Search" i], input[aria-label="Pesquisar" i]');
   // E-mail: busca o texto (assunto ou remetente) na caixa do próprio site e
   // abre o e-mail se a busca trouxer um só, que contenha o texto.
   const MAIL_SEARCH = {
@@ -548,6 +550,23 @@
         rc.command("search", q);
       },
       rows: () => [...document.querySelectorAll("#messagelist tbody tr")].filter(visible),
+    },
+    // Outlook (pessoal e Microsoft 365): caixa de busca do topo; a busca
+    // roda com Enter e os resultados aparecem como opções da lista.
+    outlook: {
+      ready: () => Boolean(outlookSearchBox()),
+      search: (q) => {
+        const box = outlookSearchBox();
+        box.focus?.();
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+        setter.call(box, q);
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+        for (const type of ["keydown", "keyup"]) {
+          box.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+        }
+      },
+      // Só a lista de e-mails (não as sugestões da busca).
+      rows: () => [...document.querySelectorAll('[role="main"] [role="listbox"] [role="option"]')].filter(visible),
     },
   };
   const openMail = (provider, name) => {

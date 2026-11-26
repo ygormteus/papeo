@@ -61,6 +61,10 @@ export interface MailAccount {
   user: string;
   /** Deixa o site hibernado enquanto o IMAP avisa. */
   sleepSite: boolean;
+  /** Conexão comum cifrada com STARTTLS (porta 143), em vez de TLS direto. */
+  starttls?: boolean;
+  /** Gmail: conta a Caixa de Entrada inteira, não só a aba Principal. */
+  wholeInbox?: boolean;
 }
 
 /** Para ligar ou alterar; senha vazia mantém a guardada. */
@@ -82,6 +86,68 @@ export function supportsMailWatch(kind: ServiceKind): boolean {
 }
 
 export const GMAIL_IMAP = { host: "imap.gmail.com", port: 993 };
+
+/** Servidores IMAP conhecidos (todos com TLS direto na porta 993). `domains`:
+ *  endereços de e-mail que já indicam o provedor. */
+export interface MailPreset {
+  id: string;
+  label: string;
+  host: string;
+  /** Dica curta mostrada ao escolher. */
+  note?: string;
+  domains?: string[];
+}
+
+export const MAIL_PRESETS: MailPreset[] = [
+  {
+    id: "locaweb",
+    label: "Locaweb",
+    host: "email-ssl.com.br",
+    note: "Use o e-mail completo como usuário.",
+  },
+  {
+    id: "kinghost",
+    label: "KingHost",
+    host: "imap.kinghost.net",
+    note: "Em domínio de revenda, o servidor é imap.uni5.net.",
+  },
+  { id: "hostinger", label: "Hostinger", host: "imap.hostinger.com", note: "Use o e-mail completo como usuário." },
+  {
+    id: "uol",
+    label: "UOL",
+    host: "imap.uol.com.br",
+    note: "Ative o IMAP no webmail do UOL: Configurações → IMAP.",
+    domains: ["uol.com.br"],
+  },
+  {
+    id: "bol",
+    label: "BOL",
+    host: "imap.bol.com.br",
+    note: "O BOL só libera IMAP no plano pago.",
+    domains: ["bol.com.br"],
+  },
+  { id: "terra", label: "Terra", host: "imap.terra.com.br", domains: ["terra.com.br"] },
+  {
+    id: "yahoo",
+    label: "Yahoo",
+    host: "imap.mail.yahoo.com",
+    note: "O Yahoo pede uma senha de app, criada na segurança da conta.",
+    domains: ["yahoo.com", "yahoo.com.br", "ymail.com"],
+  },
+  {
+    id: "icloud",
+    label: "iCloud",
+    host: "imap.mail.me.com",
+    note: "O iCloud pede uma senha de app, criada em account.apple.com.",
+    domains: ["icloud.com", "me.com", "mac.com"],
+  },
+];
+
+/** Provedor reconhecido pelo domínio do endereço de e-mail. */
+export function presetForAddress(address: string): MailPreset | undefined {
+  const domain = address.trim().toLowerCase().split("@")[1];
+  return domain ? MAIL_PRESETS.find((p) => p.domains?.includes(domain)) : undefined;
+}
 
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
 

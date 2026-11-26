@@ -49,6 +49,12 @@ function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
         this.type = type;
       }
     },
+    KeyboardEvent: class {
+      constructor(type, init) {
+        this.type = type;
+        this.key = init?.key;
+      }
+    },
     addEventListener: (type, fn) => (winListeners[type] = fn),
     __TAURI_INTERNALS__: { invoke: (cmd, args) => (calls.push([cmd, args]), Promise.resolve()) },
     ...globals,
@@ -203,6 +209,26 @@ function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
   check(work.unread === 3 && work.chat === "", `outlook 365: pasta pelo nome (${JSON.stringify(work)})`);
   // Estrutura desconhecida: vale o título.
   check(load({ hostname: "outlook.cloud.microsoft" }).status().unread === null, "outlook: sem pasta, vale o título");
+
+  // Abrir pelo aviso ou pela tarefa: busca no topo e abre o único resultado.
+  const box = el({ value: "" });
+  const hit = el({ textContent: "Ana Reunião de quinta 10:00" });
+  const outlook = load({
+    hostname: "outlook.live.com",
+    dom: { '#topSearchInput, input[aria-label="Search" i], input[aria-label="Pesquisar" i]': box },
+    all: { '[role="main"] [role="listbox"] [role="option"]': [hit] },
+  });
+  Object.defineProperty(outlook.ctx.HTMLInputElement.prototype, "value", {
+    set(v) {
+      this._v = v;
+    },
+    configurable: true,
+  });
+  outlook.ctx.__papeoOpenChat("Reunião de quinta", true);
+  outlook.flush();
+  check(box._v === "Reunião de quinta", "outlook: texto na busca");
+  check(box.events?.includes("input") && box.events?.includes("keydown"), "outlook: busca com Enter");
+  check(hit.events?.includes("click"), "outlook: abre o único resultado");
 
   for (const hostname of ["login.live.com", "login.microsoftonline.com"]) {
     const login = load({ hostname }).status();

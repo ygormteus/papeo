@@ -82,6 +82,8 @@ impl Control {
 
 struct Watcher {
     saved: Saved,
+    /// Modo de conexão e contador: mudou, o vigia recomeça.
+    options: Options,
     control: Arc<Control>,
 }
 
@@ -146,7 +148,10 @@ fn sync_with(app: &AppHandle, fresh: Option<&str>) {
                 && wanted
                     .get(id)
                     .and_then(|(_, saved)| saved.as_ref())
-                    .is_some_and(|saved| *saved == watcher.saved);
+                    .is_some_and(|saved| *saved == watcher.saved)
+                && wanted
+                    .get(id)
+                    .is_some_and(|(account, _)| Options::of(account) == watcher.options);
             if !keep {
                 watcher.control.stop();
             }
@@ -172,11 +177,12 @@ fn sync_with(app: &AppHandle, fresh: Option<&str>) {
                 id.clone(),
                 Watcher {
                     saved: saved.clone(),
+                    options: Options::of(account),
                     control: control.clone(),
                 },
             );
             statuses.push((id.clone(), MailStatus::Connecting, generation));
-            started.push((id.clone(), account.is_gmail(), saved, control));
+            started.push((id.clone(), Options::of(account), saved, control));
         }
         let mut inner = state.lock();
         inner.mail.retain(|id, _| wanted.contains_key(id));
@@ -203,11 +209,11 @@ fn sync_with(app: &AppHandle, fresh: Option<&str>) {
             );
         }
     }
-    for (id, gmail, saved, control) in started {
+    for (id, options, saved, control) in started {
         let app = app.clone();
         std::thread::Builder::new()
             .name(format!("papeo-imap-{id}"))
-            .spawn(move || run(&app, &id, gmail, &saved, &control))
+            .spawn(move || run(&app, &id, options, &saved, &control))
             .ok();
     }
     publish(app);
@@ -293,7 +299,25 @@ fn set_unread(app: &AppHandle, id: &str, generation: u64, count: u32) {
 /// Falhas de rede seguidas até o site voltar a avisar (≈ 50 s sem IMAP).
 const FALLBACK_AFTER: usize = 3;
 
-fn run(app: &AppHandle, id: &str, gmail: bool, saved: &Saved, control: &Arc<Control>) {
+/// Como conectar e contar (o vigia recomeça quando a conta muda).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Options {
+    /// Gmail: só a aba Principal.
+    primary_only: bool,
+    /// Conexão comum cifrada com STARTTLS, em vez de TLS direto.
+    starttls: bool,
+}
+
+impl Options {
+    fn of(account: &MailAccount) -> Self {
+        Self {
+            primary_only: account.primary_only(),
+            starttls: account.starttls,
+        }
+    }
+}
+
+fn run(app: &AppHandle, id: &str, options: Options, saved: &Saved, control: &Arc<Control>) {
     let mut failures = 0usize;
     let mut warned = false;
     // Até onde já avisou, de uma conexão para a outra.
@@ -304,7 +328,15 @@ fn run(app: &AppHandle, id: &str, gmail: bool, saved: &Saved, control: &Arc<Cont
         }
         let mut connected = false;
         let wakes = control.wakes();
-        let result = session(app, id, gmail, saved, control, &mut cursor, &mut connected);
+        let result = session(
+            app,
+            id,
+            options,
+            saved,
+            control,
+            &mut cursor,
+            &mut connected,
+        );
         if control.stopped() {
             return;
         }
@@ -434,7 +466,9 @@ impl core::Transport for Tls {
     }
 }
 
-fn connect(host: &str, port: u16, control: &Control) -> Result<Tls, ImapError> {
+/// Abre a conexão cifrada: TLS direto ou, com `starttls`, conexão comum
+/// que pede STARTTLS antes de qualquer outra coisa (sem ele, falha).
+fn connect(host: &str, port: u16, starttls: bool, control: &Control) -> Result<Tls, ImapError> {
     let addrs: Vec<_> = (host, port).to_socket_addrs()?.collect();
     let mut last = io::Error::new(io::ErrorKind::NotFound, "servidor não encontrado");
     let socket = addrs
@@ -455,6 +489,10 @@ fn connect(host: &str, port: u16, control: &Control) -> Result<Tls, ImapError> {
     *control.socket.lock().unwrap_or_else(|e| e.into_inner()) = Some(socket.try_clone()?);
     if control.stopped() {
         return Err(io::Error::new(io::ErrorKind::Interrupted, "parado").into());
+    }
+    let mut socket = socket;
+    if starttls {
+        core::starttls_preamble(&mut socket)?;
     }
     let connector =
         native_tls::TlsConnector::new().map_err(|e| io::Error::other(format!("TLS: {e}")))?;
@@ -515,7 +553,7 @@ impl core::Sink for AppSink<'_> {
 fn session(
     app: &AppHandle,
     id: &str,
-    gmail: bool,
+    options: Options,
     saved: &Saved,
     control: &Control,
     cursor: &mut Option<core::Cursor>,
@@ -527,9 +565,15 @@ fn session(
             port: saved.port,
             user: saved.user.clone(),
             sleep_site: false,
+            starttls: options.starttls,
+            whole_inbox: false,
         };
-        let stream = connect(&saved.host, saved.port, control)?;
-        let mut imap = core::Imap::connect(stream)?;
+        let stream = connect(&saved.host, saved.port, options.starttls, control)?;
+        let mut imap = if options.starttls {
+            core::Imap::after_starttls(stream)
+        } else {
+            core::Imap::connect(stream)?
+        };
         imap.login(&saved.user, &account.login_secret(&saved.secret))?;
         let mut sink = AppSink {
             app,
@@ -539,7 +583,7 @@ fn session(
         };
         core::watch(
             &mut imap,
-            gmail,
+            options.primary_only,
             core::WatchTimes::default(),
             cursor,
             &mut sink,

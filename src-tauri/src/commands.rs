@@ -156,6 +156,10 @@ pub struct MailInput {
     /// Vazia: mantém a senha guardada (só se servidor e usuário não mudaram).
     password: Option<String>,
     sleep_site: bool,
+    #[serde(default)]
+    starttls: bool,
+    #[serde(default)]
+    whole_inbox: bool,
 }
 
 /// Liga, altera (`Some`) ou desliga (`None`) os avisos por IMAP da conta.
@@ -193,9 +197,15 @@ pub async fn set_mail_account(
     }
     let account = papeo_core::mail::MailAccount {
         host: input.host,
-        port: input.port.unwrap_or(papeo_core::mail::IMAPS_PORT),
+        port: input.port.unwrap_or(if input.starttls {
+            papeo_core::mail::IMAP_PORT
+        } else {
+            papeo_core::mail::IMAPS_PORT
+        }),
         user: input.user,
         sleep_site: input.sleep_site,
+        starttls: input.starttls,
+        whole_inbox: input.whole_inbox,
     }
     .sanitized()?;
     let secret = input.password.filter(|p| !p.is_empty());

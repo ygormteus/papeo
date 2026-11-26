@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::time::Duration;
 
-/// Porta do IMAP com TLS direto (o único modo aceito).
+/// Porta do IMAP com TLS direto.
 pub const IMAPS_PORT: u16 = 993;
+/// Porta do IMAP comum (cifrada com STARTTLS).
+pub const IMAP_PORT: u16 = 143;
 const USER_MAX: usize = 254;
 const HOST_MAX: usize = 253;
 /// Senha ou senha de app: o bastante para qualquer provedor.
@@ -37,6 +39,14 @@ pub struct MailAccount {
     /// Deixa o site hibernado enquanto o IMAP avisa (economiza memória).
     #[serde(default = "yes")]
     pub sleep_site: bool,
+    /// Conexão comum que passa a ser cifrada com STARTTLS (porta 143), para
+    /// provedores sem TLS direto. Nunca cai para sem criptografia.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub starttls: bool,
+    /// Gmail: conta a Caixa de Entrada inteira, não só a aba Principal
+    /// (para quem não usa as abas).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole_inbox: bool,
 }
 
 fn imaps_port() -> u16 {
@@ -54,6 +64,10 @@ impl MailAccount {
         if self.port == 0 {
             return Err("Porta inválida.".into());
         }
+        // Na 993 o servidor espera TLS desde o começo: STARTTLS só travaria.
+        if self.starttls && self.port == IMAPS_PORT {
+            return Err("STARTTLS usa a porta 143; a 993 é para TLS direto.".into());
+        }
         let user = self.user.trim();
         if user.is_empty() {
             return Err("Informe o usuário (normalmente, o endereço de e-mail).".into());
@@ -62,10 +76,18 @@ impl MailAccount {
             return Err("Usuário inválido.".into());
         }
         self.user = user.to_owned();
+        // A opção do contador só existe no Gmail.
+        if !self.is_gmail() {
+            self.whole_inbox = false;
+        }
         Ok(self)
     }
 
-    /// Gmail: o contador segue a aba Principal, como no site.
+    /// Gmail com o contador da aba Principal (o número do site).
+    pub fn primary_only(&self) -> bool {
+        self.is_gmail() && !self.whole_inbox
+    }
+
     pub fn is_gmail(&self) -> bool {
         self.host == "imap.gmail.com" || self.host == "imap.googlemail.com"
     }
@@ -408,6 +430,17 @@ impl<S: Transport> Imap<S> {
         }
     }
 
+    /// Sessão já cifrada por STARTTLS: o servidor não manda outra saudação.
+    pub fn after_starttls(stream: S) -> Self {
+        Self {
+            io: BufReader::new(stream),
+            tag: 0,
+            idling: None,
+            preauth: false,
+            changed: false,
+        }
+    }
+
     /// Marca aviso de mudança recebido fora do IDLE (a resposta ao nosso
     /// próprio `FETCH` de cabeçalhos não conta).
     fn note_change(&mut self, response: &Response) {
@@ -723,6 +756,65 @@ impl<S: Transport> Imap<S> {
     }
 }
 
+/// Lê uma linha byte a byte (nada além dela sai do fluxo: depois do
+/// STARTTLS, o que vem é o TLS).
+fn read_raw_line<S: Read>(stream: &mut S) -> io::Result<String> {
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        if stream.read(&mut byte)? == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "conexão encerrada",
+            ));
+        }
+        if byte[0] == b'\n' {
+            break;
+        }
+        line.push(byte[0]);
+        if line.len() > 8192 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "linha longa demais",
+            ));
+        }
+    }
+    if line.ends_with(b"\r") {
+        line.pop();
+    }
+    Ok(String::from_utf8_lossy(&line).into_owned())
+}
+
+/// Começo de uma conexão comum: saudação e pedido de STARTTLS. Depois de
+/// `Ok`, o chamador faz o aperto de mão TLS no mesmo fluxo e segue com
+/// `Imap::after_starttls`. Sem STARTTLS aceito, falha: a senha nunca vai
+/// sem criptografia.
+pub fn starttls_preamble<S: Read + Write>(stream: &mut S) -> ImapResult<()> {
+    let greeting = read_raw_line(stream)?;
+    if !greeting.to_ascii_uppercase().starts_with("* OK") {
+        return Err(ImapError::Protocol(clip(&greeting)));
+    }
+    stream.write_all(b"s0 STARTTLS\r\n")?;
+    stream.flush()?;
+    loop {
+        let line = read_raw_line(stream)?;
+        let Some(rest) = line.strip_prefix("s0 ") else {
+            if line.to_ascii_uppercase().starts_with("* BYE") {
+                return Err(ImapError::Protocol(clip(&line)));
+            }
+            continue;
+        };
+        return if rest.to_ascii_uppercase().starts_with("OK") {
+            Ok(())
+        } else {
+            Err(ImapError::Protocol(format!(
+                "STARTTLS recusado ({})",
+                clip(rest)
+            )))
+        };
+    }
+}
+
 enum Tagged {
     /// Resposta sem tag (ou de outro comando).
     Other,
@@ -973,6 +1065,8 @@ mod tests {
             port: 993,
             user: " ana@gmail.com ".into(),
             sleep_site: true,
+            starttls: false,
+            whole_inbox: false,
         }
         .sanitized()
         .unwrap();
@@ -1006,6 +1100,11 @@ mod tests {
         let mut a = account.clone();
         a.port = 0;
         assert!(a.sanitized().is_err());
+        let mut a = account.clone();
+        a.starttls = true;
+        assert!(a.clone().sanitized().is_err(), "STARTTLS na 993");
+        a.port = IMAP_PORT;
+        assert!(a.sanitized().is_ok());
         // Registro antigo/sem campos opcionais.
         let a: MailAccount = serde_json::from_str(r#"{"host":"x.com","user":"u"}"#).unwrap();
         assert_eq!(a.port, IMAPS_PORT);
@@ -1078,6 +1177,48 @@ mod tests {
         let mut imap = Imap::connect(stream).unwrap();
         assert!(matches!(imap.login("a", "b"), Err(ImapError::Protocol(_))));
         assert!(matches!(imap.login("a", "b"), Err(ImapError::Protocol(_))));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn gmail_counter_choice_and_old_records() {
+        let mut a: MailAccount =
+            serde_json::from_str(r#"{"host":"imap.gmail.com","user":"u"}"#).unwrap();
+        assert!(!a.starttls && !a.whole_inbox && a.primary_only());
+        a.whole_inbox = true;
+        assert!(!a.primary_only());
+        let other: MailAccount = serde_json::from_str(r#"{"host":"x.com","user":"u"}"#).unwrap();
+        assert!(!other.primary_only());
+        // Opções desligadas não aparecem no arquivo.
+        let json = serde_json::to_string(&other).unwrap();
+        assert!(!json.contains("starttls") && !json.contains("wholeInbox"));
+    }
+
+    #[test]
+    fn starttls_is_required() {
+        let (mut stream, server) = fake_server(|r, w| {
+            let mut line = String::new();
+            r.read_line(&mut line).unwrap();
+            assert_eq!(line, "s0 STARTTLS\r\n");
+            w.write_all(b"* OK ainda conversando\r\ns0 OK Begin TLS\r\nTLS")
+                .unwrap();
+        });
+        starttls_preamble(&mut stream).unwrap();
+        // O que vem depois do OK fica no fluxo para o TLS.
+        let mut rest = [0u8; 3];
+        std::io::Read::read_exact(&mut stream, &mut rest).unwrap();
+        assert_eq!(&rest, b"TLS");
+        server.join().unwrap();
+
+        let (mut stream, server) = fake_server(|r, w| {
+            let tag = expect(r, "STARTTLS");
+            w.write_all(format!("{tag} BAD sem TLS aqui\r\n").as_bytes())
+                .unwrap();
+        });
+        match starttls_preamble(&mut stream) {
+            Err(ImapError::Protocol(text)) => assert!(text.contains("STARTTLS")),
+            other => panic!("{other:?}"),
+        }
         server.join().unwrap();
     }
 
