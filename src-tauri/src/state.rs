@@ -5,7 +5,7 @@
 //! com espera de resposta…). Callbacks da thread principal (título da
 //! página, permissões, downloads) também pegam este lock.
 
-use papeo_core::{Config, Organizer, Service, Settings};
+use papeo_core::{Config, Mode, ModeChoice, ModeOverride, Organizer, Service, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -207,6 +207,8 @@ pub struct Inner {
     pub current_chat: HashMap<String, String>,
     /// `organizer.json` não pôde ser lido: nada é gravado por cima.
     pub organizer_error: Option<String>,
+    /// Troca manual de modo feita no automático (até o expediente mudar).
+    pub mode_override: Option<ModeOverride>,
 }
 
 impl Inner {
@@ -241,6 +243,7 @@ impl Inner {
             organizer: Organizer::default(),
             current_chat: HashMap::new(),
             organizer_error: None,
+            mode_override: None,
         }
     }
 
@@ -488,6 +491,56 @@ pub fn now_secs() -> u64 {
         .unwrap_or_default()
 }
 
+/// Dia da semana (0 = domingo … 6 = sábado) e minuto do dia locais, do
+/// mesmo instante (sem parear segunda com 00:00 de terça na virada).
+pub fn local_clock() -> (u8, u16) {
+    use chrono::{Datelike, Timelike};
+    let now = chrono::Local::now();
+    (
+        now.weekday().num_days_from_sunday() as u8,
+        (now.hour() * 60 + now.minute()) as u16,
+    )
+}
+
+impl Inner {
+    /// Modo valendo agora (trabalho, pessoal ou todas as contas).
+    pub fn current_mode(&self) -> Mode {
+        let (weekday, minute) = local_clock();
+        self.config
+            .settings
+            .current_mode(weekday, minute, now_secs(), self.mode_override)
+    }
+
+    /// A troca manual do automático ainda vale.
+    pub fn mode_manual(&self) -> bool {
+        self.config.settings.mode == ModeChoice::Auto
+            && self.mode_override.is_some_and(|o| o.holds(now_secs()))
+    }
+}
+
+/// Troca o modo. No automático, vale até o expediente mudar (voltar ao
+/// modo do horário desfaz a troca); fora dele, vira a escolha gravada.
+pub fn choose_mode(inner: &mut Inner, mode: Mode) {
+    let s = &inner.config.settings;
+    if s.mode == ModeChoice::Auto {
+        let (weekday, minute) = local_clock();
+        let scheduled = s.mode.scheduled(&s.work_hours, weekday, minute);
+        let now = now_secs();
+        let until = s
+            .mode
+            .minutes_until_change(&s.work_hours, weekday, minute)
+            .map_or(u64::MAX, |m| now - now % 60 + u64::from(m) * 60);
+        inner.mode_override = (mode != scheduled).then_some(ModeOverride { mode, until });
+    } else {
+        inner.config.settings.mode = match mode {
+            Mode::All => ModeChoice::All,
+            Mode::Work => ModeChoice::Work,
+            Mode::Personal => ModeChoice::Personal,
+        };
+        inner.mode_override = None;
+    }
+}
+
 /// Minutos desde a meia-noite, na hora local.
 pub fn local_minute_of_day() -> u16 {
     use chrono::Timelike;
@@ -543,6 +596,8 @@ pub struct ServiceView {
     pub idle_minutes: Option<u64>,
     /// Conversa aberta no site (sem valor com o app bloqueado).
     pub chat: Option<String>,
+    /// A conta faz parte do modo atual (trabalho/pessoal).
+    pub in_mode: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -564,6 +619,10 @@ pub struct Snapshot {
     pub recent: Vec<RecentView>,
     /// Tarefas atrasadas e para hoje (zero com o app bloqueado).
     pub tasks: crate::organizer::TaskCounts,
+    /// Modo valendo agora.
+    pub mode: Mode,
+    /// O modo foi trocado à mão no automático (até o expediente mudar).
+    pub mode_manual: bool,
 }
 
 pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
@@ -597,6 +656,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     let downloads_dir = crate::downloads::downloads_dir(app);
     let mut inner = state.lock();
     inner.mark_seen();
+    let mode = inner.current_mode();
     let services = inner
         .config
         .services
@@ -621,10 +681,23 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                 } else {
                     inner.current_chat.get(&s.id).cloned()
                 },
+                in_mode: mode.allows(s.context),
             }
         })
         .collect::<Vec<_>>();
-    let total_unread = services.iter().map(|s| s.unread).sum();
+    // Contas fora do modo não contam (nem no ícone do Dock/bandeja).
+    let total_unread = services
+        .iter()
+        .filter(|s| s.in_mode)
+        .map(|s| s.unread)
+        .sum();
+    let hidden: HashSet<&str> = services
+        .iter()
+        .filter(|s| !s.in_mode)
+        .map(|s| s.service.id.as_str())
+        .collect();
+    let mut recent = inner.recent_views();
+    recent.retain(|r| !hidden.contains(r.service_id.as_str()));
     Snapshot {
         services,
         active: inner.active.clone(),
@@ -641,8 +714,10 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         lock_available: inner.lock_available,
         update: inner.update.clone(),
         app_version: app.package_info().version.to_string(),
-        recent: inner.recent_views(),
+        recent,
         tasks: crate::organizer::counts(&inner),
+        mode,
+        mode_manual: inner.mode_manual(),
     }
 }
 

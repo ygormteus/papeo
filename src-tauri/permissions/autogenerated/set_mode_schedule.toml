@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-mode-schedule"
+description = "Enables the set_mode_schedule command without any pre-configured scope."
+commands.allow = ["set_mode_schedule"]
+
+[[permission]]
+identifier = "deny-set-mode-schedule"
+description = "Denies the set_mode_schedule command without any pre-configured scope."
+commands.deny = ["set_mode_schedule"]

@@ -1,7 +1,30 @@
 <script lang="ts">
-  import { BellOff, CirclePlus, Download, House, ListTodo, MemoryStick, Settings } from "@lucide/svelte";
+  import {
+    BellOff,
+    Briefcase,
+    CirclePlus,
+    Download,
+    House,
+    Layers,
+    ListTodo,
+    MemoryStick,
+    Settings,
+    Sofa,
+  } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { isMac, isMuted, modKey, untilLabel, updateLabel, type Snapshot, type ServiceView } from "./api";
+  import {
+    MODE_LABEL,
+    isMac,
+    isMuted,
+    modKey,
+    nextMode,
+    untilLabel,
+    updateLabel,
+    usesModes,
+    type Mode,
+    type Snapshot,
+    type ServiceView,
+  } from "./api";
 
   let {
     snap,
@@ -15,6 +38,8 @@
     onupdate,
     onnotes,
     ontasks,
+    onmode,
+    onautomode,
   }: {
     snap: Snapshot;
     collapsed: boolean;
@@ -27,7 +52,22 @@
     onupdate: () => void;
     onnotes: () => void;
     ontasks: () => void;
+    /** Troca rápida de modo (trabalho, pessoal, todas). */
+    onmode: (mode: Mode) => void;
+    /** Desfaz a troca manual e volta ao expediente. */
+    onautomode: () => void;
   } = $props();
+
+  const MODE_ICON = { work: Briefcase, personal: Sofa, all: Layers };
+  const modes = $derived(usesModes(snap));
+  // Só as contas do modo atual (e a aberta, se veio da busca).
+  const shown = $derived(snap.services.filter((s) => s.inMode || s.id === snap.active));
+  const hiddenCount = $derived(snap.services.length - shown.length);
+  /** Número do atalho ({modKey}1–9): só as contas do modo, como no menu. */
+  const numberOf = $derived(
+    new Map(snap.services.filter((s) => s.inMode).map((s, i) => [s.id, i + 1] as const)),
+  );
+  const ModeIcon = $derived(MODE_ICON[snap.mode]);
 
   const due = $derived(snap.tasks.overdue + snap.tasks.today);
 
@@ -56,8 +96,10 @@
     e.preventDefault();
     const id = dragId;
     const from = snap.services.findIndex((s) => s.id === id);
+    // A lista mostrada pode ser só a do modo: converte para a posição real.
+    const to = shown[index] ? snap.services.findIndex((s) => s.id === shown[index].id) : -1;
     dragEnd();
-    if (id && from !== -1 && from !== index) onmove(id, index);
+    if (id && from !== -1 && to !== -1 && from !== to) onmove(id, to);
   }
 
   function dragEnd() {
@@ -133,9 +175,46 @@
       {/if}
     </button>
 
+    {#if modes && !collapsed}
+      <div class="modes" role="group" aria-label="Modo">
+        {#each ["work", "personal", "all"] as const as m (m)}
+          {@const Icon = MODE_ICON[m]}
+          <button
+            class="mode"
+            class:on={snap.mode === m}
+            aria-pressed={snap.mode === m}
+            onclick={() => snap.mode !== m && onmode(m)}
+            title="{MODE_LABEL[m]} ({modKey}⇧M alterna)"
+          >
+            <Icon size={14} />
+            {MODE_LABEL[m]}
+          </button>
+        {/each}
+      </div>
+      {#if snap.settings.mode === "auto"}
+        <p class="mode-note">
+          {#if snap.modeManual}
+            Até o expediente mudar ·
+            <button class="tip-link inline" onclick={onautomode}>voltar ao automático</button>
+          {:else}
+            Automático pelo expediente
+          {/if}
+        </p>
+      {/if}
+    {:else if modes}
+      <button
+        class="item"
+        onclick={() => onmode(nextMode(snap.mode))}
+        title="Modo: {MODE_LABEL[snap.mode]} — clique para alternar ({modKey}⇧M)"
+        aria-label="Modo {MODE_LABEL[snap.mode]}. Alternar"
+      >
+        <ModeIcon size={18} />
+      </button>
+    {/if}
+
     {#if !collapsed}<div class="section">Mensageiros</div>{:else}<div class="sep"></div>{/if}
 
-    {#each snap.services as service, i (service.id)}
+    {#each shown as service, i (service.id)}
       <button
         class="item"
         class:active={snap.active === service.id}
@@ -151,7 +230,7 @@
         onclick={() => onselect(service.id)}
         oncontextmenu={(e) => contextMenu(e, service)}
         onkeydown={(e) => menuKey(e, service)}
-        title={`${service.name}${i < 9 ? ` (${modKey}${i + 1})` : ""}${service.loaded ? "" : " — hibernado"}`}
+        title={`${service.name}${(numberOf.get(service.id) ?? 99) <= 9 ? ` (${modKey}${numberOf.get(service.id)})` : ""}${service.loaded ? "" : " — hibernado"}`}
       >
         <span class="avatar-wrap">
           <ServiceAvatar {service} dimmed={!service.loaded} />
@@ -176,8 +255,8 @@
             </span>
           {:else if !service.loaded}
             <span class="pill">Dormindo</span>
-          {:else if i < 9}
-            <kbd class="kbd">{modKey}{i + 1}</kbd>
+          {:else if (numberOf.get(service.id) ?? 99) <= 9}
+            <kbd class="kbd">{modKey}{numberOf.get(service.id)}</kbd>
           {/if}
         {/if}
       </button>
@@ -185,6 +264,10 @@
 
     {#if snap.services.length === 0 && !collapsed}
       <p class="empty">Nenhum serviço ainda.</p>
+    {:else if hiddenCount > 0 && !collapsed}
+      <p class="empty hidden-note">
+        {hiddenCount === 1 ? "1 conta fica" : `${hiddenCount} contas ficam`} fora do modo {MODE_LABEL[snap.mode]}.
+      </p>
     {/if}
   </nav>
 
@@ -454,6 +537,56 @@
 
   .tip-link:hover {
     text-decoration: underline;
+  }
+
+  .modes {
+    display: flex;
+    gap: 2px;
+    margin: 10px 4px 0;
+    padding: 3px;
+    border-radius: 10px;
+    background: var(--bg-hover);
+  }
+
+  .mode {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    height: 28px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  .mode.on {
+    background: var(--bg);
+    color: var(--text);
+    font-weight: 550;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  }
+
+  .mode-note {
+    margin: 6px 12px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .tip-link.inline {
+    display: inline;
+    width: auto;
+    margin: 0;
+    font-size: inherit;
+  }
+
+  .hidden-note {
+    font-size: 12.5px;
   }
 
   .tip p {

@@ -27,6 +27,20 @@ check(!late.some((q) => q.label === "Hoje 18h"), "sem 'hoje 18h' perto das 18h")
 const sunday = t.quickTimes(new Date(2026, 10, 29, 10));
 check(sunday[sunday.length - 1].at === at(new Date(2026, 11, 7, 9)), "segunda depois de amanhã");
 
+// Responder depois: expediente seg–sex 8:30–17:30.
+const hours = { days: [1, 2, 3, 4, 5], start: 510, end: 1050 };
+check(t.nextWorkStart(now, hours)?.getTime() === new Date(2026, 10, 26, 8, 30).getTime(), "expediente amanhã 8:30");
+check(t.nextWorkStart(new Date(2026, 10, 27, 18), hours)?.getTime() === new Date(2026, 10, 30, 8, 30).getTime(), "sexta à noite: segunda");
+check(t.nextWorkStart(new Date(2026, 10, 25, 7), hours)?.getTime() === new Date(2026, 10, 25, 8, 30).getTime(), "antes do expediente: hoje");
+check(t.nextWorkStart(now, { days: [], start: 540, end: 1080 }) === null, "sem dias");
+check(t.nextWorkStart(now, { days: [1], start: 540, end: 540 }) === null, "início = fim");
+const later = t.laterTimes(now, hours);
+check(later.length === 5 && later.some((q) => q.label === "Expediente · Amanhã 8:30"), `responder depois: ${later.map((q) => q.label)}`);
+check(later.every((q, i) => i === 0 || later[i - 1].at <= q.at), "responder depois em ordem");
+// Expediente às 9h coincide com "Amanhã 9h": não repete.
+check(t.laterTimes(now, { days: [4], start: 540, end: 1080 }).length === 4, "sem repetir amanhã 9h");
+check(t.laterTimes(now).length === 4, "sem expediente");
+
 check(t.dayLabel(new Date(2026, 10, 26), now) === "Amanhã", "amanhã");
 check(t.dayLabel(new Date(2026, 10, 27), now) === "sex., 27 nov.", `dia da semana: ${t.dayLabel(new Date(2026, 10, 27), now)}`);
 check(t.dayLabel(new Date(2027, 0, 5), now) === "5 jan. 2027", "outro ano");

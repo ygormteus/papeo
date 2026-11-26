@@ -3,6 +3,7 @@
   import SyncSettings from "./SyncSettings.svelte";
   import {
     BellOff,
+    Briefcase,
     Bug,
     CodeXml,
     Download,
@@ -24,6 +25,7 @@
   import {
     ABOUT,
     LOCK_OPTIONS,
+    MODE_CHOICE_OPTIONS,
     PREVIEW_OPTIONS,
     RELOAD_OPTIONS,
     LINK_OPTIONS,
@@ -31,6 +33,7 @@
     api,
     errorMessage,
     isMac,
+    modKey,
     formatClock,
     parseClock,
     untilLabel,
@@ -38,7 +41,9 @@
     type LinkTarget,
     type AttachmentMode,
     ATTACHMENT_OPTIONS,
+    type ModeChoice,
     type Snapshot,
+    type WorkHours,
   } from "./api";
 
   let {
@@ -96,6 +101,34 @@
     { minutes: 8 * 60, label: "8 horas" },
     { minutes: 0, label: "Até eu reativar" },
   ];
+
+  const WEEKDAYS = [
+    { day: 1, short: "S", label: "Segunda" },
+    { day: 2, short: "T", label: "Terça" },
+    { day: 3, short: "Q", label: "Quarta" },
+    { day: 4, short: "Q", label: "Quinta" },
+    { day: 5, short: "S", label: "Sexta" },
+    { day: 6, short: "S", label: "Sábado" },
+    { day: 0, short: "D", label: "Domingo" },
+  ];
+
+  const marked = $derived(snap.services.filter((s) => s.context).length);
+
+  function setSchedule(mode: ModeChoice, change: Partial<WorkHours> = {}) {
+    run(api.setModeSchedule(mode, { ...settings.workHours, ...change }));
+  }
+
+  function toggleDay(day: number) {
+    const days = settings.workHours.days.includes(day)
+      ? settings.workHours.days.filter((d) => d !== day)
+      : [...settings.workHours.days, day];
+    setSchedule(settings.mode, { days });
+  }
+
+  function workClock(which: "start" | "end", value: string) {
+    const minutes = parseClock(value);
+    if (minutes !== null) setSchedule(settings.mode, { [which]: minutes });
+  }
 
   function setQuiet(change: Partial<typeof settings.quietHours>) {
     run(api.setQuietHours({ ...settings.quietHours, ...change }));
@@ -173,6 +206,104 @@
           </button>
         {/each}
       </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="s-mode">
+    <h2 id="s-mode"><Briefcase size={18} /> Trabalho e pessoal</h2>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Contas mostradas</span>
+        <span class="hint">
+          {#if marked === 0}
+            Marque cada conta como Trabalho ou Pessoal em Personalizar (botão direito na conta). Contas sem
+            marcação aparecem sempre.
+          {:else}
+            Fora do modo, a conta some da barra, não notifica e não entra nos contadores.
+            {settings.mode === "auto" ? "No expediente, só trabalho; fora dele, só pessoal." : ""}
+          {/if}
+        </span>
+      </div>
+      <select
+        class="input select"
+        aria-label="Contas mostradas"
+        value={settings.mode}
+        onchange={(e) => setSchedule(e.currentTarget.value as ModeChoice)}
+      >
+        {#each MODE_CHOICE_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </div>
+
+    {#if settings.mode === "auto"}
+      <div class="row">
+        <div class="text">
+          <span class="label">Expediente</span>
+          <span class="hint">
+            {modKey}⇧M ou o seletor da barra lateral trocam o modo até o expediente começar ou terminar.
+          </span>
+        </div>
+        <div class="choices wrap">
+          <div class="days" role="group" aria-label="Dias de trabalho">
+            {#each WEEKDAYS as d (d.day)}
+              <button
+                class="day"
+                class:on={settings.workHours.days.includes(d.day)}
+                aria-pressed={settings.workHours.days.includes(d.day)}
+                aria-label={d.label}
+                title={d.label}
+                onclick={() => toggleDay(d.day)}
+              >
+                {d.short}
+              </button>
+            {/each}
+          </div>
+          <input
+            type="time"
+            class="input time"
+            aria-label="Início do expediente"
+            value={formatClock(settings.workHours.start)}
+            onchange={(e) => workClock("start", e.currentTarget.value)}
+          />
+          <span class="muted">até</span>
+          <input
+            type="time"
+            class="input time"
+            aria-label="Fim do expediente"
+            value={formatClock(settings.workHours.end)}
+            onchange={(e) => workClock("end", e.currentTarget.value)}
+          />
+        </div>
+      </div>
+    {/if}
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Hibernar as contas fora do modo</span>
+        <span class="hint">Libera memória. Ao voltar para o modo, a conta recarrega quando for aberta.</span>
+      </div>
+      <Switch
+        checked={settings.sleepOutsideMode}
+        label="Hibernar as contas fora do modo"
+        onchange={(v) => run(api.setPreferences({ sleepOutsideMode: v }))}
+      />
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <span class="label">Moldura com a cor da conta</span>
+        <span class="hint">
+          Contorna o site aberto com a cor da conta quando ela tem cor própria, está marcada como Trabalho ou
+          Pessoal, ou há outra conta do mesmo serviço. Ajuda a não responder pela conta errada.
+        </span>
+      </div>
+      <Switch
+        checked={settings.accountFrame}
+        label="Moldura com a cor da conta"
+        onchange={(v) => run(api.setPreferences({ accountFrame: v }))}
+      />
     </div>
   </section>
 
@@ -652,6 +783,34 @@
   .select {
     height: 34px;
     width: auto;
+  }
+
+  .choices.wrap {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .days {
+    display: inline-flex;
+    gap: 3px;
+  }
+
+  .day {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text-muted);
+    font-size: 12.5px;
+  }
+
+  .day.on {
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--bg);
+    font-weight: 600;
   }
 
   .segmented {

@@ -41,6 +41,7 @@
     today,
     oncreatetask,
     clock,
+    onlater,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
@@ -55,6 +56,8 @@
     /** "Lembrar disso" nas conversas recentes. */
     oncreatetask?: (fields: TaskFields) => Promise<void>;
     clock?: Date;
+    /** "Responder depois" nas conversas recentes. */
+    onlater?: (serviceId: string, chat: string, at: number) => Promise<void>;
   } = $props();
 
   /** Acima disso (`HEAVY_BYTES`), um serviço parado vira sugestão. */
@@ -293,6 +296,8 @@
         onopen={onchat}
         {oncreatetask}
         {clock}
+        {onlater}
+        workHours={snap.settings.mode === "auto" ? snap.settings.workHours : undefined}
         quickReplies={snap.settings.quickReplies}
       />
     </section>

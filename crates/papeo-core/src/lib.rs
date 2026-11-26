@@ -20,11 +20,11 @@ pub use privacy::{
 };
 pub use service::{
     clamp_zoom, normalize_color, normalize_emoji, normalize_name, unique_name, MediaPolicy,
-    Service, ServiceKind, ZOOM_MAX, ZOOM_MIN,
+    Service, ServiceContext, ServiceKind, ZOOM_MAX, ZOOM_MIN,
 };
 pub use settings::{
-    should_notify, AppLock, Appearance, AttachmentMode, LinkTarget, QuickReply, QuietHours,
-    Settings, UpdatePrefs, DND_FOREVER, LOCK_MAX_MINUTES,
+    should_notify, AppLock, Appearance, AttachmentMode, LinkTarget, Mode, ModeChoice, ModeOverride,
+    QuickReply, QuietHours, Settings, UpdatePrefs, WorkHours, DND_FOREVER, LOCK_MAX_MINUTES,
 };
 pub use store::{
     encode_config, export_backup, load, read_backup, save, write_atomic, Backup, Config,

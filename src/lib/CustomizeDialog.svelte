@@ -3,6 +3,7 @@
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import {
+    CONTEXT_OPTIONS,
     EMOJI_SUGGESTIONS,
     KIND_META,
     MEDIA_OPTIONS,
@@ -10,6 +11,7 @@
     errorMessage,
     mediaPolicy,
     type MediaPolicy,
+    type ServiceContext,
     type ServiceView,
   } from "./api";
 
@@ -25,6 +27,7 @@
       color: string | null,
       emoji: string | null,
       media: MediaPolicy,
+      context: ServiceContext | null,
     ) => Promise<void>;
   } = $props();
 
@@ -37,6 +40,8 @@
   let emoji = $state(service.emoji ?? "");
   // svelte-ignore state_referenced_locally
   let media = $state<MediaPolicy>(mediaPolicy(service));
+  // svelte-ignore state_referenced_locally
+  let context = $state<ServiceContext | null>(service.context ?? null);
   let error = $state("");
   let busy = $state(false);
 
@@ -52,7 +57,7 @@
     busy = true;
     error = "";
     try {
-      await onsubmit(name.trim(), color, emoji.trim() || null, media);
+      await onsubmit(name.trim(), color, emoji.trim() || null, media, context);
     } catch (err) {
       error = errorMessage(err);
       busy = false;
@@ -75,6 +80,25 @@
       <!-- svelte-ignore a11y_autofocus -->
       <input id="cz-name" class="input" bind:value={name} maxlength="40" placeholder="Ex.: Pessoal" autofocus />
     </div>
+
+    <fieldset>
+      <legend>Esta conta é de</legend>
+      <div class="segmented">
+        {#each CONTEXT_OPTIONS as opt (opt.label)}
+          <label class:selected={context === opt.value}>
+            <input type="radio" name="cz-context" value={opt.value} bind:group={context} class="sr-only" />
+            {opt.label}
+          </label>
+        {/each}
+      </div>
+      <p class="muted note">
+        {context === "work"
+          ? "Aparece e notifica no modo Trabalho; some no modo Pessoal."
+          : context === "personal"
+            ? "Aparece e notifica no modo Pessoal; some no modo Trabalho."
+            : "Aparece em todos os modos."}
+      </p>
+    </fieldset>
 
     <fieldset>
       <legend>Cor</legend>

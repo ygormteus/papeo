@@ -1,7 +1,7 @@
 //! Configurações gerais do app e regras de "não perturbe".
 
 use crate::privacy::NotificationPreview;
-use crate::service::Service;
+use crate::service::{Service, ServiceContext};
 use serde::{Deserialize, Serialize};
 
 /// Valor de `dnd_until` que significa "até eu reativar".
@@ -39,6 +39,141 @@ pub struct Settings {
     pub attachments: AttachmentMode,
     /// Textos salvos para a resposta rápida (chamados com "/").
     pub quick_replies: Vec<QuickReply>,
+    /// Modo escolhido: todas as contas, só trabalho, só pessoal ou pelo
+    /// expediente.
+    pub mode: ModeChoice,
+    /// Expediente usado no modo automático.
+    pub work_hours: WorkHours,
+    /// Hiberna as contas que ficam fora do modo atual (libera memória).
+    pub sleep_outside_mode: bool,
+    /// Moldura com a cor da conta em volta do site aberto.
+    pub account_frame: bool,
+}
+
+/// Modo valendo agora: quais contas aparecem e notificam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    All,
+    Work,
+    Personal,
+}
+
+impl Mode {
+    /// Conta sem trabalho/pessoal marcado aparece em todos os modos.
+    pub fn allows(self, context: Option<ServiceContext>) -> bool {
+        match (self, context) {
+            (Mode::All, _) | (_, None) => true,
+            (Mode::Work, Some(c)) => c == ServiceContext::Work,
+            (Mode::Personal, Some(c)) => c == ServiceContext::Personal,
+        }
+    }
+}
+
+/// Modo escolhido nas configurações.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeChoice {
+    #[default]
+    All,
+    Work,
+    Personal,
+    /// Trabalho no expediente, pessoal fora dele.
+    Auto,
+}
+
+impl ModeChoice {
+    /// Modo pela escolha e, no automático, pelo expediente.
+    pub fn scheduled(self, hours: &WorkHours, weekday: u8, minute_of_day: u16) -> Mode {
+        match self {
+            ModeChoice::All => Mode::All,
+            ModeChoice::Work => Mode::Work,
+            ModeChoice::Personal => Mode::Personal,
+            ModeChoice::Auto if hours.contains(weekday, minute_of_day) => Mode::Work,
+            ModeChoice::Auto => Mode::Personal,
+        }
+    }
+
+    /// Minutos até o modo do horário mudar (começo ou fim do expediente);
+    /// `None` se não muda na próxima semana.
+    pub fn minutes_until_change(
+        self,
+        hours: &WorkHours,
+        weekday: u8,
+        minute_of_day: u16,
+    ) -> Option<u32> {
+        let now = self.scheduled(hours, weekday, minute_of_day);
+        (1..=8 * DAY_MINUTES).find(|&i| {
+            let total = u32::from(minute_of_day) + i;
+            let day = ((u32::from(weekday) + total / DAY_MINUTES) % 7) as u8;
+            self.scheduled(hours, day, (total % DAY_MINUTES) as u16) != now
+        })
+    }
+}
+
+const DAY_MINUTES: u32 = 24 * 60;
+
+/// Troca manual feita no modo automático: vale até o expediente mudar o
+/// modo (começar ou terminar). Só na memória: reabrir o app volta ao horário.
+/// O fim é um instante, não o modo do horário: com o computador dormindo
+/// durante a virada, a troca não ressuscita no dia seguinte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModeOverride {
+    pub mode: Mode,
+    /// Segundos Unix da próxima virada do horário (`u64::MAX`: sem virada).
+    pub until: u64,
+}
+
+impl ModeOverride {
+    pub fn holds(self, now: u64) -> bool {
+        now < self.until
+    }
+}
+
+/// Expediente: dias da semana (0 = domingo … 6 = sábado) e horário em
+/// minutos desde a meia-noite (hora local). Pode atravessar a meia-noite;
+/// nesse caso o dia que conta é o do início.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorkHours {
+    pub days: Vec<u8>,
+    pub start: u16,
+    pub end: u16,
+}
+
+impl Default for WorkHours {
+    fn default() -> Self {
+        Self {
+            days: vec![1, 2, 3, 4, 5],
+            start: 9 * 60,
+            end: 18 * 60,
+        }
+    }
+}
+
+impl WorkHours {
+    pub fn contains(&self, weekday: u8, minute_of_day: u16) -> bool {
+        if self.start == self.end {
+            return false;
+        }
+        let on = |day: u8| self.days.contains(&day);
+        if self.start < self.end {
+            on(weekday) && (self.start..self.end).contains(&minute_of_day)
+        } else {
+            (on(weekday) && minute_of_day >= self.start)
+                || (on((weekday + 6) % 7) && minute_of_day < self.end)
+        }
+    }
+
+    pub fn sanitized(mut self) -> Self {
+        self.days.retain(|d| *d < 7);
+        self.days.sort_unstable();
+        self.days.dedup();
+        self.start = self.start.min(24 * 60 - 1);
+        self.end = self.end.min(24 * 60 - 1);
+        self
+    }
 }
 
 /// Resposta pronta: um atalho curto e o texto que entra na resposta.
@@ -194,6 +329,10 @@ impl Default for Settings {
             open_links: LinkTarget::Browser,
             attachments: AttachmentMode::Save,
             quick_replies: Vec::new(),
+            mode: ModeChoice::All,
+            work_hours: WorkHours::default(),
+            sleep_outside_mode: false,
+            account_frame: true,
         }
     }
 }
@@ -244,8 +383,26 @@ impl Settings {
         self.dnd_until.is_some_and(|until| now < until) || self.quiet_hours.contains(minute_of_day)
     }
 
+    /// Modo valendo agora (`weekday`: 0 = domingo), com a troca manual do
+    /// automático, se ainda valer.
+    pub fn current_mode(
+        &self,
+        weekday: u8,
+        minute_of_day: u16,
+        now: u64,
+        manual: Option<ModeOverride>,
+    ) -> Mode {
+        match manual {
+            Some(o) if self.mode == ModeChoice::Auto && o.holds(now) => o.mode,
+            _ => self
+                .mode
+                .scheduled(&self.work_hours, weekday, minute_of_day),
+        }
+    }
+
     pub fn sanitized(mut self) -> Self {
         self.quiet_hours = self.quiet_hours.sanitized();
+        self.work_hours = std::mem::take(&mut self.work_hours).sanitized();
         self.downloads_dir = self
             .downloads_dir
             .map(|d| d.trim().to_owned())
@@ -263,9 +420,17 @@ impl Settings {
     }
 }
 
-/// Decide se a notificação de um serviço deve ser exibida agora.
-pub fn should_notify(settings: &Settings, service: &Service, now: u64, minute_of_day: u16) -> bool {
+/// Decide se a notificação de um serviço deve ser exibida agora. `mode`:
+/// o modo valendo agora (conta de fora dele fica em silêncio).
+pub fn should_notify(
+    settings: &Settings,
+    service: &Service,
+    now: u64,
+    minute_of_day: u16,
+    mode: Mode,
+) -> bool {
     service.notifications
+        && mode.allows(service.context)
         && !service.muted_until.is_some_and(|until| now < until)
         && !settings.dnd_active(now, minute_of_day)
 }
@@ -310,23 +475,119 @@ mod tests {
     fn notify_rules() {
         let mut s = Settings::default();
         let mut svc = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
-        assert!(should_notify(&s, &svc, 1000, 600));
+        assert!(should_notify(&s, &svc, 1000, 600, Mode::All));
 
         svc.muted_until = Some(2000);
-        assert!(!should_notify(&s, &svc, 1000, 600));
-        assert!(should_notify(&s, &svc, 2000, 600));
+        assert!(!should_notify(&s, &svc, 1000, 600, Mode::All));
+        assert!(should_notify(&s, &svc, 2000, 600, Mode::All));
         svc.muted_until = None;
 
         s.dnd_until = Some(DND_FOREVER);
-        assert!(!should_notify(&s, &svc, 1000, 600));
+        assert!(!should_notify(&s, &svc, 1000, 600, Mode::All));
         s.dnd_until = Some(500);
-        assert!(should_notify(&s, &svc, 1000, 600));
+        assert!(should_notify(&s, &svc, 1000, 600, Mode::All));
 
         s.quiet_hours.enabled = true;
-        assert!(!should_notify(&s, &svc, 1000, 23 * 60));
+        assert!(!should_notify(&s, &svc, 1000, 23 * 60, Mode::All));
 
         svc.notifications = false;
-        assert!(!should_notify(&Settings::default(), &svc, 1000, 600));
+        assert!(!should_notify(
+            &Settings::default(),
+            &svc,
+            1000,
+            600,
+            Mode::All
+        ));
+    }
+
+    #[test]
+    fn mode_filters_accounts_and_notifications() {
+        let s = Settings::default();
+        let mut work = Service::new(ServiceKind::Whatsapp, None, None).unwrap();
+        work.context = Some(ServiceContext::Work);
+        let both = Service::new(ServiceKind::Telegram, None, None).unwrap();
+        assert!(should_notify(&s, &work, 1000, 600, Mode::Work));
+        assert!(!should_notify(&s, &work, 1000, 600, Mode::Personal));
+        assert!(should_notify(&s, &work, 1000, 600, Mode::All));
+        assert!(should_notify(&s, &both, 1000, 600, Mode::Personal));
+        // Arquivo antigo: sem modo nem contexto.
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.mode, ModeChoice::All);
+        assert!(old.account_frame);
+        assert_eq!(old.work_hours, WorkHours::default());
+        let json = r#"{"id":"svc-0123456789ab","kind":"whatsapp","name":"W","url":"https://web.whatsapp.com/","session":"0123456789abcdef0123456789abcdef"}"#;
+        let svc: Service = serde_json::from_str(json).unwrap();
+        assert_eq!(svc.context, None);
+        assert!(!serde_json::to_string(&svc).unwrap().contains("context"));
+        let ctx: Service =
+            serde_json::from_str(&json.replace("}", r#","context":"personal"}"#)).unwrap();
+        assert_eq!(ctx.context, Some(ServiceContext::Personal));
+    }
+
+    #[test]
+    fn work_hours_and_auto_mode() {
+        let h = WorkHours::default();
+        // Segunda 10h: trabalho; segunda 18h, sábado 10h: fora.
+        assert!(h.contains(1, 10 * 60));
+        assert!(!h.contains(1, 18 * 60));
+        assert!(!h.contains(6, 10 * 60));
+        // Turno da noite (sexta 22h às 6h): sábado 5h ainda conta.
+        let night = WorkHours {
+            days: vec![5],
+            start: 22 * 60,
+            end: 6 * 60,
+        };
+        assert!(night.contains(5, 23 * 60));
+        assert!(night.contains(6, 5 * 60));
+        assert!(!night.contains(6, 23 * 60));
+        assert!(!night.contains(5, 5 * 60));
+
+        let s = Settings {
+            mode: ModeChoice::Auto,
+            ..Settings::default()
+        };
+        assert_eq!(s.current_mode(1, 10 * 60, 0, None), Mode::Work);
+        assert_eq!(s.current_mode(1, 20 * 60, 0, None), Mode::Personal);
+        // Troca manual no expediente vale até o instante da virada.
+        let manual = Some(ModeOverride {
+            mode: Mode::Personal,
+            until: 1_000,
+        });
+        assert_eq!(s.current_mode(1, 11 * 60, 999, manual), Mode::Personal);
+        // Passou da virada (mesmo dormindo durante ela): volta ao horário.
+        assert_eq!(s.current_mode(2, 10 * 60, 1_000, manual), Mode::Work);
+        // Fora do automático, a troca manual não conta.
+        let fixed = Settings {
+            mode: ModeChoice::Work,
+            ..Settings::default()
+        };
+        assert_eq!(fixed.current_mode(6, 10 * 60, 0, manual), Mode::Work);
+
+        // Viradas: segunda 10h → fim às 18h; segunda 20h → terça 9h;
+        // sexta 20h → segunda 9h; sem expediente, nunca.
+        let h = WorkHours::default();
+        let auto = ModeChoice::Auto;
+        assert_eq!(auto.minutes_until_change(&h, 1, 10 * 60), Some(8 * 60));
+        assert_eq!(auto.minutes_until_change(&h, 1, 20 * 60), Some(13 * 60));
+        assert_eq!(
+            auto.minutes_until_change(&h, 5, 20 * 60),
+            Some(2 * 1440 + 13 * 60)
+        );
+        let none = WorkHours {
+            days: vec![],
+            ..WorkHours::default()
+        };
+        assert_eq!(auto.minutes_until_change(&none, 1, 10 * 60), None);
+        assert_eq!(ModeChoice::Work.minutes_until_change(&h, 1, 10 * 60), None);
+
+        let messy = WorkHours {
+            days: vec![9, 3, 1, 3],
+            start: 5000,
+            end: 60,
+        }
+        .sanitized();
+        assert_eq!(messy.days, vec![1, 3]);
+        assert_eq!(messy.start, 24 * 60 - 1);
     }
 
     #[test]

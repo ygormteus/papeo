@@ -16,7 +16,15 @@
   } from "@lucide/svelte";
   import type { Snippet } from "svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { THEME_OPTIONS, isInsecure, modKey, type Appearance, type ServiceView } from "./api";
+  import {
+    MODE_LABEL,
+    THEME_OPTIONS,
+    isInsecure,
+    modKey,
+    serviceColor,
+    type Appearance,
+    type ServiceView,
+  } from "./api";
 
   let {
     active,
@@ -32,6 +40,7 @@
     lockable,
     onlock,
     extra,
+    twin = false,
   }: {
     active: ServiceView | null;
     appearance: Appearance;
@@ -49,6 +58,8 @@
     onlock: () => void;
     /** Conteúdo ao lado da busca (o resumo, no Início). */
     extra?: Snippet;
+    /** Há outra conta do mesmo serviço: destaca a troca de conta. */
+    twin?: boolean;
   } = $props();
 
   const ZOOM_MIN = 0.5;
@@ -78,10 +89,20 @@
   {/if}
 
   {#if active}
-    <span class="current" data-tauri-drag-region>
-      <ServiceAvatar service={active} size={20} />
-      <span data-tauri-drag-region>{active.name}</span>
-    </span>
+    {#key active.id}
+      <span
+        class="current"
+        class:flash={twin || !!active.context}
+        style:--acc={serviceColor(active)}
+        data-tauri-drag-region
+      >
+        <ServiceAvatar service={active} size={20} />
+        <span data-tauri-drag-region>{active.name}</span>
+        {#if active.context}
+          <span class="ctx" data-tauri-drag-region>{MODE_LABEL[active.context]}</span>
+        {/if}
+      </span>
+    {/key}
   {/if}
 
   {#if active && isInsecure(active)}
@@ -221,6 +242,37 @@
     padding-left: 16px;
     border-left: 1px solid var(--border);
     font-weight: 550;
+  }
+
+  .ctx {
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent);
+    background: color-mix(in srgb, var(--acc) 12%, transparent);
+    font-size: 11.5px;
+    font-weight: 550;
+  }
+
+  /* Ao trocar entre contas parecidas, o nome da conta pisca na cor dela. */
+  .current.flash {
+    border-radius: 0 8px 8px 0;
+    animation: flash 1.4s ease-out;
+  }
+
+  @keyframes flash {
+    0%,
+    35% {
+      background: color-mix(in srgb, var(--acc) 22%, transparent);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .current.flash {
+      animation: none;
+    }
   }
 
   .alert {

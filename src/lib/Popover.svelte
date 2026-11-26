@@ -144,6 +144,10 @@
         onsnap={(s) => (snap = s)}
         onopen={(id, chat) => go(id, chat)}
         autoOpen
+        onlater={async (id, chat, at) => {
+          org = await api.replyLater(id, chat, at);
+        }}
+        workHours={snap.settings.mode === "auto" ? snap.settings.workHours : undefined}
         quickReplies={snap.settings.quickReplies}
       />
     {/if}

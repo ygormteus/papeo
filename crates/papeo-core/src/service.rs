@@ -63,6 +63,14 @@ pub enum MediaPolicy {
     Block,
 }
 
+/// Mundo a que a conta pertence, para os modos Trabalho e Pessoal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceContext {
+    Work,
+    Personal,
+}
+
 pub const ZOOM_MIN: f64 = 0.5;
 pub const ZOOM_MAX: f64 = 2.0;
 
@@ -101,6 +109,9 @@ pub struct Service {
     /// Sobrescreve o user-agent padrão da plataforma.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
+    /// Trabalho ou pessoal; sem valor, a conta aparece em todos os modos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ServiceContext>,
 }
 
 fn enabled() -> bool {
@@ -146,6 +157,7 @@ impl Service {
             media: None,
             zoom: 1.0,
             user_agent: None,
+            context: None,
         })
     }
 

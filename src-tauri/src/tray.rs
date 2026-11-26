@@ -2,7 +2,7 @@
 //! reabrir a janela.
 
 use crate::state::{now_secs, publish, snapshot, AppState, Snapshot, MAIN_WINDOW};
-use papeo_core::DND_FOREVER;
+use papeo_core::{Mode, ModeChoice, DND_FOREVER};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -52,8 +52,14 @@ fn signature(snap: &Snapshot) -> String {
         .iter()
         .map(|s| {
             format!(
-                "{}|{}|{:?}|{}|{}",
-                s.service.id, s.service.name, s.service.emoji, s.unread, s.loaded
+                "{}|{}|{:?}|{}|{}|{}|{:?}",
+                s.service.id,
+                s.service.name,
+                s.service.emoji,
+                s.unread,
+                s.loaded,
+                s.in_mode,
+                s.service.context
             )
         })
         .collect();
@@ -64,8 +70,10 @@ fn signature(snap: &Snapshot) -> String {
         .map(|m| format!("{}|{}|{}|{}", m.service_id, m.title, m.body, m.at))
         .collect();
     format!(
-        "{}#{}#{}#{}#{}#{}",
+        "{}#{:?}#{:?}#{}#{}#{}#{}#{}",
         snap.locked,
+        snap.mode,
+        snap.settings.mode,
         snap.total_unread,
         manual_dnd(snap),
         snap.settings.lock.enabled,
@@ -124,10 +132,10 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
         }
     }
 
-    if !snap.services.is_empty() {
+    if snap.services.iter().any(|s| s.in_mode) {
         items.push(Box::new(sep()?));
         items.push(Box::new(disabled(app, "Contas")?));
-        for s in &snap.services {
+        for s in snap.services.iter().filter(|s| s.in_mode) {
             let mut label = match &s.service.emoji {
                 Some(emoji) => format!("{emoji}  {}", s.service.name),
                 None => s.service.name.clone(),
@@ -146,6 +154,34 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
     }
 
     items.push(Box::new(sep()?));
+    if uses_modes(snap) {
+        let mark = |mode: Mode, text: &str| {
+            let text = if snap.mode == mode {
+                format!("✓ {text}")
+            } else {
+                text.to_owned()
+            };
+            item(app, &format!("tray:mode:{}", mode_id(mode)), &text)
+        };
+        let mut title = format!("Modo: {}", mode_label(snap.mode));
+        if snap.settings.mode == ModeChoice::Auto {
+            title.push_str(if snap.mode_manual {
+                " (até o expediente mudar)"
+            } else {
+                " (automático)"
+            });
+        }
+        items.push(Box::new(Submenu::with_items(
+            app,
+            &title,
+            true,
+            &[
+                &mark(Mode::Work, "Trabalho")?,
+                &mark(Mode::Personal, "Pessoal")?,
+                &mark(Mode::All, "Todas as contas")?,
+            ],
+        )?));
+    }
     let dnd_on = manual_dnd(snap);
     let dnd = if dnd_on {
         Submenu::with_items(
@@ -178,6 +214,43 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
     Ok((Menu::with_items(app, &refs)?, chats))
 }
 
+/// O submenu de modo só aparece para quem separa trabalho e pessoal.
+fn uses_modes(snap: &Snapshot) -> bool {
+    snap.settings.mode != ModeChoice::All
+        || snap.services.iter().any(|s| s.service.context.is_some())
+}
+
+fn mode_id(mode: Mode) -> &'static str {
+    match mode {
+        Mode::All => "all",
+        Mode::Work => "work",
+        Mode::Personal => "personal",
+    }
+}
+
+fn mode_label(mode: Mode) -> &'static str {
+    match mode {
+        Mode::All => "todas as contas",
+        Mode::Work => "Trabalho",
+        Mode::Personal => "Pessoal",
+    }
+}
+
+fn set_mode(app: &AppHandle, id: &str) {
+    let mode = match id {
+        "work" => Mode::Work,
+        "personal" => Mode::Personal,
+        "all" => Mode::All,
+        _ => return,
+    };
+    let state = app.state::<AppState>();
+    let _ = state.update(|inner| {
+        crate::state::choose_mode(inner, mode);
+        Ok(())
+    });
+    publish(app);
+}
+
 fn set_dnd(app: &AppHandle, until: Option<u64>) {
     let state = app.state::<AppState>();
     let _ = state.update(|inner| {
@@ -199,6 +272,7 @@ fn on_menu(app: &AppHandle, id: &str) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move { crate::lock::lock_app(&app) });
         }
+        _ if id.starts_with("tray:mode:") => set_mode(app, &id["tray:mode:".len()..]),
         _ => {
             // Conta ou conversa: abre a janela e, fora da thread principal
             // (criar webview espera por ela), o serviço.

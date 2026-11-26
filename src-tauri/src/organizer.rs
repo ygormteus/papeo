@@ -358,6 +358,65 @@ pub async fn snooze_task(app: AppHandle, id: String, until: u64) -> CmdResult<Or
     Ok(view(&app))
 }
 
+/// "Responder depois": lembrete ligado à conversa, para `at` (segundos Unix).
+#[tauri::command]
+pub async fn reply_later(
+    app: AppHandle,
+    service_id: String,
+    chat: String,
+    at: u64,
+) -> CmdResult<Organizer> {
+    ensure_unlocked(&app)?;
+    add_reply_later(&app, &service_id, &chat, at)?;
+    Ok(view(&app))
+}
+
+/// Cria a tarefa do "Responder depois" (também usada pela notificação).
+pub fn add_reply_later(app: &AppHandle, service_id: &str, chat: &str, at: u64) -> CmdResult {
+    let chat = chat.trim();
+    if chat.is_empty() {
+        return Err("Conversa não encontrada.".into());
+    }
+    if at + 60 < now_secs() {
+        return Err("Escolha um horário no futuro.".into());
+    }
+    change(app, |inner, now| {
+        let text = reply_later_text(inner, service_id, chat);
+        let fields = TaskFields {
+            text,
+            due: None,
+            remind_at: Some(at),
+            link: Some(Link {
+                service_id: service_id.to_owned(),
+                chat: chat.to_owned(),
+            }),
+            contact_id: None,
+            repeat: None,
+        };
+        let input = task_input(inner, fields)?;
+        inner.organizer.add_task(&input, now).map(|_| ())
+    })
+}
+
+/// "Responder: <última mensagem recebida>", ou só "Responder" + conversa.
+/// O texto só entra com a prévia completa (a tarefa é gravada e sincronizada).
+fn reply_later_text(inner: &Inner, service_id: &str, chat: &str) -> String {
+    let full = !inner.locked
+        && inner.config.settings.notification_preview == papeo_core::NotificationPreview::Full;
+    let last = inner
+        .recent
+        .iter()
+        .filter(|_| full)
+        .find(|c| c.service_id == service_id && c.title == chat)
+        .and_then(|c| c.messages.iter().rev().find(|m| !m.mine))
+        .map(|m| m.body.trim())
+        .filter(|b| !b.is_empty());
+    match last {
+        Some(body) => format!("Responder: {}", papeo_core::clip(body, 140)),
+        None => format!("Responder {}", papeo_core::clip(chat, 80)),
+    }
+}
+
 #[tauri::command]
 pub async fn delete_task(app: AppHandle, id: String) -> CmdResult<Organizer> {
     ensure_unlocked(&app)?;
@@ -426,6 +485,7 @@ pub fn tick(app: &AppHandle) {
                 service_id: String::new(),
                 chat: None,
                 reply: false,
+                later: false,
                 task: None,
                 remind_at: None,
             };
@@ -466,6 +526,7 @@ pub fn tick(app: &AppHandle) {
                         service_id,
                         chat,
                         reply: false,
+                        later: false,
                         task: Some(task.id.clone()),
                         remind_at: task.remind_at,
                     };

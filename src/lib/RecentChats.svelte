@@ -1,12 +1,15 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { AlarmClock, SendHorizontal } from "@lucide/svelte";
+  import { AlarmClock, Clock, SendHorizontal } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import TaskForm from "./TaskForm.svelte";
   import { matchQuickReplies } from "./quickReplies";
+  import { dayLabel, laterTimes, timeLabel, type Hours } from "./tasks";
   import {
     api,
     MAX_REPLY_CHARS,
+    MODE_LABEL,
+    serviceColor,
     type QuickReply,
     type RecentChat,
     type ServiceView,
@@ -24,6 +27,8 @@
     oncreatetask,
     clock,
     quickReplies = [],
+    onlater,
+    workHours,
   }: {
     chats: RecentChat[];
     services: ServiceView[];
@@ -39,9 +44,45 @@
     clock?: Date;
     /** Respostas prontas, chamadas com "/" na resposta. */
     quickReplies?: QuickReply[];
+    /** "Responder depois": lembrete ligado à conversa para `at` (segundos). */
+    onlater?: (serviceId: string, chat: string, at: number) => Promise<void>;
+    /** Expediente, para o atalho "Expediente · …" (modo automático). */
+    workHours?: Hours;
   } = $props();
 
+  /** Conversa com os horários de "Responder depois" abertos. */
+  let later = $state<string | null>(null);
+  let laterBusy = $state(false);
+  /** Confirmação por conversa ("Lembrete: Amanhã 9:00"). */
+  let laterDone = $state<Record<string, string>>({});
+  let laterError = $state<Record<string, string>>({});
+  const laterOptions = $derived.by(() => (later ? laterTimes(new Date(now), workHours) : []));
 
+  async function replyLater(c: RecentChat, at: number) {
+    if (!onlater || laterBusy) return;
+    const key = keyOf(c);
+    laterBusy = true;
+    laterError[key] = "";
+    try {
+      await onlater(c.serviceId, c.chat, at);
+      const d = new Date(at * 1000);
+      laterDone[key] = `Lembrete: ${dayLabel(d, new Date())} ${timeLabel(d)}`;
+      later = null;
+    } catch (e) {
+      laterError[key] = String(e);
+    } finally {
+      laterBusy = false;
+    }
+  }
+
+  /** Mais de uma conta do mesmo serviço: vale dizer por qual sai a resposta. */
+  const twins = $derived(
+    new Set(
+      services
+        .filter((s) => services.some((o) => o.id !== s.id && o.kind === s.kind))
+        .map((s) => s.id),
+    ),
+  );
 
   /** Conversa com o formulário "Lembrar disso" aberto. */
   let reminding = $state<string | null>(null);
@@ -237,7 +278,11 @@
               {/each}
             </div>
           {/if}
-          <p class="account">{service.name}</p>
+          <p class="account" style:--acc={serviceColor(service)}>
+            <span class="dot" aria-hidden="true"></span>
+            {c.canReply ? "Pela conta" : "Conta"} <strong>{service.name}</strong>
+            {#if service.context}<span class="ctx">{MODE_LABEL[service.context]}</span>{/if}
+          </p>
 
           {#if c.canReply}
             <form
@@ -254,7 +299,7 @@
                 onkeydown={(e) => onInputKey(e, c)}
                 rows="1"
                 maxlength={MAX_REPLY_CHARS}
-                placeholder="Responder a {c.title}…"
+                placeholder={twins.has(service.id) ? `Responder a ${c.title} pela conta ${service.name}…` : `Responder a ${c.title}…`}
                 aria-label="Responder a {c.title}"
                 aria-autocomplete="list"
                 aria-controls="quick-replies"
@@ -303,6 +348,10 @@
               <span class="error">{errors[key]}</span>
             {:else if sent === key}
               <span class="ok">Enviado ✓</span>
+            {:else if laterError[key]}
+              <span class="error">{laterError[key]}</span>
+            {:else if laterDone[key]}
+              <span class="ok">{laterDone[key]}</span>
             {:else if c.canReply}
               <span class="muted">Enter envia · Shift+Enter quebra a linha</span>
             {/if}
@@ -312,9 +361,21 @@
                   <AlarmClock size={12} /> Lembrar disso
                 </button>
               {/if}
+              {#if onlater && c.chat}
+                <button class="link" aria-expanded={later === key} onclick={() => (later = later === key ? null : key)}>
+                  <Clock size={12} /> Responder depois
+                </button>
+              {/if}
               <button class="link" onclick={() => onopen(c.serviceId, c.chat)}>Abrir conversa</button>
             </span>
           </div>
+          {#if later === key && onlater}
+            <div class="later" role="group" aria-label="Lembrar de responder">
+              {#each laterOptions as t (t.at)}
+                <button class="chip" disabled={laterBusy} onclick={() => replyLater(c, t.at)}>{t.label}</button>
+              {/each}
+            </div>
+          {/if}
           {#if reminding === key && oncreatetask && clock}
             <div class="remind">
               <TaskForm
@@ -460,9 +521,56 @@
   }
 
   .account {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     margin: 2px 0 6px;
     font-size: 11.5px;
     color: var(--text-faint);
+  }
+
+  .account strong {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .account .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--acc);
+  }
+
+  .account .ctx {
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+
+  .later {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .chip {
+    padding: 4px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  .chip:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+
+  .chip:disabled {
+    opacity: 0.5;
   }
 
   .reply {
@@ -603,8 +711,9 @@
 
   .links {
     display: inline-flex;
-    flex: none;
-    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 12px;
   }
 
   .remind {

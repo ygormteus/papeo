@@ -125,6 +125,38 @@ export function quickTimes(now: Date): QuickTime[] {
   return list;
 }
 
+/** Expediente: dias (0 = domingo) e minutos do dia de início e fim. */
+export interface Hours {
+  days: number[];
+  start: number;
+  end: number;
+}
+
+/** Próximo começo de expediente depois de `now` (null sem expediente). */
+export function nextWorkStart(now: Date, hours: Hours): Date | null {
+  if (hours.start === hours.end || !hours.days.length) return null;
+  for (let i = 0; i <= 7; i++) {
+    const d = addDays(startOfDay(now), i);
+    if (!hours.days.includes(d.getDay())) continue;
+    d.setHours(Math.floor(hours.start / 60), hours.start % 60, 0, 0);
+    if (d.getTime() > now.getTime()) return d;
+  }
+  return null;
+}
+
+/** "Responder depois": atalhos de hora mais o próximo expediente. */
+export function laterTimes(now: Date, hours?: Hours): QuickTime[] {
+  const list = quickTimes(now);
+  const work = hours ? nextWorkStart(now, hours) : null;
+  if (work) {
+    const at = secs(work);
+    if (!list.some((q) => q.at === at)) {
+      list.push({ label: `Expediente · ${dayLabel(work, now)} ${timeLabel(work)}`, at });
+    }
+  }
+  return list.sort((a, b) => a.at - b.at);
+}
+
 /** "HH:MM" de um instante, para `<input type="time">`. */
 export function toTimeInput(at: number): string {
   const d = new Date(at * 1000);

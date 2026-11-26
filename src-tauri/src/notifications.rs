@@ -27,6 +27,8 @@ pub struct Target {
     pub chat: Option<String>,
     /// Mostra o campo "Responder".
     pub reply: bool,
+    /// Mostra o botão "Lembrar em 1 h" (responder depois).
+    pub later: bool,
     /// Lembrete desta tarefa: botões "Adiar 1 h" e "Concluir".
     pub task: Option<String>,
     /// A vez do lembrete que esta notificação avisa.
@@ -172,9 +174,36 @@ fn replied(id: &str, text: String) {
         if let Err(err) = crate::reply::send(&app, &target.service_id, &chat, &text) {
             let retry = Target {
                 reply: false,
+                later: false,
                 ..target
             };
             let _ = show(&app, "Resposta não enviada", &err, None, retry);
+        }
+    });
+}
+
+/// "Lembrar em 1 h": cria o lembrete de responder a conversa, sem trazer
+/// o app. Se falhar, avisa com outra notificação.
+fn later(id: &str) {
+    let (Some(app), Some(target)) = (APP.get().cloned(), target(id)) else {
+        return;
+    };
+    let Some(chat) = target.chat.clone().filter(|_| target.later) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        // Bloqueado depois que a notificação saiu: não cria nada.
+        if app.state::<crate::state::AppState>().lock().locked {
+            return;
+        }
+        let at = crate::state::now_secs() + crate::organizer::SNOOZE_SECS;
+        if let Err(err) = crate::organizer::add_reply_later(&app, &target.service_id, &chat, at) {
+            let retry = Target {
+                reply: false,
+                later: false,
+                ..target
+            };
+            let _ = show(&app, "Lembrete não criado", &err, None, retry);
         }
     });
 }
@@ -214,6 +243,9 @@ mod mac {
     const CATEGORY: &str = "papeo.reply";
     const REPLY_ACTION: &str = "reply";
     const REMINDER_CATEGORY: &str = "papeo.reminder";
+    /// Só "Lembrar em 1 h" (e-mail: sem resposta pela notificação).
+    const LATER_CATEGORY: &str = "papeo.later";
+    const LATER_ACTION: &str = "later";
 
     /// O usuário permitiu as notificações do Papeo.
     static AUTHORIZED: AtomicBool = AtomicBool::new(false);
@@ -254,6 +286,8 @@ mod mac {
                     if let Some(text) = user_text(response) {
                         super::replied(&id, text);
                     }
+                } else if action == LATER_ACTION {
+                    super::later(&id);
                 } else if action == "snooze" || action == "done" {
                     super::reminder_action(&id, &action);
                 } else if action == "com.apple.UNNotificationDefaultActionIdentifier" {
@@ -308,15 +342,6 @@ mod mac {
             &NSString::from_str("Enviar"),
             &NSString::from_str("Mensagem"),
         );
-        let actions: Retained<NSArray<UNNotificationAction>> =
-            NSArray::from_retained_slice(&[Retained::into_super(action)]);
-        let category =
-            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-                &NSString::from_str(CATEGORY),
-                &actions,
-                &NSArray::new(),
-                UNNotificationCategoryOptions::empty(),
-            );
         let button = |id: &str, title: &str| {
             UNNotificationAction::actionWithIdentifier_title_options(
                 &NSString::from_str(id),
@@ -324,6 +349,26 @@ mod mac {
                 UNNotificationActionOptions::empty(),
             )
         };
+        let actions: Retained<NSArray<UNNotificationAction>> = NSArray::from_retained_slice(&[
+            Retained::into_super(action),
+            button(LATER_ACTION, "Lembrar em 1 h"),
+        ]);
+        let category =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(CATEGORY),
+                &actions,
+                &NSArray::new(),
+                UNNotificationCategoryOptions::empty(),
+            );
+        let later_actions: Retained<NSArray<UNNotificationAction>> =
+            NSArray::from_retained_slice(&[button(LATER_ACTION, "Lembrar em 1 h")]);
+        let later =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(LATER_CATEGORY),
+                &later_actions,
+                &NSArray::new(),
+                UNNotificationCategoryOptions::empty(),
+            );
         let reminder_actions: Retained<NSArray<UNNotificationAction>> =
             NSArray::from_retained_slice(&[
                 button("snooze", "Adiar 1 h"),
@@ -336,7 +381,7 @@ mod mac {
                 &NSArray::new(),
                 UNNotificationCategoryOptions::empty(),
             );
-        center.setNotificationCategories(&NSSet::from_retained_slice(&[category, reminder]));
+        center.setNotificationCategories(&NSSet::from_retained_slice(&[category, later, reminder]));
 
         let done = RcBlock::new(|granted: Bool, _error: *mut NSError| {
             AUTHORIZED.store(granted.as_bool(), Ordering::Relaxed);
@@ -371,6 +416,8 @@ mod mac {
             content.setCategoryIdentifier(&NSString::from_str(REMINDER_CATEGORY));
         } else if target.reply && target.chat.is_some() {
             content.setCategoryIdentifier(&NSString::from_str(CATEGORY));
+        } else if target.later && target.chat.is_some() {
+            content.setCategoryIdentifier(&NSString::from_str(LATER_CATEGORY));
         }
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
             &NSString::from_str(id),
@@ -416,18 +463,32 @@ mod win {
         out
     }
 
-    fn xml(title: &str, body: &str, sound: bool, reply: bool, reminder: bool) -> String {
+    fn xml(
+        title: &str,
+        body: &str,
+        sound: bool,
+        reply: bool,
+        later: bool,
+        reminder: bool,
+    ) -> String {
         let audio = if sound {
             ""
         } else {
             r#"<audio silent="true"/>"#
         };
+        const LATER: &str =
+            r#"<action content="Lembrar em 1 h" arguments="later" activationType="foreground"/>"#;
         let actions = if reminder {
-            r#"<actions><action content="Adiar 1 h" arguments="snooze" activationType="foreground"/><action content="Concluir" arguments="done" activationType="foreground"/></actions>"#
+            r#"<actions><action content="Adiar 1 h" arguments="snooze" activationType="foreground"/><action content="Concluir" arguments="done" activationType="foreground"/></actions>"#.to_owned()
         } else if reply {
-            r#"<actions><input id="reply" type="text" placeHolderContent="Responder…"/><action content="Enviar" arguments="reply" hint-inputId="reply" activationType="foreground"/></actions>"#
+            format!(
+                r#"<actions><input id="reply" type="text" placeHolderContent="Responder…"/><action content="Enviar" arguments="reply" hint-inputId="reply" activationType="foreground"/>{}</actions>"#,
+                if later { LATER } else { "" }
+            )
+        } else if later {
+            format!("<actions>{LATER}</actions>")
         } else {
-            ""
+            String::new()
         };
         format!(
             r#"<toast launch="open"><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual>{audio}{actions}</toast>"#,
@@ -470,12 +531,14 @@ mod win {
         target: &Target,
     ) -> windows::core::Result<()> {
         let reply = target.reply && target.chat.is_some();
+        let later = target.later && target.chat.is_some();
         let doc = XmlDocument::new()?;
         doc.LoadXml(&HSTRING::from(xml(
             title,
             body,
             sound,
             reply,
+            later,
             target.task.is_some(),
         )))?;
         let toast = ToastNotification::CreateToastNotification(&doc)?;
@@ -493,6 +556,8 @@ mod win {
                     if let Some(text) = user_text(&args) {
                         super::replied(&id, text);
                     }
+                } else if arguments == "later" {
+                    super::later(&id);
                 } else if arguments == "snooze" || arguments == "done" {
                     super::reminder_action(&id, &arguments);
                 } else {
@@ -515,15 +580,20 @@ mod win {
     mod tests {
         #[test]
         fn xml_is_escaped() {
-            let xml = super::xml("Ana & <Bia>", "\"oi\"", false, true, false);
+            let xml = super::xml("Ana & <Bia>", "\"oi\"", false, true, true, false);
+            assert!(xml.contains(r#"arguments="later""#));
             assert!(xml.contains("Ana &amp; &lt;Bia&gt;"));
             assert!(xml.contains("&quot;oi&quot;"));
             assert!(xml.contains(r#"hint-inputId="reply""#));
             assert!(xml.contains(r#"silent="true""#));
-            let reminder = super::xml("Lembrete", "ligar", true, false, true);
+            let reminder = super::xml("Lembrete", "ligar", true, false, false, true);
             assert!(reminder.contains(r#"arguments="snooze""#));
             assert!(reminder.contains(r#"arguments="done""#));
             assert!(!reminder.contains("reply"));
+            assert!(!reminder.contains("later"));
+            let mail = super::xml("Gmail", "Assunto", true, false, true, false);
+            assert!(mail.contains(r#"arguments="later""#));
+            assert!(!mail.contains("reply"));
         }
     }
 }
@@ -537,6 +607,7 @@ mod tests {
             service_id: String::new(),
             chat: None,
             reply: false,
+            later: false,
             task: Some(task.into()),
             remind_at: Some(1_800_000_000),
         });

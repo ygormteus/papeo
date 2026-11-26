@@ -30,6 +30,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             "CmdOrCtrl+Shift+N",
         )?)
         .item(&MenuItemBuilder::with_id("go:tasks", "Tarefas").build(app)?)
+        .item(&item(
+            "go:mode",
+            "Alternar trabalho e pessoal",
+            "CmdOrCtrl+Shift+M",
+        )?)
         .item(&item("go:settings", "Configurações…", "CmdOrCtrl+,")?)
         .build()?;
     let view = SubmenuBuilder::new(app, "Zoom")
@@ -77,6 +82,26 @@ fn handle(app: &AppHandle, id: &str) {
         "go:tasks" => {
             crate::organizer::show_tasks(app);
         }
+        "go:mode" => {
+            // Como o atalho da interface: só desbloqueado e com os modos em uso.
+            let next = {
+                let inner = state.lock();
+                let in_use = inner.config.settings.mode != papeo_core::ModeChoice::All
+                    || inner.config.services.iter().any(|s| s.context.is_some());
+                if inner.locked || !in_use {
+                    return;
+                }
+                match inner.current_mode() {
+                    papeo_core::Mode::Work => papeo_core::Mode::Personal,
+                    _ => papeo_core::Mode::Work,
+                }
+            };
+            let _ = state.update(|inner| {
+                crate::state::choose_mode(inner, next);
+                Ok(())
+            });
+            crate::state::publish(app);
+        }
         "go:settings" => {
             let _ = activate(app, None);
             let _ = app.emit_to(UI_WEBVIEW, COMMAND_EVENT, "settings");
@@ -91,12 +116,18 @@ fn handle(app: &AppHandle, id: &str) {
             else {
                 return;
             };
-            let target = state
-                .lock()
-                .config
-                .services
-                .get(index.saturating_sub(1))
-                .map(|s| s.id.clone());
+            // Mesma numeração da barra lateral: só as contas do modo atual.
+            let target = {
+                let inner = state.lock();
+                let mode = inner.current_mode();
+                inner
+                    .config
+                    .services
+                    .iter()
+                    .filter(|s| mode.allows(s.context))
+                    .nth(index.saturating_sub(1))
+                    .map(|s| s.id.clone())
+            };
             if let Some(target) = target {
                 let _ = activate(app, Some(target));
             }

@@ -9,6 +9,12 @@ export type Appearance = "system" | "light" | "dark" | "oled";
 export type NotificationPreview = "full" | "sender" | "hidden";
 /** ok · dormindo (hibernado) · desconectado (tela de login) · não responde */
 export type ServiceStatus = "ok" | "sleeping" | "loggedOut" | "unresponsive";
+/** Mundo da conta. Sem valor: aparece em todos os modos. */
+export type ServiceContext = "work" | "personal";
+/** Modo valendo agora. */
+export type Mode = "all" | "work" | "personal";
+/** Modo escolhido nas configurações (`auto` segue o expediente). */
+export type ModeChoice = Mode | "auto";
 
 export interface ServiceView {
   id: string;
@@ -38,6 +44,10 @@ export interface ServiceView {
   /** Conversa aberta no site (nome no cabeçalho; nas caixas de e-mail, o
    *  assunto do e-mail aberto). Só WhatsApp, Telegram, Gmail e Roundcube. */
   chat?: string | null;
+  /** Trabalho ou pessoal; sem valor, aparece em todos os modos. */
+  context?: ServiceContext;
+  /** Faz parte do modo atual (aparece na barra, conta e notifica). */
+  inMode: boolean;
 }
 
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
@@ -111,6 +121,14 @@ export interface QuietHours {
   end: number;
 }
 
+export interface WorkHours {
+  /** 0 = domingo … 6 = sábado. */
+  days: number[];
+  /** Minutos desde a meia-noite. */
+  start: number;
+  end: number;
+}
+
 export interface Settings {
   dndUntil?: number | null;
   quietHours: QuietHours;
@@ -134,6 +152,13 @@ export interface Settings {
   attachments: AttachmentMode;
   /** Textos salvos para a resposta rápida, chamados com "/". */
   quickReplies: QuickReply[];
+  mode: ModeChoice;
+  /** Expediente do modo automático. */
+  workHours: WorkHours;
+  /** Hiberna as contas fora do modo atual. */
+  sleepOutsideMode: boolean;
+  /** Moldura com a cor da conta em volta do site aberto. */
+  accountFrame: boolean;
 }
 
 export interface QuickReply {
@@ -180,6 +205,10 @@ export interface Snapshot {
   recent: RecentChat[];
   /** Tarefas abertas atrasadas e para hoje (zero com o app bloqueado). */
   tasks: { overdue: number; today: number };
+  /** Modo valendo agora. */
+  mode: Mode;
+  /** Trocado à mão no automático (vale até o expediente mudar). */
+  modeManual: boolean;
 }
 
 export interface ChatMessage {
@@ -244,6 +273,10 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     openLinks: "browser",
     attachments: "save",
     quickReplies: [],
+    mode: "all",
+    workHours: { days: [1, 2, 3, 4, 5], start: 9 * 60, end: 18 * 60 },
+    sleepOutsideMode: false,
+    accountFrame: true,
   },
   dndActive: false,
   autostart: false,
@@ -255,6 +288,8 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   appVersion: "",
   recent: [],
   tasks: { overdue: 0, today: 0 },
+  mode: "all",
+  modeManual: false,
 };
 
 export const api = {
@@ -262,8 +297,13 @@ export const api = {
   addService: (kind: ServiceKind, name?: string, url?: string) =>
     invoke<Snapshot>("add_service", { kind, name: name ?? null, url: url ?? null }),
   removeService: (id: string) => invoke<Snapshot>("remove_service", { id }),
-  customizeService: (id: string, name: string, color: string | null, emoji: string | null) =>
-    invoke<Snapshot>("customize_service", { id, name, color, emoji }),
+  customizeService: (
+    id: string,
+    name: string,
+    color: string | null,
+    emoji: string | null,
+    context: ServiceContext | null,
+  ) => invoke<Snapshot>("customize_service", { id, name, color, emoji, context }),
   moveService: (id: string, to: number) => invoke<Snapshot>("move_service", { id, to }),
   setHibernation: (id: string, minutes: number) =>
     invoke<Snapshot>("set_hibernation", { id, minutes }),
@@ -293,6 +333,10 @@ export const api = {
   /** `null` desliga; 0 = até reativar; n = por n minutos. */
   setDnd: (minutes: number | null) => invoke<Snapshot>("set_dnd", { minutes }),
   setQuietHours: (quietHours: QuietHours) => invoke<Snapshot>("set_quiet_hours", { quietHours }),
+  /** Troca rápida; no automático, vale até o expediente mudar. */
+  setMode: (mode: Mode) => invoke<Snapshot>("set_mode", { mode }),
+  setModeSchedule: (mode: ModeChoice, workHours: WorkHours) =>
+    invoke<Snapshot>("set_mode_schedule", { mode, workHours }),
   setPreferences: (
     prefs: Partial<
       Pick<
@@ -305,6 +349,8 @@ export const api = {
         | "reloadAboveMb"
         | "openLinks"
         | "attachments"
+        | "sleepOutsideMode"
+        | "accountFrame"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
@@ -348,6 +394,9 @@ export const api = {
   /** Adia o aviso para `until` (segundos Unix). */
   snoozeTask: (id: string, until: number) => invoke<Organizer>("snooze_task", { id, until }),
   deleteTask: (id: string) => invoke<Organizer>("delete_task", { id }),
+  /** "Responder depois": lembrete ligado à conversa para `at` (segundos Unix). */
+  replyLater: (serviceId: string, chat: string, at: number) =>
+    invoke<Organizer>("reply_later", { serviceId, chat, at }),
   /** Mini janela: abre o app na conversa da tarefa (ou em Tarefas). */
   showTask: (id: string) => invoke<void>("show_task", { id }),
   /** Anotação de uma conversa (`link`) ou de um contato existente. */
@@ -527,6 +576,35 @@ export const MEDIA_OPTIONS: { value: MediaPolicy; label: string }[] = [
   { value: "ask", label: "Perguntar" },
   { value: "block", label: "Bloquear" },
 ];
+
+export const MODE_LABEL: Record<Mode, string> = {
+  all: "Todas",
+  work: "Trabalho",
+  personal: "Pessoal",
+};
+
+export const CONTEXT_OPTIONS: { value: ServiceContext | null; label: string }[] = [
+  { value: "work", label: "Trabalho" },
+  { value: "personal", label: "Pessoal" },
+  { value: null, label: "Os dois" },
+];
+
+export const MODE_CHOICE_OPTIONS: { value: ModeChoice; label: string }[] = [
+  { value: "all", label: "Todas as contas" },
+  { value: "work", label: "Só trabalho" },
+  { value: "personal", label: "Só pessoal" },
+  { value: "auto", label: "Pelo expediente" },
+];
+
+/** Separa trabalho e pessoal: alguma conta marcada ou modo escolhido. */
+export function usesModes(snap: Pick<Snapshot, "services" | "settings">): boolean {
+  return snap.settings.mode !== "all" || snap.services.some((s) => s.context);
+}
+
+/** Troca rápida: trabalho ↔ pessoal (de "todas", vai para trabalho). */
+export function nextMode(mode: Mode): Mode {
+  return mode === "work" ? "personal" : "work";
+}
 
 export const THEME_OPTIONS: { value: Appearance; label: string }[] = [
   { value: "system", label: "Sistema" },

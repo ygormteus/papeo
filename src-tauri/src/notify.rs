@@ -47,18 +47,30 @@ pub async fn service_notify(
         if !papeo_core::same_site(&service.url, &page) {
             return Ok(());
         }
-        if !papeo_core::should_notify(&inner.config.settings, service, now_unix, minute) {
+        // Fora do modo, a conversa ainda entra nas recentes (o estado a
+        // esconde até o modo voltar); só não notifica.
+        let mode = inner.current_mode();
+        let in_mode = mode.allows(service.context);
+        if !papeo_core::should_notify(
+            &inner.config.settings,
+            service,
+            now_unix,
+            minute,
+            papeo_core::Mode::All,
+        ) {
             return Ok(());
         }
         let name = service.name.clone();
         let chat = papeo_core::clip(&title, 80);
         // Clique abre a conversa; "Responder" só com o nome dela à mostra
         // e num mensageiro conhecido.
+        let shows_chat = !inner.locked
+            && inner.config.settings.notification_preview != NotificationPreview::Hidden;
         let target = crate::notifications::Target {
             service_id: id.clone(),
-            reply: service.kind.supports_chat()
-                && !inner.locked
-                && inner.config.settings.notification_preview != NotificationPreview::Hidden,
+            reply: service.kind.supports_chat() && shows_chat,
+            // "Lembrar em 1 h": conversa de mensageiro ou assunto de e-mail.
+            later: (service.kind.supports_chat() || service.kind.is_email()) && shows_chat,
             chat: (!chat.is_empty()).then(|| chat.clone()),
             task: None,
             remind_at: None,
@@ -89,6 +101,11 @@ pub async fn service_notify(
             .get(&id)
             .is_some_and(|t| now.duration_since(*t) < NOTIFY_MIN_GAP)
         {
+            drop(inner);
+            publish(&app);
+            return Ok(());
+        }
+        if !in_mode {
             drop(inner);
             publish(&app);
             return Ok(());

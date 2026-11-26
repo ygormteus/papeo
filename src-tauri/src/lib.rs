@@ -142,6 +142,7 @@ fn spawn_maintenance(app: AppHandle) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
         let mut last_status = HashMap::new();
+        let mut last_mode = None;
         let mut tick: u64 = 0;
         let mut wall = std::time::SystemTime::now();
         let mut resume_pending = false;
@@ -161,19 +162,32 @@ fn spawn_maintenance(app: AppHandle) {
             }
             wall = now;
             let state = app.state::<AppState>();
-            let (due, status) = {
-                let inner = state.lock();
+            let (due, status, mode) = {
+                let mut inner = state.lock();
+                // A troca manual do automático acaba quando o expediente
+                // começa ou termina.
+                if inner
+                    .mode_override
+                    .is_some_and(|o| !o.holds(state::now_secs()))
+                {
+                    inner.mode_override = None;
+                }
+                let mode = inner.current_mode();
+                let sleep_outside = inner.config.settings.sleep_outside_mode;
                 let due: Vec<String> = inner
                     .config
                     .services
                     .iter()
-                    .filter(|s| s.hibernate_after_minutes > 0)
                     .filter(|s| inner.active.as_deref() != Some(s.id.as_str()))
                     .filter(|s| {
-                        inner.last_used.get(&s.id).is_some_and(|t| {
-                            t.elapsed()
-                                >= Duration::from_secs(u64::from(s.hibernate_after_minutes) * 60)
-                        })
+                        (sleep_outside && !mode.allows(s.context))
+                            || (s.hibernate_after_minutes > 0
+                                && inner.last_used.get(&s.id).is_some_and(|t| {
+                                    t.elapsed()
+                                        >= Duration::from_secs(
+                                            u64::from(s.hibernate_after_minutes) * 60,
+                                        )
+                                }))
                     })
                     .filter(|s| app.get_webview(&s.id).is_some())
                     .map(|s| s.id.clone())
@@ -187,13 +201,14 @@ fn spawn_maintenance(app: AppHandle) {
                         (s.id.clone(), status_of(&inner, &s.id, loaded))
                     })
                     .collect();
-                (due, status)
+                (due, status, mode)
             };
             for id in &due {
                 webviews::hibernate(&app, id);
             }
-            if !due.is_empty() || status != last_status {
+            if !due.is_empty() || status != last_status || Some(mode) != last_mode {
                 last_status = status;
+                last_mode = Some(mode);
                 publish(&app);
             }
             // Fora do lock: `is_visible` espera a thread principal.
@@ -394,6 +409,8 @@ pub fn run() {
             commands::set_overlay,
             commands::set_dnd,
             commands::set_quiet_hours,
+            commands::set_mode,
+            commands::set_mode_schedule,
             commands::set_preferences,
             commands::set_quick_replies,
             commands::set_autostart,
@@ -420,6 +437,7 @@ pub fn run() {
             organizer::set_task_done,
             organizer::snooze_task,
             organizer::delete_task,
+            organizer::reply_later,
             organizer::save_note,
             organizer::show_task,
             sync::sync_status,

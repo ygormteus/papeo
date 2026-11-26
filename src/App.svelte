@@ -40,6 +40,9 @@
     isMuted,
     mediaPolicy,
     needsUrl,
+    nextMode,
+    serviceColor,
+    usesModes,
     onCommand,
     onDownload,
     onOrganizer,
@@ -49,6 +52,7 @@
     type Organizer,
     type TaskFields,
     type MenuItem,
+    type Mode,
     type ServiceKind,
     type ServiceView,
     type Snapshot,
@@ -127,6 +131,16 @@
   let content = $state<HTMLElement>();
 
   const active = $derived(snap.services.find((s) => s.id === snap.active) ?? null);
+  // Outra conta do mesmo serviço: o risco de responder pela conta errada.
+  const twin = $derived(
+    !!active && snap.services.some((s) => s.id !== active.id && s.kind === active.kind),
+  );
+  // Moldura na cor da conta em volta do site aberto.
+  const frame = $derived(
+    active && snap.settings.accountFrame && (active.color || active.context || twin)
+      ? serviceColor(active)
+      : null,
+  );
   // Aviso único de que a verificação de atualizações consulta o GitHub;
   // até a resposta, nada é consultado automaticamente.
   const updateNotice = $derived(ready && !snap.locked && !snap.settings.updates.noticeSeen);
@@ -191,6 +205,18 @@
       showError(err);
     }
   }
+
+  function changeMode(mode: Mode) {
+    run(api.setMode(mode));
+  }
+
+  // Ao mudar de modo, a conta aberta que ficou de fora fecha (volta ao Início).
+  let lastMode: Mode | null = null;
+  $effect(() => {
+    const mode = snap.mode;
+    if (lastMode !== null && mode !== lastMode && active && !active.inMode) select(null);
+    lastMode = mode;
+  });
 
   const select = (id: string | null) => {
     paletteOpen = false;
@@ -257,6 +283,9 @@
     }
   }
 
+  const replyLater = (serviceId: string, chat: string, at: number) =>
+    orgRun(api.replyLater(serviceId, chat, at));
+
   const saveNote = (link: ChatLink, note: string) => orgRun(api.saveNote({ link }, note));
 
   const todayTasks = $derived(
@@ -280,8 +309,14 @@
     areaFrame = requestAnimationFrame(() => {
       areaFrame = 0;
       if (!content) return;
+      // Sem a borda (moldura da conta): a webview fica por dentro dela.
       const r = content.getBoundingClientRect();
-      const area = { x: r.left, y: r.top, width: r.width, height: r.height };
+      const area = {
+        x: r.left + content.clientLeft,
+        y: r.top + content.clientTop,
+        width: content.clientWidth,
+        height: content.clientHeight,
+      };
       const key = JSON.stringify(area);
       if (key === lastArea) return;
       lastArea = key;
@@ -312,6 +347,10 @@
 
   function menuItems(service: ServiceView): MenuItem[] {
     const index = snap.services.findIndex((s) => s.id === service.id);
+    // Vizinhos visíveis na barra (contas fora do modo ficam ocultas).
+    const shown = (s: ServiceView) => s.inMode || s.id === snap.active;
+    const above = snap.services.map((s, i) => (i < index && shown(s) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+    const below = snap.services.findIndex((s, i) => i > index && shown(s));
     const items: MenuItem[] = [
       { label: "Recarregar", icon: RotateCw, run: () => run(api.reload(service.id)) },
       { label: "Hibernar agora", icon: Snowflake, run: () => run(api.hibernate(service.id)) },
@@ -333,14 +372,14 @@
         },
       );
     }
-    if (index > 0) {
-      items.push({ label: "Mover para cima", icon: ArrowUp, run: () => run(api.moveService(service.id, index - 1)) });
+    if (above >= 0) {
+      items.push({ label: "Mover para cima", icon: ArrowUp, run: () => run(api.moveService(service.id, above)) });
     }
-    if (index < snap.services.length - 1) {
+    if (below >= 0) {
       items.push({
         label: "Mover para baixo",
         icon: ArrowDown,
-        run: () => run(api.moveService(service.id, index + 1)),
+        run: () => run(api.moveService(service.id, below)),
       });
     }
     items.push(
@@ -401,11 +440,16 @@
     } else if (key === "l" && snap.settings.lock.enabled) {
       e.preventDefault();
       lockApp();
+    } else if (e.shiftKey && key === "m" && usesModes(snap)) {
+      e.preventDefault();
+      changeMode(nextMode(snap.mode));
     } else if (/^[0-9]$/.test(key)) {
       e.preventDefault();
       const n = Number(key);
+      // Mesma numeração da barra lateral: só as contas do modo atual.
+      const inMode = snap.services.filter((s) => s.inMode);
       if (n === 0) select(null);
-      else if (snap.services[n - 1]) select(snap.services[n - 1].id);
+      else if (inMode[n - 1]) select(inMode[n - 1].id);
     }
   }
 
@@ -488,6 +532,8 @@
     onupdate={() => run(api.installUpdate())}
     onnotes={() => showNotes("available")}
     ontasks={openTasks}
+    onmode={changeMode}
+    onautomode={() => run(api.setModeSchedule(snap.settings.mode, snap.settings.workHours))}
   />
 
   <main class="main">
@@ -505,12 +551,19 @@
       {panelOpen}
       onpanel={togglePanel}
       extra={!active && page === "home" && snap.services.length ? homeStats : undefined}
+      {twin}
     />
     {#snippet homeStats()}
       <HomeStats {snap} {run} onadd={openAdd} onopen={select} />
     {/snippet}
     <div class="body">
-    <section class="content" bind:this={content} aria-live="polite">
+    <section
+      class="content"
+      class:framed={!!frame}
+      style:--frame={frame}
+      bind:this={content}
+      aria-live="polite"
+    >
       {#if active}
         <div class="placeholder">
           {#if menuCovers && !modalOpen}
@@ -542,6 +595,7 @@
           today={todayTasks.length ? todayCard : undefined}
           oncreatetask={createTask}
           clock={now}
+          onlater={replyLater}
         />
       {/if}
     </section>
@@ -662,9 +716,9 @@
   <CustomizeDialog
     service={target}
     onclose={() => (customizing = null)}
-    onsubmit={async (name, color, emoji, media) => {
+    onsubmit={async (name, color, emoji, media, context) => {
       // Erros sobem para o diálogo, que os mostra no formulário.
-      snap = await api.customizeService(target.id, name, color, emoji);
+      snap = await api.customizeService(target.id, name, color, emoji, context);
       if (media !== mediaPolicy(target)) snap = await api.setMediaPolicy(target.id, media);
       customizing = null;
     }}
@@ -748,6 +802,11 @@
     min-width: 0;
     min-height: 0;
     position: relative;
+  }
+
+  .content.framed {
+    border: 3px solid var(--frame);
+    border-top-width: 2px;
   }
 
   .today {

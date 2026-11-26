@@ -146,6 +146,7 @@ Para economizar:
 | Configurações | `⌘ ,` | `Ctrl ,` |
 | Bloquear agora | `⌘ L` | `Ctrl L` |
 | Tarefas e anotações da conversa | `⌘ ⇧ N` | `Ctrl Shift N` |
+| Alternar trabalho e pessoal | `⌘ ⇧ M` | `Ctrl Shift M` |
 | Aumentar / diminuir o zoom | `⌘ +` / `⌘ −` | `Ctrl +` / `Ctrl −` |
 
 ## Perguntas frequentes

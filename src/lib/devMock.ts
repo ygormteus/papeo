@@ -7,6 +7,7 @@ import {
   EMPTY_SNAPSHOT,
   type Contact,
   type DownloadEntry,
+  type Mode,
   type Organizer,
   type ServiceView,
   type Settings,
@@ -50,6 +51,13 @@ export function installDevMock() {
     Object.assign(services[0], { emoji: "🏠", color: "#16a34a", idleMinutes: 24 });
     Object.assign(services[3], { chat: "Proposta de orçamento — novembro", idleMinutes: 5 });
     Object.assign(services[1], { emoji: "💼", color: "#2563eb", idleMinutes: 3 });
+    // `?modos`: contas marcadas como trabalho/pessoal.
+    if (new URLSearchParams(location.search).has("modos")) {
+      services[0].context = "personal";
+      services[1].context = "work";
+      services[3].context = "work";
+      services[4].context = "work";
+    }
     settings.updates.noticeSeen = true;
     // `?alertas`: uma conta fora do ar e outra travada.
     if (new URLSearchParams(location.search).has("alertas")) {
@@ -181,22 +189,53 @@ export function installDevMock() {
   };
 
   const now = () => Date.now() / 1000;
-  const snap = (): Snapshot => ({
-    tasks: locked ? { overdue: 0, today: 0 } : counts(),
-    services: structuredClone(services),
-    active,
-    totalUnread: services.reduce((n, s) => n + s.unread, 0),
-    settings: structuredClone(settings),
-    dndActive: (settings.dndUntil ?? 0) > now(),
-    autostart,
-    downloads: structuredClone(downloads),
-    downloadsDir: settings.downloadsDir ?? "/Users/voce/Downloads",
-    locked,
-    lockAvailable: true,
-    update: structuredClone(update),
-    appVersion,
-    recent: locked || settings.notificationPreview === "hidden" ? [] : structuredClone(recent),
-  });
+  // Modos (mesmas regras de `papeo_core::Settings::current_mode`).
+  let manual: { mode: Mode; scheduled: Mode } | null = null;
+  const scheduledMode = (): Mode => {
+    if (settings.mode !== "auto") return settings.mode;
+    const { days, start, end } = settings.workHours;
+    const d = new Date();
+    const minute = d.getHours() * 60 + d.getMinutes();
+    const day = d.getDay();
+    const work =
+      start === end
+        ? false
+        : start < end
+          ? days.includes(day) && minute >= start && minute < end
+          : (days.includes(day) && minute >= start) || (days.includes((day + 6) % 7) && minute < end);
+    return work ? "work" : "personal";
+  };
+  const currentMode = (): Mode => {
+    const scheduled = scheduledMode();
+    return settings.mode === "auto" && manual?.scheduled === scheduled ? manual.mode : scheduled;
+  };
+  const inMode = (s: ServiceView, mode: Mode) => mode === "all" || !s.context || s.context === mode;
+  const snap = (): Snapshot => {
+    const mode = currentMode();
+    const list = structuredClone(services).map((s) => ({ ...s, inMode: inMode(s, mode) }));
+    const hidden = new Set(list.filter((s) => !s.inMode).map((s) => s.id));
+    return {
+      mode,
+      modeManual: settings.mode === "auto" && manual?.scheduled === scheduledMode(),
+      tasks: locked ? { overdue: 0, today: 0 } : counts(),
+      services: list,
+      active,
+      totalUnread: list.filter((s) => s.inMode).reduce((n, s) => n + s.unread, 0),
+      settings: structuredClone(settings),
+      dndActive: (settings.dndUntil ?? 0) > now(),
+      autostart,
+      downloads: structuredClone(downloads),
+      downloadsDir: settings.downloadsDir ?? "/Users/voce/Downloads",
+      locked,
+      lockAvailable: true,
+      update: structuredClone(update),
+      appVersion,
+      recent:
+        locked || settings.notificationPreview === "hidden"
+          ? []
+          : structuredClone(recent).filter((c) => !hidden.has(c.serviceId)),
+    };
+  };
 
   mockIPC((cmd, payload) => {
     const args = (payload ?? {}) as Record<string, unknown>;
@@ -268,6 +307,7 @@ export function installDevMock() {
         s.name = String(args.name);
         s.color = (args.color as string | null) || undefined;
         s.emoji = (args.emoji as string | null) || undefined;
+        s.context = (args.context as ServiceView["context"] | null) ?? undefined;
         return snap();
       }
       case "move_service": {
@@ -307,6 +347,22 @@ export function installDevMock() {
         settings.dndUntil = m === null ? null : m === 0 ? Number.MAX_SAFE_INTEGER : now() + m * 60;
         return snap();
       }
+      case "set_mode": {
+        const mode = args.mode as Mode;
+        if (settings.mode === "auto") {
+          const scheduled = scheduledMode();
+          manual = mode === scheduled ? null : { mode, scheduled };
+        } else {
+          settings.mode = mode;
+          manual = null;
+        }
+        return snap();
+      }
+      case "set_mode_schedule":
+        settings.mode = args.mode as Settings["mode"];
+        settings.workHours = args.workHours as Settings["workHours"];
+        manual = null;
+        return snap();
       case "set_quiet_hours":
         settings.quietHours = args.quietHours as Settings["quietHours"];
         return snap();
@@ -457,6 +513,18 @@ export function installDevMock() {
         if (c) active = c.serviceId;
         return null;
       }
+      case "reply_later": {
+        const serviceId = String(args.serviceId);
+        const title = String(args.chat);
+        const c = recent.find((x) => x.serviceId === serviceId && x.chat === title);
+        const last = c && [...c.messages].reverse().find((m) => !m.mine);
+        addTask({
+          text: last ? `Responder: ${last.body}` : `Responder ${title}`,
+          remindAt: Number(args.at),
+          contact: contactFor(serviceId, title),
+        });
+        return visible();
+      }
       case "delete_task":
         org.tasks.splice(org.tasks.indexOf(taskById(args.id)), 1);
         return visible();
@@ -494,5 +562,6 @@ function mk(
     unread,
     status: loaded ? "ok" : "sleeping",
     idleMinutes: null,
+    inMode: true,
   };
 }

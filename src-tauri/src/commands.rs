@@ -90,6 +90,8 @@ pub async fn customize_service(
     name: String,
     color: Option<String>,
     emoji: Option<String>,
+    // Trabalho/pessoal; sem valor, a conta aparece em todos os modos.
+    context: Option<papeo_core::ServiceContext>,
 ) -> CmdResult {
     ensure_unlocked(&app)?;
     let name = papeo_core::normalize_name(&name)?;
@@ -100,6 +102,7 @@ pub async fn customize_service(
         service.name = name;
         service.color = color;
         service.emoji = emoji;
+        service.context = context;
         Ok(())
     })?;
     Ok(publish(&app))
@@ -349,6 +352,38 @@ pub async fn set_quiet_hours(
     Ok(publish(&app))
 }
 
+/// Troca rápida de modo (barra lateral, atalho, bandeja).
+#[tauri::command]
+pub async fn set_mode(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mode: papeo_core::Mode,
+) -> CmdResult {
+    state.update(|inner| {
+        crate::state::choose_mode(inner, mode);
+        Ok(())
+    })?;
+    Ok(publish(&app))
+}
+
+/// Escolha do modo e expediente (Configurações); desfaz a troca manual.
+#[tauri::command]
+pub async fn set_mode_schedule(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mode: papeo_core::ModeChoice,
+    work_hours: papeo_core::WorkHours,
+) -> CmdResult {
+    ensure_unlocked(&app)?;
+    state.update(|inner| {
+        inner.config.settings.mode = mode;
+        inner.config.settings.work_hours = work_hours.sanitized();
+        inner.mode_override = None;
+        Ok(())
+    })?;
+    Ok(publish(&app))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preferences {
@@ -360,6 +395,8 @@ pub struct Preferences {
     reload_above_mb: Option<u32>,
     open_links: Option<papeo_core::LinkTarget>,
     attachments: Option<papeo_core::AttachmentMode>,
+    sleep_outside_mode: Option<bool>,
+    account_frame: Option<bool>,
 }
 
 #[tauri::command]
@@ -391,6 +428,12 @@ pub async fn set_preferences(
         }
         if let Some(v) = prefs.attachments {
             s.attachments = v;
+        }
+        if let Some(v) = prefs.sleep_outside_mode {
+            s.sleep_outside_mode = v;
+        }
+        if let Some(v) = prefs.account_frame {
+            s.account_frame = v;
         }
         if let Some(v) = prefs.reload_above_mb {
             s.reload_above_mb = v;
