@@ -98,7 +98,9 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  /* Fundo de todas as janelas: o tom da barra lateral, para os cartões
+     (`--bg`) se destacarem. */
+  background: var(--bg-sidebar);
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;

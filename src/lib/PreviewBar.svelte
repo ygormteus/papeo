@@ -97,14 +97,6 @@
 </header>
 
 <style>
-  :global(html),
-  :global(body) {
-    margin: 0;
-    height: 100%;
-    overflow: hidden;
-    background: var(--bg-sidebar);
-  }
-
   .bar {
     display: flex;
     align-items: center;

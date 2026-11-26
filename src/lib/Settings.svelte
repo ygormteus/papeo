@@ -818,8 +818,7 @@
     top: 0;
     z-index: 1;
     padding: 30px 0 0;
-    /* Mesmo fundo da janela principal (hoje `--bg-sidebar`, vindo do CSS global
-       de PreviewBar/AttachmentBar). */
+    /* Mesmo fundo da janela (`app.css`). */
     background: var(--bg-sidebar);
     border-bottom: 1px solid var(--border);
   }
