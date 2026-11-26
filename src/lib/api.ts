@@ -4,6 +4,7 @@ import type { Component } from "svelte";
 
 export type ServiceKind = "whatsapp" | "telegram" | "discord" | "gmail" | "email" | "custom";
 export type MediaPolicy = "ask" | "allow" | "block";
+export type LockMethod = "none" | "system" | "pin";
 export type Appearance = "system" | "light" | "dark" | "oled";
 /** Conteúdo nas notificações: completo · só remetente · oculto. */
 export type NotificationPreview = "full" | "sender" | "hidden";
@@ -198,8 +199,12 @@ export interface Snapshot {
   downloadsDir: string;
   /** Bloqueado: só a tela de desbloqueio aparece. */
   locked: boolean;
-  /** Touch ID/senha do Mac ou Windows Hello disponíveis. */
+  /** Há como desbloquear: PIN do Papeo ou autenticação do sistema. */
   lockAvailable: boolean;
+  /** Como o bloqueio confirma a identidade (o PIN do Papeo tem prioridade). */
+  lockMethod: LockMethod;
+  /** Touch ID/senha do Mac ou Windows Hello disponíveis. */
+  systemAuth: boolean;
   update: UpdateStatus;
   appVersion: string;
   /** Conversas com mensagens recentes, mais nova primeiro. Só na memória;
@@ -287,6 +292,8 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   downloadsDir: "",
   locked: false,
   lockAvailable: false,
+  lockMethod: "none",
+  systemAuth: false,
   update: { state: "idle" },
   appVersion: "",
   recent: [],
@@ -378,7 +385,14 @@ export const api = {
   setLock: (enabled: boolean, afterMinutes: number) =>
     invoke<Snapshot>("set_lock", { enabled, afterMinutes }),
   lockNow: () => invoke<Snapshot>("lock_now"),
-  unlock: () => invoke<Snapshot>("unlock"),
+  unlock: (pin?: string) => invoke<Snapshot>("unlock", { pin: pin ?? null }),
+  /** Cria/troca (`pin`) ou remove (`pin` nulo) o PIN do Papeo; `current` = PIN atual. */
+  setLockPin: (current: string | null, pin: string | null) =>
+    invoke<Snapshot>("set_lock_pin", { current, pin }),
+  /** "Esqueci o PIN": sai de todas as contas, apaga tarefas e desbloqueia. */
+  forgetLockPin: () => invoke<Snapshot>("forget_lock_pin"),
+  /** Windows: abre as opções de entrada (PIN do Windows Hello). */
+  openSigninSettings: () => invoke<void>("open_signin_settings"),
   setAppearance: (appearance: Appearance) => invoke<Snapshot>("set_appearance", { appearance }),
   checkUpdate: () => invoke<Snapshot>("check_update"),
   /** Baixa, instala e reinicia o app. */
@@ -525,6 +539,9 @@ export function updateLabel(update: UpdateStatus): string {
 }
 
 export const isMac = navigator.userAgent.includes("Mac");
+export const isWindows = navigator.userAgent.includes("Windows");
+export const PIN_MIN = 4;
+export const PIN_MAX = 64;
 export const modKey = isMac ? "⌘" : "Ctrl";
 
 // "Com redução do macOS" só existe no Mac (no Windows, a redução do sistema

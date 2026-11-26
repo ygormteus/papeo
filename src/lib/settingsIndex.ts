@@ -41,7 +41,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "notificação abrir conta clicar",
   },
   { tab: "privacidade", label: "Prévia nas notificações", keywords: "conteúdo mensagem tela bloqueada remetente oculta" },
-  { tab: "privacidade", label: "Bloquear o Papeo", keywords: "senha touch id cadeado trava segurança" },
+  { tab: "privacidade", label: "Bloquear o Papeo", keywords: "senha pin touch id windows hello cadeado trava segurança" },
   {
     tab: "privacidade",
     label: "Esconder em capturas e compartilhamento de tela",

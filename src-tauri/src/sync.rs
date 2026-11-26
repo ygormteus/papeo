@@ -768,13 +768,22 @@ pub async fn sync_reset(app: AppHandle, passphrase: String) -> Result<SyncStatus
 #[tauri::command]
 pub async fn sync_disconnect(app: AppHandle, forget: bool) -> Result<SyncStatus, String> {
     ensure_unlocked(&app)?;
-    let rt = rt(&app);
+    disconnect(&app, forget).await?;
+    Ok(status(&app))
+}
+
+/// Desliga a sincronização deste computador (também usado por "Esqueci o
+/// PIN", com o app bloqueado).
+pub async fn disconnect(app: &AppHandle, forget: bool) -> Result<(), String> {
+    let Some(rt) = app.try_state::<SyncRuntime>() else {
+        return Ok(());
+    };
     let _gate = rt.gate.lock().await;
     forget_downloads(&rt);
     if forget {
         let own = lock(&rt.stored).own_file_id.clone();
         if let Some(id) = own {
-            let _ = with_token!(&app, |t| drive::delete(&t, &id));
+            let _ = with_token!(app, |t| drive::delete(&t, &id));
         }
     }
     let refresh = {
@@ -792,7 +801,7 @@ pub async fn sync_disconnect(app: AppHandle, forget: bool) -> Result<SyncStatus,
     *lock(&rt.needs) = None;
     *lock(&rt.error) = None;
     *lock(&rt.devices) = 0;
-    save(&app)?;
-    emit(&app);
-    Ok(status(&app))
+    save(app)?;
+    emit(app);
+    Ok(())
 }

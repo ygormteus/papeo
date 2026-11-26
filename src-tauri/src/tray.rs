@@ -424,6 +424,12 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         }
         WindowEvent::Focused(focused) if window.label() == MAIN_WINDOW => {
             crate::notify::on_window_focus(window.app_handle(), *focused);
+            // Voltando das configurações do Windows com o PIN do Hello criado:
+            // reavalia (só quando ainda não havia autenticação do sistema).
+            let app = window.app_handle();
+            if *focused && cfg!(windows) && !app.state::<AppState>().lock().system_auth {
+                crate::lock::check_availability(app);
+            }
         }
         // Lendo na prévia de links também é usar o Papeo: o bloqueio
         // automático não conta esse tempo.

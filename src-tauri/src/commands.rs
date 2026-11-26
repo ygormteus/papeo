@@ -1,7 +1,7 @@
 //! Comandos chamados pela interface (webview `ui`). Os sites dos serviços não
 //! alcançam nenhum deles (ver `capabilities/`).
 
-use crate::state::{now_secs, publish, snapshot, AppState, Area, Snapshot};
+use crate::state::{now_secs, publish, snapshot, AppState, Area, LockMethod, Snapshot};
 use crate::webviews::{activate, apply_layout, close_all, hibernate};
 use papeo_core::{
     AppLock, MediaPolicy, NotificationPreview, QuietHours, Service, ServiceKind, DND_FOREVER,
@@ -621,9 +621,22 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         let pending = std::mem::take(&mut inner.config.pending_removal);
         // O aviso e a escolha sobre atualizações valem para este computador.
         let updates = inner.config.settings.updates;
+        // O bloqueio também: o backup nunca traz o PIN, e restaurar não
+        // pode desligar a proteção deste computador.
+        let lock = inner.config.settings.lock;
+        let lock_pin = inner.config.lock_pin.take();
         inner.config = config;
+        // Sessão na fila de remoção (ex.: saída por "Esqueci o PIN") não
+        // volta a ser usada: a conta recebe uma sessão nova.
+        for service in &mut inner.config.services {
+            if pending.contains(&service.session) {
+                service.session = papeo_core::new_session();
+            }
+        }
         inner.config.pending_removal = pending;
         inner.config.settings.updates = updates;
+        inner.config.settings.lock = lock;
+        inner.config.lock_pin = lock_pin;
         inner.last_used.clear();
         inner.unread.clear();
         inner.page_unread.clear();
@@ -677,8 +690,9 @@ pub async fn clean_orphan_sessions(app: AppHandle) -> CmdResult<usize> {
     Ok(count)
 }
 
-/// Liga/desliga o bloqueio. Ligar exige autenticar antes, para provar que
-/// esta pessoa consegue desbloquear depois.
+/// Liga/desliga o bloqueio. Ligar com a autenticação do sistema exige
+/// autenticar antes, para provar que esta pessoa consegue desbloquear
+/// depois (o PIN do Papeo já foi digitado duas vezes ao ser criado).
 #[tauri::command]
 pub async fn set_lock(
     app: AppHandle,
@@ -686,25 +700,25 @@ pub async fn set_lock(
     enabled: bool,
     after_minutes: u32,
 ) -> CmdResult {
-    let (was_enabled, locked, available) = {
+    let (was_enabled, locked, method) = {
         let inner = state.lock();
         (
             inner.config.settings.lock.enabled,
             inner.locked,
-            inner.lock_available,
+            inner.lock_method(),
         )
     };
     if locked {
         return Err("Desbloqueie o Papeo primeiro.".into());
     }
     if enabled && !was_enabled {
-        if !available {
-            return Err(
-                "Este computador não tem Touch ID, senha do sistema ou Windows Hello configurados."
-                    .into(),
-            );
+        match method {
+            LockMethod::None => return Err(crate::lock::NO_METHOD.into()),
+            LockMethod::System => {
+                crate::lock::confirm_identity(&app, "ativar o bloqueio do Papeo").await?
+            }
+            LockMethod::Pin => {}
         }
-        crate::lock::confirm_identity(&app, "ativar o bloqueio do Papeo").await?;
     }
     state.update(|inner| {
         inner.config.settings.lock = AppLock {
@@ -722,12 +736,76 @@ pub async fn lock_now(app: AppHandle) -> CmdResult {
     Ok(snapshot(&app))
 }
 
+/// Cria, troca (`current` = PIN atual) ou remove (`pin` = None) o PIN do
+/// Papeo. Criar liga o bloqueio; remover sem autenticação do sistema o
+/// desliga.
 #[tauri::command]
-pub async fn unlock(app: AppHandle, state: State<'_, AppState>) -> CmdResult {
+pub async fn set_lock_pin(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    current: Option<String>,
+    pin: Option<String>,
+) -> CmdResult {
+    ensure_unlocked(&app)?;
+    if let Some(pin) = &pin {
+        papeo_core::check_pin(pin)?;
+    }
+    let method = state.lock().lock_method();
+    match method {
+        LockMethod::Pin => crate::lock::verify_pin(&app, current).await?,
+        LockMethod::System if pin.is_some() => {
+            crate::lock::confirm_identity(&app, "criar um PIN do Papeo").await?
+        }
+        LockMethod::System | LockMethod::None => {}
+    }
+    let new_pin = match pin {
+        Some(pin) => Some(
+            tauri::async_runtime::spawn_blocking(move || papeo_core::LockPin::new(&pin))
+                .await
+                .map_err(|e| e.to_string())??,
+        ),
+        None => None,
+    };
+    state.update(|inner| {
+        let creating = inner.config.lock_pin.is_none() && new_pin.is_some();
+        inner.config.lock_pin = new_pin;
+        inner.pin_retry_at = None;
+        if creating {
+            inner.config.settings.lock.enabled = true;
+        } else if inner.lock_method() == LockMethod::None {
+            inner.config.settings.lock.enabled = false;
+        }
+        Ok(())
+    })?;
+    Ok(publish(&app))
+}
+
+/// "Esqueci o PIN" na tela de bloqueio: sai de todas as contas e apaga as
+/// tarefas deste computador antes de desbloquear (ver `lock::forget_pin`).
+#[tauri::command]
+pub async fn forget_lock_pin(app: AppHandle) -> CmdResult {
+    crate::lock::forget_pin(&app).await?;
+    activate(&app, None)
+}
+
+/// Abre as opções de entrada do Windows (para configurar o PIN do Windows
+/// Hello, que serve ao bloqueio mesmo sem câmera ou leitor de digital).
+#[tauri::command]
+pub async fn open_signin_settings(app: AppHandle) -> CmdResult<()> {
+    if !cfg!(windows) {
+        return Err("Disponível só no Windows.".into());
+    }
+    app.opener()
+        .open_url("ms-settings:signinoptions", None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unlock(app: AppHandle, state: State<'_, AppState>, pin: Option<String>) -> CmdResult {
     if !state.lock().locked {
         return Ok(snapshot(&app));
     }
-    crate::lock::confirm_identity(&app, "desbloquear o Papeo").await?;
+    crate::lock::confirm(&app, "desbloquear o Papeo", pin).await?;
     {
         let mut inner = state.lock();
         inner.locked = false;

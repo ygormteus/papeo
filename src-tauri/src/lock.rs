@@ -1,10 +1,12 @@
 //! Bloqueio do app com a autenticação do sistema: Touch ID ou senha do Mac,
-//! Windows Hello (rosto, digital ou PIN). Enquanto bloqueado, nenhuma
-//! webview de serviço aparece e as notificações não mostram conteúdo.
-//! As funções aqui bloqueiam a thread: chame via `spawn_blocking`.
+//! Windows Hello (rosto, digital ou PIN). Sem ela (ou por escolha), um PIN
+//! do próprio Papeo. Enquanto bloqueado, nenhuma webview de serviço aparece
+//! e as notificações não mostram conteúdo.
+//! `available`/`authenticate` bloqueiam a thread: chame via `spawn_blocking`.
 
-use std::time::Duration;
-use tauri::AppHandle;
+use crate::state::{AppState, LockMethod};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Manager};
 
 /// Tempo máximo esperando a pessoa responder ao pedido do sistema.
 #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
@@ -123,12 +125,11 @@ pub fn authenticate(app: &AppHandle, reason: &str) -> Result<bool, String> {
 
 /// Bloqueia agora (se o bloqueio estiver ligado e disponível).
 pub fn lock_app(app: &AppHandle) {
-    use tauri::Manager;
-    let state = app.state::<crate::state::AppState>();
+    let state = app.state::<AppState>();
     {
         let mut inner = state.lock();
         let settings = &inner.config.settings;
-        if !settings.lock.enabled || !inner.lock_available || inner.locked {
+        if !settings.lock.enabled || inner.lock_method() == LockMethod::None || inner.locked {
             return;
         }
         inner.locked = true;
@@ -141,7 +142,7 @@ pub fn lock_app(app: &AppHandle) {
 }
 
 /// Confere, fora da thread principal, se o sistema tem autenticação. Sem
-/// ela, o app não fica preso na tela de bloqueio.
+/// ela (e sem PIN do Papeo), o app não fica preso na tela de bloqueio.
 pub fn check_availability(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -149,11 +150,10 @@ pub fn check_availability(app: &AppHandle) {
             .await
             .unwrap_or(false);
         {
-            use tauri::Manager;
-            let state = app.state::<crate::state::AppState>();
+            let state = app.state::<AppState>();
             let mut inner = state.lock();
-            inner.lock_available = ok;
-            if !ok {
+            inner.system_auth = ok;
+            if inner.lock_method() == LockMethod::None {
                 inner.locked = false;
             }
         }
@@ -164,8 +164,7 @@ pub fn check_availability(app: &AppHandle) {
 
 /// Pede a autenticação sem travar a thread do comando. Só um pedido por vez.
 pub async fn confirm_identity(app: &AppHandle, reason: &'static str) -> Result<(), String> {
-    use tauri::Manager;
-    let state = app.state::<crate::state::AppState>();
+    let state = app.state::<AppState>();
     {
         let mut inner = state.lock();
         if inner.authenticating {
@@ -189,4 +188,176 @@ pub async fn confirm_identity(app: &AppHandle, reason: &'static str) -> Result<(
             Err(format!("Não foi possível autenticar: {e}"))
         }
     }
+}
+
+/// Confirma a identidade pelo método em uso: PIN do Papeo (`pin`) ou
+/// autenticação do sistema (`reason` aparece no pedido do sistema).
+pub async fn confirm(
+    app: &AppHandle,
+    reason: &'static str,
+    pin: Option<String>,
+) -> Result<(), String> {
+    let method = app.state::<AppState>().lock().lock_method();
+    match method {
+        LockMethod::Pin => verify_pin(app, pin).await,
+        LockMethod::System => confirm_identity(app, reason).await,
+        LockMethod::None => Err(NO_METHOD.into()),
+    }
+}
+
+pub const NO_METHOD: &str =
+    "Este computador não tem Touch ID, senha do sistema nem Windows Hello. Crie um PIN do Papeo.";
+
+fn wait_text(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs} s")
+    } else {
+        format!("{} min", secs.div_ceil(60))
+    }
+}
+
+/// Confere o PIN do Papeo. Depois de alguns erros seguidos, só aceita outra
+/// tentativa após uma espera crescente (que sobrevive a reabrir o app).
+pub async fn verify_pin(app: &AppHandle, pin: Option<String>) -> Result<(), String> {
+    let pin = pin.filter(|p| !p.is_empty()).ok_or("Digite o PIN.")?;
+    let state = app.state::<AppState>();
+    let stored = {
+        let mut inner = state.lock();
+        if inner.authenticating {
+            return Err("Já há um pedido de autenticação aberto.".into());
+        }
+        let wait = inner
+            .pin_retry_at
+            .map(|t| t.saturating_duration_since(Instant::now()))
+            .unwrap_or_default();
+        if !wait.is_zero() {
+            return Err(format!(
+                "Muitas tentativas. Tente de novo em {}.",
+                wait_text(wait.as_secs() + 1)
+            ));
+        }
+        let stored = inner
+            .config
+            .lock_pin
+            .clone()
+            .ok_or("Nenhum PIN definido.")?;
+        inner.authenticating = true;
+        stored
+    };
+    let hash = stored.hash.clone();
+    // Argon2id leva dezenas de ms: fora da thread do comando e sem o lock.
+    let ok = tauri::async_runtime::spawn_blocking(move || stored.verify(&pin))
+        .await
+        .unwrap_or(false);
+    let (staged, wait) = {
+        let mut inner = state.lock();
+        inner.authenticating = false;
+        let mut wait = 0;
+        let changed = match inner.config.lock_pin.as_mut().filter(|p| p.hash == hash) {
+            // PIN trocado ou removido durante a conferência: não conta.
+            None => return Err("O PIN mudou. Tente de novo.".into()),
+            Some(current) if ok => std::mem::take(&mut current.failures) > 0,
+            Some(current) => {
+                current.failures = current.failures.saturating_add(1);
+                wait = papeo_core::pin_wait_secs(current.failures);
+                true
+            }
+        };
+        inner.pin_retry_at = (wait > 0).then(|| Instant::now() + Duration::from_secs(wait));
+        let staged = if changed {
+            Some(state.stage(&inner)?)
+        } else {
+            None
+        };
+        (staged, wait)
+    };
+    if let Some(staged) = staged {
+        // Sem gravar a contagem, fechar e abrir o app zeraria a espera.
+        state.write(staged)?;
+    }
+    if ok {
+        return Ok(());
+    }
+    crate::state::publish(app);
+    Err(if wait > 0 {
+        format!("PIN incorreto. Tente de novo em {}.", wait_text(wait))
+    } else {
+        "PIN incorreto.".into()
+    })
+}
+
+/// "Esqueci o PIN": tira o PIN e desbloqueia, mas antes sai de todas as
+/// contas (sessões novas; as antigas entram na fila de remoção gravada, e
+/// um backup restaurado depois não volta a usá-las), apaga tarefas e
+/// anotações deste computador e desliga a sincronização. Assim, quem não
+/// sabe o PIN não vê nada do que estava protegido. Só com o app bloqueado.
+pub async fn forget_pin(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    {
+        let mut inner = state.lock();
+        if !inner.locked || inner.lock_method() != LockMethod::Pin {
+            return Err("Não há PIN do Papeo para redefinir.".into());
+        }
+        if inner.authenticating {
+            return Err("Já há um pedido de autenticação aberto.".into());
+        }
+        // Nenhum desbloqueio corre junto enquanto a limpeza acontece.
+        inner.authenticating = true;
+    }
+    let result = forget_pin_locked(app).await;
+    state.lock().authenticating = false;
+    let old = result?;
+    crate::sessions::remove_later(app, old);
+    crate::organizer::publish_organizer(app);
+    Ok(())
+}
+
+async fn forget_pin_locked(app: &AppHandle) -> Result<Vec<String>, String> {
+    let state = app.state::<AppState>();
+    // Primeiro a sincronização: senão as tarefas voltariam da nuvem.
+    crate::sync::disconnect(app, false).await?;
+    crate::webviews::close_all(app);
+    let mut inner = state.lock();
+    // Tarefas primeiro: se não der para gravar, nada mudou. Gravadas antes
+    // do PIN sair, uma falha depois deixa o app bloqueado, nunca aberto
+    // com as tarefas.
+    let old_org = std::mem::take(&mut inner.organizer);
+    let old_error = inner.organizer_error.take();
+    if let Err(err) = state.stage_organizer(&inner).and_then(|s| state.write(s)) {
+        inner.organizer = old_org;
+        inner.organizer_error = old_error;
+        return Err(err);
+    }
+    let before = inner.config.clone();
+    let old: Vec<String> = inner
+        .config
+        .services
+        .iter_mut()
+        .map(|s| std::mem::replace(&mut s.session, papeo_core::new_session()))
+        .collect();
+    // Na fila gravada junto com o PIN removido: mesmo que apagar demore,
+    // nenhuma conta volta a usar essas sessões.
+    for s in &old {
+        if !inner.config.pending_removal.contains(s) {
+            inner.config.pending_removal.push(s.clone());
+        }
+    }
+    inner.config.open.clear();
+    inner.config.lock_pin = None;
+    inner.config.settings.lock.enabled = false;
+    if let Err(err) = state.stage(&inner).and_then(|s| state.write(s)) {
+        inner.config = before;
+        return Err(err);
+    }
+    inner.pin_retry_at = None;
+    inner.recent.clear();
+    inner.unread.clear();
+    inner.page_unread.clear();
+    inner.current_chat.clear();
+    inner.pending_chat.clear();
+    inner.last_used.clear();
+    inner.downloads.clear();
+    inner.locked = false;
+    inner.unfocused_since = None;
+    Ok(old)
 }

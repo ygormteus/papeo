@@ -68,6 +68,9 @@ export function installDevMock() {
   }
   let autostart = false;
   let locked = false;
+  // `?semhello`: computador sem autenticação do sistema (usa o PIN do Papeo).
+  const systemAuth = !new URLSearchParams(location.search).has("semhello");
+  let pin: string | null = null;
   let orphans = 2;
   // `?update`: versão nova disponível; `?v=0.2.0`: simula o app já atualizado.
   const params = new URLSearchParams(location.search);
@@ -232,7 +235,9 @@ export function installDevMock() {
       downloads: structuredClone(downloads),
       downloadsDir: settings.downloadsDir ?? "/Users/voce/Downloads",
       locked,
-      lockAvailable: true,
+      lockAvailable: pin !== null || systemAuth,
+      lockMethod: pin !== null ? "pin" : systemAuth ? "system" : "none",
+      systemAuth,
       update: structuredClone(update),
       appVersion,
       recent:
@@ -423,6 +428,7 @@ export function installDevMock() {
       }
       case "set_lock":
         if (locked) throw "Desbloqueie o Papeo primeiro.";
+        if (args.enabled && pin === null && !systemAuth) throw "Crie um PIN do Papeo.";
         settings.lock = { enabled: Boolean(args.enabled), afterMinutes: Number(args.afterMinutes) };
         return snap();
       case "set_appearance":
@@ -432,8 +438,24 @@ export function installDevMock() {
         if (settings.lock.enabled) locked = true;
         return snap();
       case "unlock":
+        if (pin !== null && args.pin !== pin) throw "PIN incorreto.";
         locked = false;
         return snap();
+      case "set_lock_pin":
+        if (locked) throw "Desbloqueie o Papeo primeiro.";
+        if (pin !== null && args.current !== pin) throw "PIN incorreto.";
+        if (args.pin !== null && String(args.pin).length < 4) throw "Use pelo menos 4 caracteres.";
+        if (pin === null && args.pin !== null) settings.lock.enabled = true;
+        pin = (args.pin as string | null) ?? null;
+        if (pin === null && !systemAuth) settings.lock.enabled = false;
+        return snap();
+      case "forget_lock_pin":
+        pin = null;
+        settings.lock.enabled = false;
+        locked = false;
+        return snap();
+      case "open_signin_settings":
+        return null;
       case "check_update":
         update = { state: "available", version: nextVersion, notes: notes020 };
         return snap();

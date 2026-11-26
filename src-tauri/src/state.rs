@@ -192,9 +192,11 @@ pub struct Inner {
     /// App bloqueado: webviews dos serviços ocultas até autenticar.
     pub locked: bool,
     /// O sistema oferece Touch ID/senha ou Windows Hello.
-    pub lock_available: bool,
-    /// Um pedido de autenticação do sistema está aberto.
+    pub system_auth: bool,
+    /// Um pedido de autenticação (sistema ou PIN) está aberto.
     pub authenticating: bool,
+    /// Depois de vários PINs errados, só aceita outra tentativa a partir daqui.
+    pub pin_retry_at: Option<Instant>,
     /// Desde quando a janela está sem foco (para o bloqueio automático).
     pub unfocused_since: Option<Instant>,
     pub update: UpdateStatus,
@@ -214,6 +216,13 @@ pub struct Inner {
 impl Inner {
     pub fn new(config: Config) -> Self {
         let config_lock_enabled = config.settings.lock.enabled;
+        // A espera entre tentativas continua depois de reabrir o app.
+        let pin_retry_at = config
+            .lock_pin
+            .as_ref()
+            .map(|p| papeo_core::pin_wait_secs(p.failures))
+            .filter(|&s| s > 0)
+            .map(|s| Instant::now() + std::time::Duration::from_secs(s));
         Self {
             config,
             active: None,
@@ -232,11 +241,12 @@ impl Inner {
             next_download_id: 1,
             recent: VecDeque::new(),
             pending_chat: HashMap::new(),
-            // Bloqueia sempre ao abrir; se o sistema não tiver autenticação,
-            // `lock::check_availability` desfaz isso logo em seguida.
+            // Bloqueia sempre ao abrir; sem PIN e sem autenticação do
+            // sistema, `lock::check_availability` desfaz isso logo em seguida.
             locked: config_lock_enabled,
-            lock_available: cfg!(any(target_os = "macos", windows)),
+            system_auth: cfg!(any(target_os = "macos", windows)),
             authenticating: false,
+            pin_retry_at,
             unfocused_since: None,
             update: UpdateStatus::Idle,
             update_checked: None,
@@ -244,6 +254,18 @@ impl Inner {
             current_chat: HashMap::new(),
             organizer_error: None,
             mode_override: None,
+        }
+    }
+
+    /// Como o app confirma a identidade: o PIN do Papeo, se definido; senão,
+    /// a autenticação do sistema.
+    pub fn lock_method(&self) -> LockMethod {
+        if self.config.lock_pin.is_some() {
+            LockMethod::Pin
+        } else if self.system_auth {
+            LockMethod::System
+        } else {
+            LockMethod::None
         }
     }
 
@@ -600,6 +622,15 @@ pub struct ServiceView {
     pub in_mode: bool,
 }
 
+/// Como o bloqueio confirma a identidade.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum LockMethod {
+    None,
+    System,
+    Pin,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -612,7 +643,11 @@ pub struct Snapshot {
     pub downloads: Vec<DownloadEntry>,
     pub downloads_dir: String,
     pub locked: bool,
+    /// Há como desbloquear (PIN do Papeo ou autenticação do sistema).
     pub lock_available: bool,
+    pub lock_method: LockMethod,
+    /// O sistema oferece Touch ID/senha ou Windows Hello.
+    pub system_auth: bool,
     pub update: UpdateStatus,
     pub app_version: String,
     /// Mensagens recentes, mais nova primeiro (vazia com o app bloqueado).
@@ -711,7 +746,9 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         downloads: inner.downloads.iter().cloned().collect(),
         downloads_dir: downloads_dir.to_string_lossy().into_owned(),
         locked: inner.locked,
-        lock_available: inner.lock_available,
+        lock_available: inner.lock_method() != LockMethod::None,
+        lock_method: inner.lock_method(),
+        system_auth: inner.system_auth,
         update: inner.update.clone(),
         app_version: app.package_info().version.to_string(),
         recent,

@@ -766,8 +766,12 @@
 
 {#if snap.locked}
   <LockScreen
-    onunlock={async () => {
-      snap = await api.unlock();
+    method={snap.lockMethod}
+    onunlock={async (pin) => {
+      snap = await api.unlock(pin);
+    }}
+    onforget={async () => {
+      snap = await api.forgetLockPin();
     }}
   />
 {/if}

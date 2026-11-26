@@ -25,6 +25,10 @@ pub struct Config {
     /// app. Local deste computador: não entra no backup.
     #[serde(default)]
     pub open: Vec<String>,
+    /// PIN do bloqueio (só o hash). Local deste computador: não entra no
+    /// backup nem na sincronização.
+    #[serde(default)]
+    pub lock_pin: Option<crate::LockPin>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -40,6 +44,8 @@ struct StoreFile {
     pending_removal: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     open: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lock_pin: Option<crate::LockPin>,
     /// Tarefas e anotações: só nos backups (no app ficam em
     /// `organizer.json`). Backup antigo não traz.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,6 +69,7 @@ fn defaults() -> Config {
         settings: Settings::default(),
         pending_removal: Vec::new(),
         open: Vec::new(),
+        lock_pin: None,
     }
 }
 
@@ -115,6 +122,13 @@ fn sanitize(file: StoreFile, strict: bool) -> Result<(Config, usize), String> {
         settings: file.settings.sanitized(),
         pending_removal,
         open,
+        // Backup nunca traz PIN (`to_json` não o exporta); um adulterado
+        // também não entra.
+        lock_pin: if strict {
+            None
+        } else {
+            file.lock_pin.and_then(crate::LockPin::sanitized)
+        },
     };
     Ok((config, dropped))
 }
@@ -165,6 +179,12 @@ fn to_json(
             Vec::new()
         } else {
             config.open.clone()
+        },
+        // O PIN é deste computador: nunca vai para o backup.
+        lock_pin: if kind.is_some() {
+            None
+        } else {
+            config.lock_pin.clone()
         },
     })
     .map_err(|e| e.to_string())
@@ -246,6 +266,30 @@ mod tests {
         fs::write(&path, b"{oops").unwrap();
         assert_eq!(load(&path).services.len(), 2);
         assert!(path.with_extension("json.corrompido").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lock_pin_stays_local() {
+        let dir = temp_dir();
+        let mut config = defaults();
+        config.lock_pin = Some(crate::LockPin::new("2468").unwrap());
+        config.lock_pin.as_mut().unwrap().failures = 3;
+        let path = dir.join("services.json");
+        save(&path, &config).unwrap();
+        let loaded = load(&path).lock_pin.unwrap();
+        assert!(loaded.verify("2468"));
+        assert_eq!(loaded.failures, 3);
+        // Backup não leva o PIN, nem o aceita de um arquivo adulterado.
+        let backup = dir.join("backup.json");
+        export_backup(&backup, &config, &Organizer::default()).unwrap();
+        assert!(!fs::read_to_string(&backup).unwrap().contains("lockPin"));
+        assert!(!fs::read_to_string(&backup).unwrap().contains("lock_pin"));
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&fs::read(&backup).unwrap()).unwrap();
+        json["lock_pin"] = serde_json::to_value(&config.lock_pin).unwrap();
+        fs::write(&backup, serde_json::to_vec(&json).unwrap()).unwrap();
+        assert!(read_backup(&backup, 0).unwrap().config.lock_pin.is_none());
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -353,6 +397,7 @@ mod tests {
             settings: Settings::default(),
             pending_removal: Vec::new(),
             open: Vec::new(),
+            lock_pin: None,
             organizer: None,
         };
         assert_eq!(sanitize(file, true).unwrap().0.services.len(), 1);
@@ -367,6 +412,7 @@ mod tests {
             settings: Settings::default(),
             pending_removal: Vec::new(),
             open: Vec::new(),
+            lock_pin: None,
             organizer: None,
         };
         assert!(sanitize(file, false).is_err());

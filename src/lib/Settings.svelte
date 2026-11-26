@@ -31,6 +31,7 @@
   } from "@lucide/svelte";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import PinDialog from "./PinDialog.svelte";
   import Switch from "./Switch.svelte";
   import QuickReplies from "./QuickReplies.svelte";
   import { home, setConfirmFree } from "./homeState.svelte";
@@ -46,6 +47,7 @@
     api,
     errorMessage,
     isMac,
+    isWindows,
     modKey,
     formatClock,
     parseClock,
@@ -80,6 +82,8 @@
   const dndManual = $derived((settings.dndUntil ?? 0) > Date.now() / 1000);
   let backupMessage = $state("");
   let privacyMessage = $state("");
+  let pinDialog = $state<"create" | "change" | "remove" | null>(null);
+  const systemName = isMac ? "Touch ID ou a senha do Mac" : "o Windows Hello";
   let orphans = $state<number | null>(null);
   let confirmOrphans = $state(false);
 
@@ -559,10 +563,12 @@
           <div class="text">
             <span class="label">Bloquear o Papeo</span>
             <span class="hint">
-              {#if !snap.lockAvailable}
-                Indisponível: configure {isMac ? "uma senha no Mac" : "o Windows Hello (PIN, rosto ou digital)"}.
+              {#if snap.lockMethod === "pin"}
+                Pede o PIN do Papeo ao abrir e depois do tempo escolhido.
+              {:else if snap.lockMethod === "system"}
+                Pede {systemName} ao abrir e depois do tempo escolhido.
               {:else}
-                Pede {isMac ? "Touch ID ou a senha do Mac" : "o Windows Hello"} ao abrir e depois do tempo escolhido.
+                Este computador não tem {isMac ? "senha no Mac" : "Windows Hello"}: crie um PIN do Papeo abaixo.
               {/if}
             </span>
           </div>
@@ -586,6 +592,34 @@
             />
           </div>
         </div>
+
+        {#if !snap.systemAuth || snap.lockMethod === "pin"}
+          <div class="row">
+            <div class="text">
+              <span class="label">PIN do Papeo</span>
+              <span class="hint">
+                {#if snap.lockMethod === "pin"}
+                  Um PIN ou senha só do Papeo, pedido no lugar {snap.systemAuth ? `de ${systemName}` : "da autenticação do sistema"}.
+                {:else if isWindows}
+                  Sem câmera ou leitor de digital? O PIN do Windows já ativa o Windows Hello. Ou use um PIN só do Papeo.
+                {:else}
+                  Um PIN ou senha só do Papeo para bloquear o app.
+                {/if}
+              </span>
+            </div>
+            <div class="choices">
+              {#if snap.lockMethod === "pin"}
+                <button class="btn" onclick={() => (pinDialog = "change")}>Trocar…</button>
+                <button class="btn" onclick={() => (pinDialog = "remove")}>Remover…</button>
+              {:else}
+                {#if isWindows}
+                  <button class="btn" onclick={() => run(api.openSigninSettings())}>PIN do Windows</button>
+                {/if}
+                <button class="btn" onclick={() => (pinDialog = "create")}>Criar PIN…</button>
+              {/if}
+            </div>
+          </div>
+        {/if}
 
         <div class="row">
           <div class="text">
@@ -852,6 +886,17 @@
     {/if}
   </div>
 </div>
+
+{#if pinDialog}
+  <PinDialog
+    mode={pinDialog}
+    onclose={() => (pinDialog = null)}
+    ondone={(next) => {
+      pinDialog = null;
+      run(Promise.resolve(next));
+    }}
+  />
+{/if}
 
 {#if confirmOrphans}
   <ConfirmDialog
