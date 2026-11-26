@@ -181,9 +181,9 @@
       {#if !collapsed}
         <span class="label">Tarefas</span>
         {#if snap.tasks.overdue > 0}
-          <span class="pill pill-danger" aria-label={snap.tasks.overdue === 1 ? "1 atrasada" : `${snap.tasks.overdue} atrasadas`}>{snap.tasks.overdue}</span>
+          <span class="count count-danger" aria-label={snap.tasks.overdue === 1 ? "1 atrasada" : `${snap.tasks.overdue} atrasadas`}>{snap.tasks.overdue}</span>
         {:else if snap.tasks.today > 0}
-          <span class="pill" aria-label="{snap.tasks.today} para hoje">{snap.tasks.today}</span>
+          <span class="count count-neutral" aria-label="{snap.tasks.today} para hoje">{snap.tasks.today}</span>
         {/if}
       {/if}
     </button>
@@ -229,7 +229,7 @@
 
     {#each shown as service, i (service.id)}
       <button
-        class="item"
+        class="item account"
         class:active={snap.active === service.id}
         class:asleep={!service.loaded}
         class:dragging={dragId === service.id}
@@ -246,31 +246,34 @@
         title={`${service.name}${(numberOf.get(service.id) ?? 99) <= 9 ? ` (${modKey}${numberOf.get(service.id)})` : ""}${stateNote(service)}`}
       >
         <span class="avatar-wrap">
-          <ServiceAvatar {service} dimmed={!service.loaded} />
-          {#if collapsed && service.status === "unresponsive"}
+          <ServiceAvatar {service} size={24} dimmed={!service.loaded} />
+          {#if service.status === "unresponsive"}
             <span class="dot danger" aria-hidden="true"></span>
-          {:else if collapsed && service.status === "loggedOut"}
+          {:else if service.status === "loggedOut"}
             <span class="dot warn" aria-hidden="true"></span>
           {:else if collapsed && service.unread > 0}
             <span class="dot" aria-hidden="true"></span>
           {/if}
         </span>
         {#if !collapsed}
-          <span class="label">{service.name}</span>
+          <span class="text">
+            <span class="label">{service.name}</span>
+            {#if service.status === "unresponsive"}
+              <span class="sub sub-danger">Não responde</span>
+            {:else if service.status === "loggedOut"}
+              <span class="sub sub-warn">Desconectado</span>
+            {:else if !service.loaded}
+              <span class="sub">Dormindo</span>
+            {/if}
+          </span>
           {#if isMuted(service)}
             <BellOff size={14} class="muted-icon" aria-label="Notificações silenciadas" />
           {/if}
-          {#if service.status === "unresponsive"}
-            <span class="pill pill-danger">Não responde</span>
-          {:else if service.status === "loggedOut"}
-            <span class="pill pill-warn">Desconectado</span>
-          {:else if service.unread > 0}
-            <span class="pill pill-success" aria-label={service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}>
+          {#if service.unread > 0}
+            <span class="count" aria-label={service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}>
               {service.unread > 99 ? "99+" : service.unread}
             </span>
-          {:else if !service.loaded}
-            <span class="pill">Dormindo</span>
-          {:else if (numberOf.get(service.id) ?? 99) <= 9}
+          {:else if service.loaded && (numberOf.get(service.id) ?? 99) <= 9}
             <kbd class="kbd">{modKey}{numberOf.get(service.id)}</kbd>
           {/if}
         {/if}
@@ -414,9 +417,11 @@
   }
 
   .section {
-    padding: 18px 12px 6px;
-    font-size: 12.5px;
-    font-weight: 500;
+    padding: 20px 12px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: var(--text-muted);
   }
 
@@ -427,6 +432,9 @@
   }
 
   .item {
+    position: relative;
+    /* Altura fixa: em janelas baixas a lista rola em vez de espremer. */
+    flex: none;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -438,6 +446,7 @@
     background: transparent;
     text-align: left;
     font-size: 15px;
+    transition: background-color 0.12s ease;
   }
 
   .collapsed .item {
@@ -450,8 +459,90 @@
   }
 
   .item.active {
-    background: var(--bg-hover);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-hover));
     font-weight: 550;
+  }
+
+  /* Marca discreta do item aberto (além da cor, para quem não distingue o fundo). */
+  .item.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+  }
+
+  .collapsed .item.active::before {
+    left: -8px;
+  }
+
+  /* Contador de não lidas: cápsula sólida e compacta, números alinhados. */
+  .count {
+    flex: none;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    display: inline-grid;
+    place-items: center;
+    background: var(--success-bg);
+    color: var(--success-text);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .count-danger {
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+
+  .count-neutral {
+    background: var(--bg-hover);
+    color: var(--text-muted);
+  }
+
+  /* Nome em cima e, só quando há algo a dizer, o estado embaixo. */
+  .text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 1.2;
+  }
+
+  .text .label {
+    flex: none;
+  }
+
+  .account {
+    height: 46px;
+  }
+
+  .collapsed .account {
+    height: 42px;
+  }
+
+  .sub {
+    margin-top: 2px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sub-danger {
+    color: var(--danger);
+  }
+
+  .sub-warn {
+    color: var(--warn-text);
   }
 
   .item.asleep .label {
