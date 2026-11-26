@@ -211,6 +211,34 @@ pub struct Inner {
     pub organizer_error: Option<String>,
     /// Troca manual de modo feita no automático (até o expediente mudar).
     pub mode_override: Option<ModeOverride>,
+    /// Avisos por IMAP de cada conta de e-mail que os usa.
+    pub mail: HashMap<String, MailLive>,
+}
+
+/// Situação dos avisos por IMAP de uma conta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "state")]
+pub enum MailStatus {
+    Connecting,
+    /// Conectado: contador e avisos vêm do IMAP.
+    Ok,
+    /// Sem conexão; tenta de novo sozinho.
+    Offline {
+        detail: String,
+    },
+    /// Usuário ou senha recusados; espera uma senha nova.
+    Auth,
+    /// Falta a senha neste computador (backup de outro, por exemplo).
+    NoPassword,
+}
+
+#[derive(Debug, Clone)]
+pub struct MailLive {
+    pub status: MailStatus,
+    /// Não lidas informadas pelo servidor.
+    pub unread: u32,
+    /// Vigia dono deste registro: um vigia antigo não o sobrescreve.
+    pub generation: u64,
 }
 
 impl Inner {
@@ -254,7 +282,15 @@ impl Inner {
             current_chat: HashMap::new(),
             organizer_error: None,
             mode_override: None,
+            mail: HashMap::new(),
         }
+    }
+
+    /// O IMAP está conectado: contador e avisos vêm dele, não do site.
+    pub fn mail_live(&self, id: &str) -> bool {
+        self.mail
+            .get(id)
+            .is_some_and(|m| m.status == MailStatus::Ok)
     }
 
     /// Como o app confirma a identidade: o PIN do Papeo, se definido; senão,
@@ -632,6 +668,9 @@ pub struct ServiceView {
     pub chat: Option<String>,
     /// A conta faz parte do modo atual (trabalho/pessoal).
     pub in_mode: bool,
+    /// Avisos por IMAP (só contas que os usam).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mail_status: Option<MailStatus>,
 }
 
 /// Como o bloqueio confirma a identidade.
@@ -719,7 +758,19 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
             ServiceView {
                 service: s.clone(),
                 loaded,
-                unread: inner.unread.get(&s.id).copied().unwrap_or(0),
+                // Com o IMAP conectado, vale o número do servidor (o site
+                // pode estar hibernado).
+                unread: match inner.mail.get(&s.id) {
+                    Some(m) if m.status == MailStatus::Ok => m.unread,
+                    // Site hibernado e IMAP reconectando: o último número dele.
+                    Some(m)
+                        if !loaded
+                            && !matches!(m.status, MailStatus::Auth | MailStatus::NoPassword) =>
+                    {
+                        m.unread
+                    }
+                    _ => inner.unread.get(&s.id).copied().unwrap_or(0),
+                },
                 status: status_of(&inner, &s.id, loaded),
                 idle_minutes: if inner.active.as_deref() == Some(s.id.as_str()) {
                     Some(0)
@@ -735,6 +786,11 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                     inner.current_chat.get(&s.id).cloned()
                 },
                 in_mode: mode.allows(s.context),
+                mail_status: s
+                    .mail
+                    .as_ref()
+                    .map(|_| inner.mail.get(&s.id).map(|m| m.status.clone()))
+                    .map(|status| status.unwrap_or(MailStatus::Connecting)),
             }
         })
         .collect::<Vec<_>>();

@@ -2,6 +2,7 @@
 //! puras (não perturbe, nomes de arquivo, não lidas). Não depende do Tauri,
 //! para ser testado em qualquer máquina.
 
+pub mod mail;
 mod organizer;
 mod pin;
 mod privacy;

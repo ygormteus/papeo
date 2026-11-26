@@ -38,6 +38,12 @@ impl ServiceKind {
         )
     }
 
+    /// Caixas que aceitam avisos por IMAP com usuário e senha. O Outlook
+    /// só aceita o login da Microsoft (OAuth), que ainda não existe aqui.
+    pub fn supports_mail_watch(self) -> bool {
+        matches!(self, ServiceKind::Gmail | ServiceKind::Email)
+    }
+
     fn default_name(self) -> Option<&'static str> {
         match self {
             Self::Whatsapp => Some("WhatsApp"),
@@ -120,6 +126,9 @@ pub struct Service {
     /// Trabalho ou pessoal; sem valor, a conta aparece em todos os modos.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<ServiceContext>,
+    /// Avisos por IMAP (só caixas de e-mail). A senha fica fora daqui.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<crate::mail::MailAccount>,
 }
 
 fn enabled() -> bool {
@@ -166,6 +175,7 @@ impl Service {
             zoom: 1.0,
             user_agent: None,
             context: None,
+            mail: None,
         })
     }
 
@@ -228,6 +238,11 @@ impl Service {
             .user_agent
             .map(|ua| ua.trim().to_owned())
             .filter(|ua| !ua.is_empty() && ua.len() <= 512 && !ua.chars().any(char::is_control));
+        // IMAP inválido (arquivo editado à mão) só desliga os avisos por IMAP.
+        self.mail = self
+            .mail
+            .filter(|_| self.kind.supports_mail_watch())
+            .and_then(|m| m.sanitized().ok());
         Ok(self)
     }
 }
@@ -410,6 +425,41 @@ mod tests {
             serde_json::to_string(&ServiceKind::Gmail).unwrap(),
             r#""gmail""#
         );
+    }
+
+    #[test]
+    fn mail_watch_only_for_password_mailboxes() {
+        let account = crate::mail::MailAccount {
+            host: "IMAP.gmail.com".into(),
+            port: 993,
+            user: "ana@gmail.com".into(),
+            sleep_site: true,
+        };
+        let mut gmail = Service::new(ServiceKind::Gmail, None, None).unwrap();
+        gmail.mail = Some(account.clone());
+        let json = serde_json::to_string(&gmail).unwrap();
+        assert!(json.contains(r#""mail":{"host":"IMAP.gmail.com""#));
+        let back: Service = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.sanitized().unwrap().mail.unwrap().host,
+            "imap.gmail.com"
+        );
+        // Outlook (só OAuth) e mensageiros: descartado.
+        for kind in [ServiceKind::Outlook, ServiceKind::Whatsapp] {
+            let mut other = Service::new(kind, None, None).unwrap();
+            other.mail = Some(account.clone());
+            assert!(other.sanitized().unwrap().mail.is_none());
+        }
+        // Servidor inválido: só o IMAP sai, a conta continua.
+        let mut bad = Service::new(ServiceKind::Gmail, None, None).unwrap();
+        bad.mail = Some(crate::mail::MailAccount {
+            host: "x y".into(),
+            ..account
+        });
+        assert!(bad.sanitized().unwrap().mail.is_none());
+        // Sem IMAP, nada novo aparece no arquivo.
+        let plain = Service::new(ServiceKind::Gmail, None, None).unwrap();
+        assert!(!serde_json::to_string(&plain).unwrap().contains("\"mail\""));
     }
 
     #[test]

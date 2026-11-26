@@ -271,11 +271,24 @@ pub fn restore_open(app: &AppHandle) {
 
 /// Cria a webview de uma conta a reabrir, se ainda fizer sentido.
 fn restore_one(app: &AppHandle, id: &str) -> bool {
+    // Hibernada enquanto esperava.
+    let open = app
+        .state::<AppState>()
+        .lock()
+        .config
+        .open
+        .iter()
+        .any(|o| o == id);
+    open && load_hidden(app, id)
+}
+
+/// Carrega a conta escondida (fora de vista), se ainda não está aberta.
+pub fn load_hidden(app: &AppHandle, id: &str) -> bool {
     let state = app.state::<AppState>();
     let (service, area) = {
         let inner = state.lock();
-        // Removida, hibernada ou já aberta pelo usuário enquanto esperava.
-        if !inner.config.open.iter().any(|o| o == id) || app.get_webview(id).is_some() {
+        // Já aberta pelo usuário enquanto esperava.
+        if app.get_webview(id).is_some() {
             return false;
         }
         let Ok(service) = inner.service(id).cloned() else {

@@ -49,7 +49,39 @@ export interface ServiceView {
   context?: ServiceContext;
   /** Faz parte do modo atual (aparece na barra, conta e notifica). */
   inMode: boolean;
+  /** Avisos por IMAP (servidor e usuário; a senha nunca vem para cá). */
+  mail?: MailAccount;
+  /** Situação do IMAP (só contas que o usam). */
+  mailStatus?: MailStatus;
 }
+
+export interface MailAccount {
+  host: string;
+  port: number;
+  user: string;
+  /** Deixa o site hibernado enquanto o IMAP avisa. */
+  sleepSite: boolean;
+}
+
+/** Para ligar ou alterar; senha vazia mantém a guardada. */
+export interface MailInput extends MailAccount {
+  password?: string;
+}
+
+export type MailStatus =
+  | { state: "connecting" }
+  | { state: "ok" }
+  | { state: "offline"; detail: string }
+  | { state: "auth" }
+  | { state: "noPassword" };
+
+/** Contas que aceitam avisos por IMAP com usuário e senha (o Outlook só
+ *  aceita o login da Microsoft). */
+export function supportsMailWatch(kind: ServiceKind): boolean {
+  return kind === "gmail" || kind === "email";
+}
+
+export const GMAIL_IMAP = { host: "imap.gmail.com", port: 993 };
 
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
 
@@ -320,6 +352,8 @@ export const api = {
   moveService: (id: string, to: number) => invoke<Snapshot>("move_service", { id, to }),
   setHibernation: (id: string, minutes: number) =>
     invoke<Snapshot>("set_hibernation", { id, minutes }),
+  setMailAccount: (id: string, account: MailInput | null) =>
+    invoke<Snapshot>("set_mail_account", { id, account }),
   setNotifications: (id: string, enabled: boolean) =>
     invoke<Snapshot>("set_notifications", { id, enabled }),
   muteService: (id: string, minutes: number) => invoke<Snapshot>("mute_service", { id, minutes }),

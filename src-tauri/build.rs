@@ -10,6 +10,7 @@ const COMMANDS: &[&str] = &[
     "customize_service",
     "move_service",
     "set_hibernation",
+    "set_mail_account",
     "set_notifications",
     "mute_service",
     "set_media_policy",

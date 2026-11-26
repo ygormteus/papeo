@@ -113,6 +113,10 @@
   function stateNote(service: ServiceView): string {
     if (service.status === "unresponsive") return " — não responde";
     if (service.status === "loggedOut") return " — desconectado";
+    if (!service.loaded && service.mailStatus?.state === "ok") {
+      const count = service.unread === 1 ? ", 1 não lida" : service.unread > 1 ? `, ${service.unread} não lidas` : "";
+      return ` — hibernado, avisos por IMAP${count}`;
+    }
     if (!service.loaded) return " — hibernado";
     if (service.unread > 0) return ` — ${service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}`;
     return "";
@@ -263,7 +267,8 @@
             {:else if service.status === "loggedOut"}
               <span class="sub sub-warn">Desconectado</span>
             {:else if !service.loaded}
-              <span class="sub">Dormindo</span>
+              <!-- Site hibernado, mas o IMAP continua avisando. -->
+              <span class="sub">{service.mailStatus?.state === "ok" ? "Avisos por IMAP" : "Dormindo"}</span>
             {/if}
           </span>
           {#if isMuted(service)}

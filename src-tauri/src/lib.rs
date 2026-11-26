@@ -7,6 +7,7 @@ mod downloads;
 mod drive;
 mod idle;
 mod lock;
+mod mail;
 mod memory;
 #[cfg(target_os = "macos")]
 mod menu;
@@ -16,6 +17,7 @@ mod organizer;
 mod popover;
 mod preview;
 mod reply;
+mod secrets;
 #[cfg(feature = "selftest")]
 mod selftest;
 mod sessions;
@@ -265,6 +267,8 @@ fn spawn_maintenance(app: AppHandle) {
             if slept(wall, now) {
                 resume_pending = true;
                 resume_waited = 0;
+                // Conexões IMAP de antes do repouso costumam estar mortas.
+                mail::kick(&app);
             }
             wall = now;
             let state = app.state::<AppState>();
@@ -280,13 +284,23 @@ fn spawn_maintenance(app: AppHandle) {
                 }
                 let mode = inner.current_mode();
                 let sleep_outside = inner.config.settings.sleep_outside_mode;
+                // Conta com o IMAP avisando e pedindo para o site dormir.
+                let mail_sleeps = |s: &papeo_core::Service| {
+                    s.mail.as_ref().is_some_and(|m| m.sleep_site)
+                        && inner.mail_live(&s.id)
+                        && inner
+                            .last_used
+                            .get(&s.id)
+                            .is_none_or(|t| t.elapsed() >= mail::SLEEP_SITE_AFTER)
+                };
                 let due: Vec<String> = inner
                     .config
                     .services
                     .iter()
                     .filter(|s| inner.active.as_deref() != Some(s.id.as_str()))
                     .filter(|s| {
-                        (sleep_outside && !mode.allows(s.context))
+                        mail_sleeps(s)
+                            || (sleep_outside && !mode.allows(s.context))
                             || (s.hibernate_after_minutes > 0
                                 && inner.last_used.get(&s.id).is_some_and(|t| {
                                     t.elapsed()
@@ -296,6 +310,12 @@ fn spawn_maintenance(app: AppHandle) {
                                 }))
                     })
                     .filter(|s| app.get_webview(&s.id).is_some())
+                    // Hibernar interromperia o download.
+                    .filter(|s| {
+                        !inner.downloads.iter().any(|d| {
+                            d.service_id == s.id && d.state == state::DownloadState::Downloading
+                        })
+                    })
                     .map(|s| s.id.clone())
                     .collect();
                 let status: HashMap<String, _> = inner
@@ -489,6 +509,8 @@ pub fn run() {
                     sessions::retry_pending(&cleanup).await;
                 });
                 sync::init(handle, app.path().app_local_data_dir()?);
+                secrets::init(handle, &app.path().app_local_data_dir()?);
+                mail::init(handle);
                 notifications::init(handle);
                 tray::install(handle)?;
                 #[cfg(target_os = "macos")]
@@ -508,6 +530,7 @@ pub fn run() {
             commands::customize_service,
             commands::move_service,
             commands::set_hibernation,
+            commands::set_mail_account,
             commands::set_notifications,
             commands::mute_service,
             commands::set_media_policy,

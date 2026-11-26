@@ -7,6 +7,7 @@
     BellOff,
     CalendarClock,
     LogOut,
+    MailCheck,
     Palette,
     RotateCw,
     Snowflake,
@@ -24,6 +25,7 @@
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
   import CustomizeDialog from "./lib/CustomizeDialog.svelte";
+  import MailDialog from "./lib/MailDialog.svelte";
   import Home from "./lib/Home.svelte";
   import LockScreen from "./lib/LockScreen.svelte";
   import Settings from "./lib/Settings.svelte";
@@ -41,6 +43,7 @@
     isMuted,
     mediaPolicy,
     keepsUrl,
+    supportsMailWatch,
     nextMode,
     serviceColor,
     usesModes,
@@ -108,6 +111,10 @@
   let confirmRemove = $state<ServiceView | null>(null);
   let confirmClear = $state<ServiceView | null>(null);
   let customizing = $state<ServiceView | null>(null);
+  /** Conta com o diálogo de avisos por IMAP aberto (pelo id: a situação
+   *  da conexão chega ao vivo pelo estado). */
+  let mailingId = $state<string | null>(null);
+  const mailing = $derived(snap.services.find((s) => s.id === mailingId) ?? null);
   let restoring = $state<{
     path: string;
     services: string[];
@@ -152,6 +159,7 @@
       !!confirmRemove ||
       !!confirmClear ||
       !!customizing ||
+      !!mailing ||
       !!restoring ||
       (!!whatsNew && !snap.locked) ||
       updateNotice,
@@ -163,6 +171,7 @@
       menu = null;
       addOpen = paletteOpen = false;
       confirmRemove = confirmClear = customizing = null;
+      mailingId = null;
       restoring = null;
       toast = null;
     }
@@ -399,6 +408,9 @@
         run: () => run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined)),
       },
       { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
+      ...(supportsMailWatch(service.kind)
+        ? [{ label: "Avisos por IMAP…", icon: MailCheck, run: () => (mailingId = service.id) }]
+        : []),
       { label: "Sair e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },
       { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
     );
@@ -739,7 +751,19 @@
   />
 {/if}
 
-{#if updateNotice && !addOpen && !paletteOpen && !confirmRemove && !confirmClear && !customizing && !restoring}
+{#if mailing}
+  {@const target = mailing}
+  <MailDialog
+    service={target}
+    onclose={() => (mailingId = null)}
+    onsave={async (account) => {
+      // Erros sobem para o diálogo, que os mostra no formulário.
+      snap = fresher(await api.setMailAccount(target.id, account), snap);
+    }}
+  />
+{/if}
+
+{#if updateNotice && !addOpen && !paletteOpen && !confirmRemove && !confirmClear && !customizing && !mailing && !restoring}
   <ConfirmDialog
     title="Verificar atualizações?"
     message="A cada 2 horas, o Papeo consulta o GitHub para saber se há versão nova. O GitHub vê o seu endereço IP; nada mais é enviado. A instalação só acontece quando você clica em Atualizar. Dá para mudar em Configurações → Sistema."

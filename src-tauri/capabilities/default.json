@@ -15,6 +15,7 @@
     "allow-customize-service",
     "allow-move-service",
     "allow-set-hibernation",
+    "allow-set-mail-account",
     "allow-set-notifications",
     "allow-mute-service",
     "allow-set-media-policy",

@@ -113,34 +113,9 @@ fn read_stored(path: &PathBuf) -> Stored {
     stored
 }
 
-fn write_stored(path: &PathBuf, stored: &Stored) -> Result<(), String> {
+fn write_stored(path: &std::path::Path, stored: &Stored) -> Result<(), String> {
     let body = serde_json::to_vec(stored).map_err(|e| e.to_string())?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let tmp = path.with_extension("tmp-papeo");
-    // Sobra antiga pode ter permissão mais aberta: começa do zero.
-    let _ = std::fs::remove_file(&tmp);
-    {
-        use std::io::Write;
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        let mut file = opts.open(&tmp).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| e.to_string())?;
-        }
-        file.write_all(&body).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-    }
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+    crate::secrets::write_private(path, &body)
 }
 
 /// Chamar no `setup`. `dir`: pasta local do app (não sincronizada pelo

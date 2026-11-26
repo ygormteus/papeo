@@ -398,6 +398,9 @@
                 >
                   {STATUS_LABEL[service.status]}
                 </span>
+                {#if service.mailStatus?.state === "ok"}
+                  <span class="suggest-note">Avisos por IMAP</span>
+                {/if}
               </td>
               <td class="num">
                 {#if bytes !== undefined}

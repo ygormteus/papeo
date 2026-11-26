@@ -29,17 +29,10 @@ pub async fn service_notify(
     silent: Option<bool>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
-    // Lido antes do lock: `is_focused` espera a thread principal, que também
-    // pega o lock (callback de título) — segurá-lo aqui causaria deadlock.
-    let focused = app
-        .get_window(MAIN_WINDOW)
-        .and_then(|w| w.is_focused().ok())
-        .unwrap_or(false);
-    // Também fora do lock: a URL vem da thread principal.
+    // Fora do lock: a URL vem da thread principal.
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
-    let (now_unix, minute) = (now_secs(), local_minute_of_day());
-    let (name, preview, target) = {
-        let mut inner = state.lock();
+    {
+        let inner = state.lock();
         let Ok(service) = inner.service(&id) else {
             return Ok(());
         };
@@ -47,6 +40,39 @@ pub async fn service_notify(
         if !papeo_core::same_site(&service.url, &page) {
             return Ok(());
         }
+        // O IMAP já avisa deste e-mail: sem aviso em dobro.
+        if inner.mail_live(&id) {
+            return Ok(());
+        }
+    }
+    deliver(&app, &id, &title, &body, None, silent.unwrap_or(false))
+}
+
+/// Mostra a notificação de uma conta (do site ou do IMAP), com as regras de
+/// sempre: não perturbe, silenciada, modo, prévia escolhida, conta à vista.
+/// `open`: o que buscar ao clicar (sem valor, o título).
+pub fn deliver(
+    app: &AppHandle,
+    id: &str,
+    title: &str,
+    body: &str,
+    open: Option<&str>,
+    silent: bool,
+) -> Result<(), String> {
+    let id = id.to_owned();
+    // Lido antes do lock: `is_focused` espera a thread principal, que também
+    // pega o lock (callback de título) — segurá-lo aqui causaria deadlock.
+    let focused = app
+        .get_window(MAIN_WINDOW)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    let (now_unix, minute) = (now_secs(), local_minute_of_day());
+    let state = app.state::<AppState>();
+    let (name, preview, target) = {
+        let mut inner = state.lock();
+        let Ok(service) = inner.service(&id) else {
+            return Ok(());
+        };
         // Fora do modo, a conversa ainda entra nas recentes (o estado a
         // esconde até o modo voltar); só não notifica.
         let mode = inner.current_mode();
@@ -61,7 +87,11 @@ pub async fn service_notify(
             return Ok(());
         }
         let name = service.name.clone();
-        let chat = papeo_core::clip(&title, 80);
+        let chat = papeo_core::clip(title, 80);
+        let open = open
+            .map(|o| papeo_core::clip(o, 80))
+            .filter(|o| !o.is_empty())
+            .unwrap_or_else(|| chat.clone());
         // Clique abre a conversa; "Responder" só com o nome dela à mostra
         // e num mensageiro conhecido.
         let shows_chat = !inner.locked
@@ -71,7 +101,7 @@ pub async fn service_notify(
             reply: service.kind.supports_chat() && shows_chat,
             // "Lembrar em 1 h": conversa de mensageiro ou assunto de e-mail.
             later: (service.kind.supports_chat() || service.kind.is_email()) && shows_chat,
-            chat: (!chat.is_empty()).then(|| chat.clone()),
+            chat: (!open.is_empty()).then_some(open),
             task: None,
             remind_at: None,
         };
@@ -90,7 +120,7 @@ pub async fn service_notify(
             &id,
             &chat,
             ChatMessage {
-                body: papeo_core::clip(&body, 240),
+                body: papeo_core::clip(body, 240),
                 at: now_unix,
                 mine: false,
             },
@@ -102,12 +132,12 @@ pub async fn service_notify(
             .is_some_and(|t| now.duration_since(*t) < NOTIFY_MIN_GAP)
         {
             drop(inner);
-            publish(&app);
+            publish(app);
             return Ok(());
         }
         if !in_mode {
             drop(inner);
-            publish(&app);
+            publish(app);
             return Ok(());
         }
         inner.last_notified.insert(id.clone(), now);
@@ -117,10 +147,10 @@ pub async fn service_notify(
         (name, preview, target)
     };
 
-    publish(&app);
-    let (heading, text) = papeo_core::notification_text(preview, &name, &title, &body);
-    let sound = (!silent.unwrap_or(false)).then_some(DEFAULT_SOUND);
-    crate::notifications::show(&app, &heading, &text, sound, target)
+    publish(app);
+    let (heading, text) = papeo_core::notification_text(preview, &name, title, body);
+    let sound = (!silent).then_some(DEFAULT_SOUND);
+    crate::notifications::show(app, &heading, &text, sound, target)
 }
 
 /// Sinal de vida periódico do site, com a detecção de "deslogado".

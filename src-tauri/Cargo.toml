@@ -37,6 +37,8 @@ sha2 = "0.10"
 getrandom = "0.3"
 base64 = "0.21"
 url = "2"
+# Avisos de e-mail por IMAP (o mesmo TLS do sistema que o reqwest usa).
+native-tls = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -48,5 +50,5 @@ objc2-user-notifications = { version = "0.3", default-features = false, features
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Security_Credentials_UI", "Win32_Foundation", "Win32_System_SystemInformation", "Win32_System_WinRT", "Win32_UI_Input_KeyboardAndMouse", "Foundation", "Foundation_Collections", "Data_Xml_Dom", "UI_Notifications"] }
+windows = { version = "0.62", features = ["Security_Credentials_UI", "Win32_Foundation", "Win32_Security", "Win32_Security_Credentials", "Win32_System_SystemInformation", "Win32_System_WinRT", "Win32_UI_Input_KeyboardAndMouse", "Foundation", "Foundation_Collections", "Data_Xml_Dom", "UI_Notifications"] }
 windows-future = "0.3"

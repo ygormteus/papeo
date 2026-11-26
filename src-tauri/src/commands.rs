@@ -77,6 +77,8 @@ pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: Stri
     // Apaga cookies e dados locais da sessão (pasta e, no macOS, o
     // armazenamento do WebKit), com novas tentativas se ainda estiver em uso.
     crate::sessions::remove_later(&app, vec![removed.session]);
+    crate::mail::forget(&app, &id);
+    crate::mail::sync(&app);
     apply_layout(&app);
     Ok(publish(&app))
 }
@@ -141,6 +143,103 @@ pub async fn set_hibernation(
         inner.service_mut(&id)?.hibernate_after_minutes = minutes.min(24 * 60);
         Ok(())
     })?;
+    Ok(publish(&app))
+}
+
+/// Avisos por IMAP de uma caixa de e-mail.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailInput {
+    host: String,
+    port: Option<u16>,
+    user: String,
+    /// Vazia: mantém a senha guardada (só se servidor e usuário não mudaram).
+    password: Option<String>,
+    sleep_site: bool,
+}
+
+/// Liga, altera (`Some`) ou desliga (`None`) os avisos por IMAP da conta.
+/// A senha vai para o cofre do sistema (ou arquivo só do usuário), nunca
+/// para `services.json`.
+#[tauri::command]
+pub async fn set_mail_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    account: Option<MailInput>,
+) -> CmdResult {
+    ensure_unlocked(&app)?;
+    let (kind, previous) = {
+        let inner = state.lock();
+        let service = inner.service(&id)?;
+        (service.kind, service.mail.clone())
+    };
+    // O site dormia pelo IMAP: volta a avisar quando o IMAP sai de cena.
+    let slept = previous.as_ref().is_some_and(|m| m.sleep_site);
+    let Some(input) = account else {
+        state.update(|inner| {
+            inner.service_mut(&id)?.mail = None;
+            Ok(())
+        })?;
+        crate::mail::forget(&app, &id);
+        crate::mail::sync(&app);
+        if slept {
+            crate::mail::site_fallback(&app, &id, false);
+        }
+        return Ok(publish(&app));
+    };
+    if !kind.supports_mail_watch() {
+        return Err("Esta conta ainda não aceita avisos por IMAP.".into());
+    }
+    let account = papeo_core::mail::MailAccount {
+        host: input.host,
+        port: input.port.unwrap_or(papeo_core::mail::IMAPS_PORT),
+        user: input.user,
+        sleep_site: input.sleep_site,
+    }
+    .sanitized()?;
+    let secret = input.password.filter(|p| !p.is_empty());
+    match &secret {
+        Some(secret) => papeo_core::mail::check_secret(secret)?,
+        None => {
+            // Fora do lock: arquivo ou cofre do sistema.
+            let kept = crate::secrets::read(&app, &id).is_some_and(|s| s.matches(&account));
+            if !kept {
+                return Err(
+                    "Digite a senha: ela vale só para o servidor e o usuário em que foi informada."
+                        .into(),
+                );
+            }
+        }
+    }
+    let sleeps = account.sleep_site;
+    // Conta primeiro, senha depois: uma sincronização no meio não apaga a
+    // senha nova por ver a conta ainda sem IMAP.
+    state.update(|inner| {
+        inner.service_mut(&id)?.mail = Some(account.clone());
+        Ok(())
+    })?;
+    if let Some(secret) = secret {
+        let saved = crate::secrets::Saved {
+            host: account.host.clone(),
+            port: account.port,
+            user: account.user.clone(),
+            secret,
+        };
+        if let Err(err) = crate::secrets::write(&app, &id, &saved) {
+            let _ = state.update(|inner| {
+                inner.service_mut(&id)?.mail = previous;
+                Ok(())
+            });
+            crate::mail::sync(&app);
+            return Err(err);
+        }
+    }
+    // Salvar de novo tenta já, mesmo com a mesma senha.
+    crate::mail::restart(&app, &id);
+    if slept && !sleeps {
+        crate::mail::site_fallback(&app, &id, false);
+    }
     Ok(publish(&app))
 }
 
@@ -615,7 +714,21 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         }
     }
     close_all(&app);
-    state.update(|inner| {
+    let removed = state.update(|inner| {
+        // Contas que somem com a restauração (ou voltam sem IMAP) levam a
+        // senha do IMAP junto.
+        let removed: Vec<String> = inner
+            .config
+            .services
+            .iter()
+            .filter(|old| {
+                !config
+                    .services
+                    .iter()
+                    .any(|new| new.id == old.id && new.mail.is_some())
+            })
+            .map(|old| old.id.clone())
+            .collect();
         // A limpeza pendente é deste computador; o backup não a traz.
         let pending = std::mem::take(&mut inner.config.pending_removal);
         // O aviso e a escolha sobre atualizações valem para este computador.
@@ -640,8 +753,12 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         inner.unread.clear();
         inner.page_unread.clear();
         inner.current_chat.clear();
-        Ok(())
+        Ok(removed)
     })?;
+    for id in removed {
+        crate::mail::forget(&app, &id);
+    }
+    crate::mail::sync(&app);
     crate::sync::mark_dirty(&app);
     crate::organizer::publish_organizer(&app);
     activate(&app, None)
@@ -662,9 +779,13 @@ pub async fn clear_service_data(
         inner.forget_recent(&id);
         let service = inner.service_mut(&id)?;
         let old = std::mem::replace(&mut service.session, papeo_core::new_session());
+        // Sair da conta também desliga o IMAP e apaga a senha dele.
+        service.mail = None;
         Ok((old, was_active))
     })?;
     crate::sessions::remove_later(&app, vec![old]);
+    crate::mail::forget(&app, &id);
+    crate::mail::sync(&app);
     if was_active {
         // Reabre já na tela de login da sessão nova.
         activate(&app, Some(id))

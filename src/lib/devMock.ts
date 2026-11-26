@@ -351,6 +351,20 @@ export function installDevMock() {
       case "set_hibernation":
         find().hibernateAfterMinutes = Number(args.minutes);
         return snap();
+      case "set_mail_account": {
+        // Simula: senha "errada" é recusada; o resto conecta na hora.
+        const s = find();
+        const input = args.account as import("./api").MailInput | null;
+        if (!input) {
+          delete s.mail;
+          delete s.mailStatus;
+          return snap();
+        }
+        if (!input.password && !s.mail) throw "Digite a senha: ela vale só para o servidor e o usuário em que foi informada.";
+        s.mail = { host: input.host, port: input.port || 993, user: input.user, sleepSite: input.sleepSite };
+        s.mailStatus = input.password === "errada" ? { state: "auth" } : { state: "ok" };
+        return snap();
+      }
       case "hibernate_service": {
         const s = find();
         s.loaded = false;
