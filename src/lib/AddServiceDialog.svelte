@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { Check, CirclePlus, X } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
+  import ServiceAvatar from "./ServiceAvatar.svelte";
   import { KIND_META, errorMessage, needsUrl, type ServiceKind } from "./api";
 
   let {
@@ -31,17 +33,33 @@
   }
 </script>
 
-<Modal {onclose} label="Adicionar serviço">
+<Modal {onclose} label="Adicionar serviço" width={600} flush>
   <form onsubmit={submit}>
-    <h2>Adicionar serviço</h2>
-    <p class="muted">Cada serviço tem sessão própria: dá para ter duas contas do mesmo mensageiro.</p>
+    <header class="head">
+      <span class="head-icon" aria-hidden="true"><CirclePlus size={20} /></span>
+      <div class="head-text">
+        <h2>Adicionar serviço</h2>
+        <p>Cada serviço tem sessão própria: dá para ter duas contas do mesmo mensageiro.</p>
+      </div>
+      <button type="button" class="close" onclick={onclose} aria-label="Fechar"><X size={18} /></button>
+    </header>
 
+    <div class="content">
     <fieldset class="kinds">
       <legend class="sr-only">Tipo de serviço</legend>
       {#each kinds as k (k)}
         <label class="kind" class:selected={kind === k}>
-          <input type="radio" name="kind" value={k} bind:group={kind} class="sr-only" />
-          <span class="swatch" style:background={KIND_META[k].color} aria-hidden="true"></span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            type="radio"
+            name="kind"
+            value={k}
+            bind:group={kind}
+            class="sr-only"
+            autofocus={k === "whatsapp"}
+          />
+          <ServiceAvatar service={{ kind: k }} size={30} />
+          {#if kind === k}<span class="check" aria-hidden="true"><Check size={12} strokeWidth={3} /></span>{/if}
           <span class="kind-label">{KIND_META[k].label}</span>
           <span class="kind-hint">{KIND_META[k].hint}</span>
         </label>
@@ -94,6 +112,7 @@
     </div>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    </div>
 
     <div class="actions">
       <button type="button" class="btn" onclick={onclose}>Cancelar</button>
@@ -103,45 +122,104 @@
 </Modal>
 
 <style>
-  form {
+  .head {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 20px 18px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .head-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    background: var(--bg-subtle);
+    color: var(--text-muted);
+  }
+
+  .head-text {
+    flex: 1;
+    min-width: 0;
   }
 
   h2 {
     margin: 0;
     font-size: 18px;
     font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .head-text p {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    align-self: flex-start;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 24px;
+    max-height: min(62vh, 560px);
+    overflow-y: auto;
   }
 
   .muted {
-    margin: -10px 0 0;
     color: var(--text-muted);
     font-weight: 400;
   }
 
-  label .muted {
-    margin: 0;
-  }
-
   .kinds {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     margin: 0;
     padding: 0;
     border: 0;
   }
 
+  @media (max-width: 560px) {
+    .kinds {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
   .kind {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 12px;
+    min-width: 0;
+    padding: 14px 12px 12px;
     border: 1px solid var(--border);
     border-radius: 12px;
     cursor: pointer;
+    transition:
+      border-color 0.12s,
+      background 0.12s;
   }
 
   .kind:hover {
@@ -150,7 +228,7 @@
 
   .kind.selected {
     border-color: var(--text);
-    box-shadow: inset 0 0 0 1px var(--text);
+    background: var(--bg-subtle);
   }
 
   .kind:has(:focus-visible) {
@@ -158,11 +236,21 @@
     outline-offset: 2px;
   }
 
-  .swatch {
+  .kind :global(.avatar) {
+    margin-bottom: 8px;
+  }
+
+  .check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: grid;
+    place-items: center;
     width: 18px;
     height: 18px;
-    border-radius: 6px;
-    margin-bottom: 6px;
+    border-radius: 50%;
+    background: var(--text);
+    color: var(--bg);
   }
 
   .kind-label {
@@ -172,6 +260,8 @@
   .kind-hint {
     font-size: 11.5px;
     color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .error {
@@ -203,6 +293,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 4px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
   }
 </style>

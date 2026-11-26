@@ -8,7 +8,6 @@
     NotebookPen,
     Moon,
     PanelLeft,
-    LayoutList,
     Plus,
     RotateCw,
     Search,
@@ -41,7 +40,6 @@
     lockable,
     onlock,
     extra,
-    onservices,
     twin = false,
   }: {
     active: ServiceView | null;
@@ -60,8 +58,6 @@
     onlock: () => void;
     /** Conteúdo ao lado da busca (o resumo, no Início). */
     extra?: Snippet;
-    /** Botão "Serviços" (só no Início): abre a tabela das contas. */
-    onservices?: () => void;
     /** Há outra conta do mesmo serviço: destaca a troca de conta. */
     twin?: boolean;
   } = $props();
@@ -130,13 +126,6 @@
   {/if}
 
   <div class="spacer" data-tauri-drag-region></div>
-
-  {#if onservices}
-    <button class="services-btn" onclick={onservices} title="Serviços: memória, notificações e hibernação">
-      <LayoutList size={17} />
-      <span>Serviços</span>
-    </button>
-  {/if}
 
   {#if active}
     <div class="zoom" role="group" aria-label="Zoom de {active.name}">
@@ -423,30 +412,10 @@
     flex: 0 1 auto;
   }
 
-  .services-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    height: 34px;
-    padding: 0 10px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 14px;
-    white-space: nowrap;
-  }
-
-  .services-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-
-  /* Janela estreita: busca e "Serviços" viram só ícone (o nome fica no title). */
+  /* Janela estreita: a busca vira só ícone (o atalho continua no title). */
   @media (max-width: 1180px) {
     .search > span,
-    .search > kbd,
-    .services-btn > span {
+    .search > kbd {
       display: none;
     }
   }
