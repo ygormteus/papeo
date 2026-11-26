@@ -40,7 +40,7 @@
     errorMessage,
     isMuted,
     mediaPolicy,
-    needsUrl,
+    keepsUrl,
     nextMode,
     serviceColor,
     usesModes,
@@ -396,7 +396,7 @@
       {
         label: "Adicionar outra conta",
         icon: UserPlus,
-        run: () => run(api.addService(service.kind, undefined, needsUrl(service.kind) ? service.url : undefined)),
+        run: () => run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined)),
       },
       { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
       { label: "Sair e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },

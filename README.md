@@ -20,7 +20,7 @@
 Em vez de deixar várias abas abertas no navegador, você junta tudo numa janela só:
 
 - 💬 **WhatsApp, Telegram e Discord** prontos para usar — e qualquer outro site que você quiser.
-- ✉️ **Gmail e outros e-mails** (webmail, como o Roundcube) com contador de não lidas no Início e tarefas ligadas ao e-mail aberto.
+- ✉️ **Gmail, Outlook e outros e-mails** (webmail, como o Roundcube) com contador de não lidas no Início e tarefas ligadas ao e-mail aberto.
 - 👥 **Mais de uma conta** do mesmo aplicativo, por exemplo um WhatsApp **Pessoal** e outro do **Trabalho**, cada um com seu login.
 - 🔔 **Notificações** do próprio computador, com contador de mensagens não lidas — e dá para **responder direto na notificação**.
 - 💭 **Mini janela** no ícone da barra (Mac) ou da bandeja (Windows): leia as últimas conversas e responda sem abrir o app.
@@ -73,9 +73,11 @@ Mac: macOS 14 (Sonoma) ou mais novo. Windows: 10 ou 11.
 
 ### Adicione suas contas
 
-Clique em **Adicionar serviço**, escolha WhatsApp, Telegram, Discord, Gmail, **Outro e-mail** ou **Outro site**, e faça login como faria no navegador (no WhatsApp, leia o QR code com o celular).
+Clique em **Adicionar serviço**, escolha WhatsApp, Telegram, Discord, Gmail, Outlook, **Outro e-mail** ou **Outro site**, e faça login como faria no navegador (no WhatsApp, leia o QR code com o celular).
 
-Para e-mails fora do Gmail (contas IMAP do seu provedor ou domínio), escolha **Outro e-mail** e informe o endereço do webmail, o mesmo que você usa no navegador. No Gmail, para receber avisos de e-mails novos, ligue **Configurações → Notificações da área de trabalho** dentro do próprio Gmail.
+No **Outlook**, escolha ao adicionar se a conta é pessoal (Outlook.com, Hotmail) ou de trabalho/escola (Microsoft 365); para receber avisos, ligue **Configurações → Geral → Notificações** no próprio Outlook.
+
+Para e-mails fora do Gmail e do Outlook (contas IMAP do seu provedor ou domínio), escolha **Outro e-mail** e informe o endereço do webmail, o mesmo que você usa no navegador. No Gmail, para receber avisos de e-mails novos, ligue **Configurações → Notificações da área de trabalho** dentro do próprio Gmail.
 
 ![Janela de adicionar serviço](assets/screenshots/adicionar.png)
 

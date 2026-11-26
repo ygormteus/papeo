@@ -13,6 +13,9 @@ pub enum ServiceKind {
     Discord,
     /// Gmail na web.
     Gmail,
+    /// Outlook na web: pessoal (Outlook.com, Hotmail) ou de trabalho/escola
+    /// (Microsoft 365, pelo endereço informado ao adicionar).
+    Outlook,
     /// Webmail de qualquer provedor (Roundcube e outros, contas IMAP):
     /// o endereço é informado pela pessoa.
     Email,
@@ -29,7 +32,10 @@ impl ServiceKind {
 
     /// Caixas de e-mail: o assunto aberto faz as vezes da conversa.
     pub fn is_email(self) -> bool {
-        matches!(self, ServiceKind::Gmail | ServiceKind::Email)
+        matches!(
+            self,
+            ServiceKind::Gmail | ServiceKind::Outlook | ServiceKind::Email
+        )
     }
 
     fn default_name(self) -> Option<&'static str> {
@@ -38,6 +44,7 @@ impl ServiceKind {
             Self::Telegram => Some("Telegram"),
             Self::Discord => Some("Discord"),
             Self::Gmail => Some("Gmail"),
+            Self::Outlook => Some("Outlook"),
             Self::Email | Self::Custom => None,
         }
     }
@@ -48,6 +55,7 @@ impl ServiceKind {
             Self::Telegram => Some("https://web.telegram.org/a/"),
             Self::Discord => Some("https://discord.com/app"),
             Self::Gmail => Some("https://mail.google.com/mail/u/0/"),
+            Self::Outlook => Some("https://outlook.live.com/mail/"),
             Self::Email | Self::Custom => None,
         }
     }
@@ -165,7 +173,10 @@ impl Service {
     /// e-mail e sites personalizados perguntam.
     pub fn media_policy(&self) -> MediaPolicy {
         self.media.unwrap_or(match self.kind {
-            ServiceKind::Custom | ServiceKind::Gmail | ServiceKind::Email => MediaPolicy::Ask,
+            ServiceKind::Custom
+            | ServiceKind::Gmail
+            | ServiceKind::Outlook
+            | ServiceKind::Email => MediaPolicy::Ask,
             _ => MediaPolicy::Allow,
         })
     }
@@ -376,6 +387,22 @@ mod tests {
         .unwrap();
         assert_eq!(webmail.name, "webmail.exemplo.com.br");
         assert!(ServiceKind::Gmail.is_email() && ServiceKind::Email.is_email());
+        let outlook = Service::new(ServiceKind::Outlook, None, None).unwrap();
+        assert_eq!(outlook.name, "Outlook");
+        assert_eq!(outlook.url, "https://outlook.live.com/mail/");
+        assert_eq!(outlook.media_policy(), MediaPolicy::Ask);
+        assert!(ServiceKind::Outlook.is_email() && !ServiceKind::Outlook.supports_chat());
+        let work = Service::new(
+            ServiceKind::Outlook,
+            None,
+            Some("https://outlook.office.com/mail/".into()),
+        )
+        .unwrap();
+        assert_eq!(work.url, "https://outlook.office.com/mail/");
+        assert_eq!(
+            serde_json::to_string(&ServiceKind::Outlook).unwrap(),
+            r#""outlook""#
+        );
         assert!(!ServiceKind::Gmail.supports_chat() && !ServiceKind::Whatsapp.is_email());
         let kind: ServiceKind = serde_json::from_str(r#""email""#).unwrap();
         assert_eq!(kind, ServiceKind::Email);

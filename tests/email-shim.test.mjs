@@ -1,4 +1,4 @@
-// Testa a parte de e-mail do script injetado (Gmail e Roundcube): `pnpm test`.
+// Testa a parte de e-mail do script injetado (Gmail, Outlook e Roundcube): `pnpm test`.
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
@@ -171,6 +171,43 @@ function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
   // Tela de login do Roundcube.
   const login = load({ hostname: "mail.exemplo.org", dom: { "#rcmloginuser": el() } }).status();
   check(login.loggedOut && login.unread === null, "roundcube: desconectado, sem contador");
+}
+
+// Outlook (pessoal e Microsoft 365): número da Caixa de Entrada na lista de
+// pastas, assunto no painel de leitura, login da Microsoft = desconectado.
+{
+  const inbox = el({ textContent: "Caixa de Entrada12", attrs: { title: "Caixa de Entrada" } });
+  const subject = el({ textContent: "Reunião de quinta" });
+  const page = load({
+    hostname: "outlook.live.com",
+    pathname: "/mail/0/",
+    dom: { '[role="treeitem"][data-folder-name="inbox" i]': inbox },
+    all: {
+      '#ReadingPaneContainerId [role="heading"], [aria-label="Reading Pane" i] [role="heading"], [aria-label="Painel de Leitura" i] [role="heading"]':
+        [subject],
+    },
+  });
+  let s = page.status();
+  check(s.unread === 12 && s.chat === "Reunião de quinta", `outlook: ${JSON.stringify(s)}`);
+  check(s.loggedOut === false, "outlook: conectado");
+  // Pasta sem número: nenhuma não lida.
+  inbox.textContent = "Caixa de Entrada";
+  s = page.status();
+  check(s.unread === 0, `outlook: caixa em dia (${s.unread})`);
+
+  // Sem o atributo da pasta: acha pelo nome entre as pastas.
+  const work = load({
+    hostname: "outlook.office.com",
+    all: { '[role="treeitem"]': [el({ textContent: "Favorites" }), el({ textContent: "Inbox 3" })] },
+  }).status();
+  check(work.unread === 3 && work.chat === "", `outlook 365: pasta pelo nome (${JSON.stringify(work)})`);
+  // Estrutura desconhecida: vale o título.
+  check(load({ hostname: "outlook.cloud.microsoft" }).status().unread === null, "outlook: sem pasta, vale o título");
+
+  for (const hostname of ["login.live.com", "login.microsoftonline.com"]) {
+    const login = load({ hostname }).status();
+    check(login.loggedOut && login.chat === "", `microsoft: login em ${hostname}`);
+  }
 }
 
 // Outros sites continuam sem contador da página (vale o título).

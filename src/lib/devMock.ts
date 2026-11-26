@@ -21,12 +21,14 @@ const DEFAULT_URL: Record<string, string> = {
   telegram: "https://web.telegram.org/a/",
   discord: "https://discord.com/app",
   gmail: "https://mail.google.com/mail/u/0/",
+  outlook: "https://outlook.live.com/mail/",
 };
 const DEFAULT_NAME: Record<string, string> = {
   whatsapp: "WhatsApp",
   telegram: "Telegram",
   discord: "Discord",
   gmail: "Gmail",
+  outlook: "Outlook",
 };
 const MB = 1024 ** 2;
 
@@ -308,7 +310,7 @@ export function installDevMock() {
         const base = (args.name as string) || DEFAULT_NAME[kind] || String(args.url);
         let name = base;
         for (let n = 2; !args.name && services.some((s) => s.name === name); n++) name = `${base} ${n}`;
-        services.push(mk(id, kind, name, DEFAULT_URL[kind] ?? String(args.url), true, 0));
+        services.push(mk(id, kind, name, (args.url as string) || DEFAULT_URL[kind] || "", true, 0));
         active = id;
         return snap();
       }

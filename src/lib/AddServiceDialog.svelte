@@ -2,17 +2,19 @@
   import { Check, CirclePlus, X } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { KIND_META, errorMessage, needsUrl, type ServiceKind } from "./api";
+  import { KIND_META, OUTLOOK_WORK_URL, errorMessage, needsUrl, type ServiceKind } from "./api";
 
   let {
     onclose,
     onsubmit,
   }: { onclose: () => void; onsubmit: (kind: ServiceKind, name: string, url: string) => Promise<void> } = $props();
 
-  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "gmail", "email", "custom"];
+  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "gmail", "outlook", "email", "custom"];
   let kind = $state<ServiceKind>("whatsapp");
   let name = $state("");
   let url = $state("");
+  /** Outlook de trabalho ou escola (Microsoft 365) em vez do pessoal. */
+  let outlookWork = $state(false);
   let error = $state("");
   let busy = $state(false);
 
@@ -25,7 +27,8 @@
     busy = true;
     error = "";
     try {
-      await onsubmit(kind, name.trim(), needsUrl(kind) ? url.trim() : "");
+      const address = needsUrl(kind) ? url.trim() : kind === "outlook" && outlookWork ? OUTLOOK_WORK_URL : "";
+      await onsubmit(kind, name.trim(), address);
     } catch (err) {
       error = errorMessage(err);
       busy = false;
@@ -90,6 +93,22 @@
           </p>
         {/if}
       </div>
+    {:else if kind === "outlook"}
+      <fieldset class="account">
+        <legend>Tipo de conta</legend>
+        <label class="choice">
+          <input type="radio" name="outlook-account" value={false} bind:group={outlookWork} />
+          <span>Pessoal <span class="muted">(Outlook.com, Hotmail, Live)</span></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="outlook-account" value={true} bind:group={outlookWork} />
+          <span>Trabalho ou escola <span class="muted">(Microsoft 365)</span></span>
+        </label>
+      </fieldset>
+      <p class="note">
+        Para receber avisos de e-mails novos, ligue no Outlook: Configurações → Geral → Notificações →
+        Notificações da área de trabalho.
+      </p>
     {:else if kind === "gmail"}
       <p class="note">
         Para receber avisos de e-mails novos, ligue no Gmail: Configurações → Ver todas as configurações →
@@ -194,7 +213,7 @@
 
   .kinds {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
     margin: 0;
     padding: 0;
@@ -276,6 +295,34 @@
   }
 
   .kinds + .note {
+    margin: 0;
+  }
+
+  .account {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .account legend {
+    width: 100%;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .choice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    cursor: pointer;
+  }
+
+  .account + .note {
     margin: 0;
   }
 

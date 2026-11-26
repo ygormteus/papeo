@@ -15,7 +15,7 @@
         ? Send
         : service.kind === "discord"
           ? Headphones
-          : service.kind === "gmail" || service.kind === "email"
+          : service.kind === "gmail" || service.kind === "outlook" || service.kind === "email"
             ? Mail
             : Globe,
   );

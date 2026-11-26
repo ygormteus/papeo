@@ -91,9 +91,12 @@
 
   // Site conhecido: o domínio, ou o tipo de webmail (o Roundcube roda no
   // domínio de cada provedor, então é reconhecido pela própria página).
+  // Outlook na web: pessoal e Microsoft 365 (domínios antigos e o novo).
+  const OUTLOOK_HOSTS = ["outlook.live.com", "outlook.office.com", "outlook.office365.com", "outlook.cloud.microsoft"];
   const site = () => {
     const host = location.hostname;
     if (host === "mail.google.com") return "gmail";
+    if (OUTLOOK_HOSTS.includes(host)) return "outlook";
     if (window.rcmail || document.querySelector("#rcmloginuser")) return "roundcube";
     return host;
   };
@@ -101,6 +104,7 @@
   const firstVisible = (sel, root = document) => [...root.querySelectorAll(sel)].find(visible) || null;
 
   // Tela de login/QR visível = sessão desconectada (só sites conhecidos).
+  const MICROSOFT_LOGIN = ["login.live.com", "login.microsoftonline.com"];
   const LOGGED_OUT_SELECTORS = {
     "web.whatsapp.com": '[data-ref] canvas, canvas[aria-label*="QR" i], canvas[aria-label*="scan" i]',
     "web.telegram.org": "#auth-qr-form, #auth-phone-number-form, #auth-code-form, #auth-password-form",
@@ -112,6 +116,8 @@
     if (location.hostname === "accounts.google.com") {
       return /^\/(v\d\/)?(signin|ServiceLogin|AccountChooser)/i.test(location.pathname || "");
     }
+    // Outlook desconectado cai no login da Microsoft.
+    if (MICROSOFT_LOGIN.includes(location.hostname)) return true;
     const selector = LOGGED_OUT_SELECTORS[site()];
     return Boolean(selector && document.querySelector(selector));
   };
@@ -135,6 +141,13 @@
     gmail: () => firstVisible("h2.hP"),
     // Login do Google (Gmail desconectado): nenhum e-mail aberto.
     "accounts.google.com": () => null,
+    // Outlook: título do e-mail no painel de leitura.
+    outlook: () =>
+      firstVisible(
+        '#ReadingPaneContainerId [role="heading"], [aria-label="Reading Pane" i] [role="heading"], [aria-label="Painel de Leitura" i] [role="heading"]',
+      ),
+    "login.live.com": () => null,
+    "login.microsoftonline.com": () => null,
     roundcube: roundcubeSubject,
   };
   // Número com separador de milhar ("1.234", "1 234"); sem número: undefined.
@@ -151,6 +164,17 @@
       if (item) return digits(item.querySelector(".bsU")?.textContent) ?? 0;
       // Estrutura desconhecida: só com o número no rótulo; senão vale o título.
       return digits(inbox.getAttribute("aria-label"));
+    },
+    // Outlook: o número ao lado da Caixa de Entrada, na lista de pastas
+    // (o título da aba não traz contador). Sem a pasta: vale o título.
+    outlook: () => {
+      const inbox =
+        document.querySelector('[role="treeitem"][data-folder-name="inbox" i]') ||
+        [...document.querySelectorAll('[role="treeitem"]')].find((el) =>
+          /^(inbox|caixa de entrada)\b/i.test(el.getAttribute("title") || el.textContent?.trim() || ""),
+        );
+      if (!inbox) return undefined;
+      return digits(inbox.textContent) ?? digits(inbox.getAttribute("aria-label")) ?? 0;
     },
     roundcube: () => {
       const rc = window.rcmail;

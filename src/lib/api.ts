@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Component } from "svelte";
 
-export type ServiceKind = "whatsapp" | "telegram" | "discord" | "gmail" | "email" | "custom";
+export type ServiceKind = "whatsapp" | "telegram" | "discord" | "gmail" | "outlook" | "email" | "custom";
 export type MediaPolicy = "ask" | "allow" | "block";
 export type LockMethod = "none" | "system" | "pin";
 export type Appearance = "system" | "light" | "dark" | "oled";
@@ -43,7 +43,7 @@ export interface ServiceView {
   /** Minutos desde o último uso nesta sessão (0 = em uso). */
   idleMinutes?: number | null;
   /** Conversa aberta no site (nome no cabeçalho; nas caixas de e-mail, o
-   *  assunto do e-mail aberto). Só WhatsApp, Telegram, Gmail e Roundcube. */
+   *  assunto do e-mail aberto). Só WhatsApp, Telegram, Gmail, Outlook e Roundcube. */
   chat?: string | null;
   /** Trabalho ou pessoal; sem valor, aparece em todos os modos. */
   context?: ServiceContext;
@@ -590,6 +590,7 @@ export const KIND_META: Record<ServiceKind, { label: string; color: string; hint
   telegram: { label: "Telegram", color: "#2aabee", hint: "web.telegram.org" },
   discord: { label: "Discord", color: "#5865f2", hint: "discord.com" },
   gmail: { label: "Gmail", color: "#ea4335", hint: "mail.google.com" },
+  outlook: { label: "Outlook", color: "#0a64b8", hint: "Pessoal ou Microsoft 365" },
   email: { label: "Outro e-mail", color: "#0f766e", hint: "Webmail (Roundcube e outros)" },
   custom: { label: "Outro site", color: "#8b5cf6", hint: "Qualquer endereço https" },
 };
@@ -625,12 +626,20 @@ export function isMessenger(service: Pick<ServiceView, "kind">): boolean {
 
 /** Caixas de e-mail: o assunto aberto faz as vezes da conversa. */
 export function isEmail(service: Pick<ServiceView, "kind">): boolean {
-  return service.kind === "gmail" || service.kind === "email";
+  return service.kind === "gmail" || service.kind === "outlook" || service.kind === "email";
 }
 
 /** Tipos em que a pessoa informa o endereço. */
 export function needsUrl(kind: ServiceKind): boolean {
   return kind === "custom" || kind === "email";
+}
+
+/** Outlook: endereço de quem entra com conta de trabalho ou escola. */
+export const OUTLOOK_WORK_URL = "https://outlook.office.com/mail/";
+
+/** Tipos cujo endereço muda de uma conta para outra (vale ao duplicar). */
+export function keepsUrl(kind: ServiceKind): boolean {
+  return needsUrl(kind) || kind === "outlook";
 }
 
 export const MEDIA_OPTIONS: { value: MediaPolicy; label: string }[] = [
