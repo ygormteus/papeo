@@ -307,6 +307,61 @@ pub fn reload(app: &AppHandle, id: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Reabre a conta do zero: fecha a webview e cria outra, como ao reabrir o
+/// app. Recarregar a página mantém o processo do site e o estado da conta, e
+/// depois de horas parado o WhatsApp Web pode carregar a página mas ficar
+/// preso na tela de carregamento, sem nunca conectar.
+/// Com download em curso, só recarrega a página (fechar o interromperia).
+pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
+    if app.get_webview(id).is_none() {
+        return Ok(false);
+    }
+    let state = app.state::<AppState>();
+    let (service, area, shown) = {
+        let mut inner = state.lock();
+        let downloading = inner
+            .downloads
+            .iter()
+            .any(|d| d.service_id == id && d.state == DownloadState::Downloading);
+        if downloading {
+            drop(inner);
+            return reload(app, id);
+        }
+        let service = inner.service(id)?.clone();
+        let shown = inner.active.as_deref() == Some(id) && !inner.overlay && !inner.locked;
+        // A página nova volta a informar o contador (ou o título).
+        inner.page_unread.remove(id);
+        inner.last_reload.insert(id.to_owned(), Instant::now());
+        (service, inner.area, shown)
+    };
+    if let Some(old) = app.get_webview(id) {
+        let _ = old.close();
+    }
+    // Escondida, nasce fora de vista (o layout decide se aparece).
+    let area = if shown {
+        area
+    } else {
+        Area {
+            x: -(area.width + 100.0),
+            ..area
+        }
+    };
+    // Sem o lock: add_child espera a thread principal.
+    let webview = create_service_webview(app, &service, area)?;
+    // Removida, com os dados apagados ou trocada por um backup durante a
+    // criação: desfaz.
+    let changed = state.lock().service(id).map(|s| &s.session) != Ok(&service.session);
+    if changed {
+        hibernate(app, id);
+        return Ok(false);
+    }
+    apply_layout(app);
+    if shown {
+        let _ = webview.set_focus();
+    }
+    Ok(true)
+}
+
 /// Posiciona e exibe apenas o serviço ativo; os demais carregados ficam ocultos.
 pub fn apply_layout(app: &AppHandle) {
     let state = app.state::<AppState>();

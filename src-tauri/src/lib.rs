@@ -63,6 +63,64 @@ fn slept(before: std::time::SystemTime, now: std::time::SystemTime) -> bool {
         .is_ok_and(|gap| gap >= SLEPT_AFTER)
 }
 
+/// Pessoa de volta ao computador: mexeu nele há menos que isto, com a tela
+/// acesa. As acordadas de manutenção do repouso (Mac de tampa fechada, por
+/// exemplo) não contam: recarregar ali, quase sempre sem rede e com o Mac
+/// dormindo de novo no meio, deixava o WhatsApp Web preso carregando.
+const PRESENT_IDLE: Duration = Duration::from_secs(2 * 60);
+/// Com a pessoa de volta, espera a rede até este número de voltas de 15 s;
+/// depois reabre assim mesmo (rede que só passa por proxy, por exemplo).
+const RESUME_MAX_WAIT_TICKS: u32 = 8;
+/// Tempo máximo para checar se os sites das contas respondem.
+const NET_CHECK: Duration = Duration::from_secs(4);
+
+fn user_present() -> bool {
+    !idle::display_asleep() && idle::system_idle().is_none_or(|t| t < PRESENT_IDLE)
+}
+
+/// Algum dos sites responde (conexão TCP na porta do site)? Cada um num
+/// thread, com tempo máximo: sem rede, a resolução de nomes pode demorar.
+fn reachable(app: &AppHandle, ids: &[String]) -> bool {
+    let mut hosts: Vec<(String, u16)> = {
+        let state = app.state::<AppState>();
+        let inner = state.lock();
+        ids.iter()
+            .filter_map(|id| inner.service(id).ok())
+            .filter_map(|s| url::Url::parse(&s.url).ok())
+            .filter_map(|u| Some((u.host_str()?.to_owned(), u.port_or_known_default()?)))
+            .collect()
+    };
+    hosts.sort();
+    hosts.dedup();
+    hosts.truncate(4);
+    if hosts.is_empty() {
+        return true;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    for (host, port) in hosts {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            use std::net::{TcpStream, ToSocketAddrs};
+            let ok = (host.as_str(), port)
+                .to_socket_addrs()
+                .ok()
+                .and_then(|mut addrs| addrs.next())
+                .is_some_and(|addr| TcpStream::connect_timeout(&addr, NET_CHECK).is_ok());
+            let _ = tx.send(ok);
+        });
+    }
+    drop(tx);
+    let deadline = std::time::Instant::now() + NET_CHECK;
+    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(true) => return true,
+            Ok(false) => {}
+            Err(_) => return false,
+        }
+    }
+    false
+}
+
 /// Contas carregadas que podem ser recarregadas na volta do repouso: todas,
 /// menos as com download em curso.
 fn resume_due(app: &AppHandle) -> Vec<String> {
@@ -136,8 +194,9 @@ fn reload_due(app: &AppHandle, window_visible: bool, away: bool) -> Vec<String> 
 /// A cada 15 s: hiberna serviços parados, reavalia "não responde", aplica o
 /// bloqueio automático e agenda a verificação de atualizações. A cada
 /// minuto, recarrega serviços que passaram do limite de memória. Na volta
-/// do repouso do computador, recarrega as contas abertas (uma volta depois,
-/// para a rede ter tempo de voltar).
+/// do repouso do computador, reabre do zero as contas abertas quando a
+/// pessoa está de volta e os sites respondem (ou após ~2 min esperando a
+/// rede), nunca nas acordadas de manutenção com a tela apagada.
 fn spawn_maintenance(app: AppHandle) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
@@ -146,19 +205,30 @@ fn spawn_maintenance(app: AppHandle) {
         let mut tick: u64 = 0;
         let mut wall = std::time::SystemTime::now();
         let mut resume_pending = false;
+        // Voltas com a pessoa presente esperando a rede para reabrir.
+        let mut resume_waited: u32 = 0;
         loop {
             std::thread::sleep(Duration::from_secs(15));
             tick += 1;
             let now = std::time::SystemTime::now();
-            let woke = resume_pending;
-            if resume_pending {
-                resume_pending = false;
-                for id in resume_due(&app) {
-                    let _ = webviews::reload(&app, &id);
+            let mut woke = false;
+            // Uma volta depois de acordar, no mínimo, para a rede voltar.
+            if resume_pending && user_present() {
+                let ids = resume_due(&app);
+                resume_waited += 1;
+                if resume_waited > RESUME_MAX_WAIT_TICKS || reachable(&app, &ids) {
+                    resume_pending = false;
+                    resume_waited = 0;
+                    woke = true;
+                    for id in ids {
+                        let _ = webviews::restart(&app, &id);
+                    }
+                    publish(&app);
                 }
             }
             if slept(wall, now) {
                 resume_pending = true;
+                resume_waited = 0;
             }
             wall = now;
             let state = app.state::<AppState>();

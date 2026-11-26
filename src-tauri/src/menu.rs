@@ -69,8 +69,14 @@ fn handle(app: &AppHandle, id: &str) {
             let _ = activate(app, None);
         }
         "go:reload" => {
-            if let Some(webview) = active.and_then(|id| app.get_webview(&id)) {
-                let _ = webview.reload();
+            // Fora da thread principal: criar a webview nova espera por ela.
+            if let Some(id) = active {
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    if crate::webviews::restart(&app, &id).unwrap_or(false) {
+                        crate::state::publish(&app);
+                    }
+                });
             }
         }
         "go:search" => {

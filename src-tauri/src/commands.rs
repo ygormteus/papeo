@@ -280,7 +280,7 @@ pub async fn hibernate_service(
 
 #[tauri::command]
 pub async fn reload_service(app: AppHandle, id: String) -> CmdResult<()> {
-    if crate::webviews::reload(&app, &id)? {
+    if crate::webviews::restart(&app, &id)? {
         publish(&app);
     }
     Ok(())

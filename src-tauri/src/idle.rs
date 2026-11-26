@@ -7,6 +7,12 @@ pub fn system_idle() -> Option<Duration> {
     imp::idle()
 }
 
+/// Tela principal apagada. No macOS, as acordadas de manutenção do repouso
+/// ("dark wake") rodam o app por alguns segundos com a tela apagada.
+pub fn display_asleep() -> bool {
+    imp::display_asleep()
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use std::time::Duration;
@@ -19,6 +25,13 @@ mod imp {
     #[link(name = "CoreGraphics", kind = "framework")]
     unsafe extern "C" {
         fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+        fn CGMainDisplayID() -> u32;
+        fn CGDisplayIsAsleep(display: u32) -> u32;
+    }
+
+    pub fn display_asleep() -> bool {
+        // SAFETY: funções puras do CoreGraphics, sem ponteiros.
+        unsafe { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
     }
 
     pub fn idle() -> Option<Duration> {
@@ -50,12 +63,20 @@ mod imp {
         let ms = unsafe { GetTickCount() }.wrapping_sub(info.dwTime);
         Some(Duration::from_millis(u64::from(ms)))
     }
+
+    pub fn display_asleep() -> bool {
+        false
+    }
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod imp {
     pub fn idle() -> Option<std::time::Duration> {
         None
+    }
+
+    pub fn display_asleep() -> bool {
+        false
     }
 }
 
