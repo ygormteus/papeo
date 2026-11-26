@@ -5,11 +5,25 @@ use crate::state::{
 };
 use papeo_core::{MediaPolicy, Service};
 use std::time::{Duration, Instant};
-use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse, WebviewBuilder};
+use tauri::webview::{
+    NewWindowResponse, PageLoadEvent, PermissionKind, PermissionResponse, WebviewBuilder,
+};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl};
 use tauri_plugin_opener::OpenerExt;
 
 const SERVICE_SCRIPT: &str = include_str!("notification_shim.js");
+const VOICE_ENHANCE: &str = include_str!("voice_enhance.js");
+const RNNOISE_WASM: &[u8] = include_bytes!("../vendor/rnnoise/rnnoise.wasm");
+
+/// Limpeza das mensagens de voz (só no WhatsApp), com o RNNoise embutido.
+fn voice_enhance_script() -> &'static str {
+    use base64::Engine;
+    static SCRIPT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SCRIPT.get_or_init(|| {
+        let wasm = base64::engine::general_purpose::STANDARD.encode(RNNOISE_WASM);
+        VOICE_ENHANCE.replace("__PAPEO_RNNOISE_WASM__", &wasm)
+    })
+}
 
 /// WKWebView (macOS) e WebKitGTK (Linux) não trazem o token "Safari" no
 /// user-agent padrão, e o WhatsApp Web recusa o navegador sem ele.
@@ -44,6 +58,29 @@ fn permission_for(webview: &Webview, kind: PermissionKind) -> PermissionResponse
     }
 }
 
+/// Modo da gravação de mensagens de voz lido por `notification_shim.js`.
+fn voice_script(mode: papeo_core::VoiceCapture) -> &'static str {
+    match mode {
+        papeo_core::VoiceCapture::Instant => "window.__papeoVoice = 'instant';",
+        papeo_core::VoiceCapture::Enhanced => "window.__papeoVoice = 'enhanced';",
+        papeo_core::VoiceCapture::Clean => "window.__papeoVoice = 'clean';",
+    }
+}
+
+/// Aplica o modo de gravação nos serviços já abertos (os novos recebem na criação).
+pub fn set_voice_capture(app: &AppHandle, mode: papeo_core::VoiceCapture) {
+    let ids: Vec<String> = {
+        let state = app.state::<AppState>();
+        let inner = state.lock();
+        inner.config.services.iter().map(|s| s.id.clone()).collect()
+    };
+    for id in ids {
+        if let Some(webview) = app.get_webview(&id) {
+            let _ = webview.eval(voice_script(mode));
+        }
+    }
+}
+
 /// Abre no navegador padrão (no autoteste, só anota).
 pub fn open_external(app: &AppHandle, url: &str) {
     #[cfg(feature = "selftest")]
@@ -73,10 +110,25 @@ pub fn create_service_webview(
         .parse()
         .map_err(|_| "URL inválida.".to_owned())?;
     let state = app.state::<AppState>();
+    let voice = state.lock().config.settings.voice_capture;
 
     let mut builder = WebviewBuilder::new(&service.id, WebviewUrl::External(url))
         .data_directory(state.sessions_dir.join(&service.session))
+        .initialization_script(voice_script(voice))
         .initialization_script(SERVICE_SCRIPT)
+        // O script de inicialização guarda o modo de quando a webview nasceu;
+        // a cada página carregada (o site ou o Papeo recarregam), vale o atual.
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let mode = webview
+                    .state::<AppState>()
+                    .lock()
+                    .config
+                    .settings
+                    .voice_capture;
+                let _ = webview.eval(voice_script(mode));
+            }
+        })
         // Sem isto o Tauri captura arquivos soltos na janela e o site
         // (WhatsApp, Telegram) nunca recebe o arrastar e soltar.
         .disable_drag_drop_handler()
@@ -118,6 +170,10 @@ pub fn create_service_webview(
     #[cfg(target_os = "macos")]
     {
         builder = builder.data_store_identifier(service.session_bytes());
+    }
+
+    if service.kind == papeo_core::ServiceKind::Whatsapp {
+        builder = builder.initialization_script(voice_enhance_script());
     }
 
     match &service.user_agent {
@@ -408,4 +464,30 @@ pub fn close_all(app: &AppHandle) {
         hibernate(app, &id);
     }
     state.lock().active = None;
+}
+
+#[cfg(test)]
+mod voice_tests {
+    use super::*;
+    use base64::Engine;
+
+    #[test]
+    fn voice_enhance_embeds_rnnoise() {
+        let script = voice_enhance_script();
+        assert!(!script.contains("__PAPEO_RNNOISE_WASM__"));
+        let start = script.find("const WASM_BASE64 = \"").unwrap() + 21;
+        let end = start + script[start..].find('"').unwrap();
+        let wasm = base64::engine::general_purpose::STANDARD
+            .decode(&script[start..end])
+            .unwrap();
+        assert_eq!(wasm, RNNOISE_WASM);
+    }
+
+    #[test]
+    fn voice_script_per_mode() {
+        use papeo_core::VoiceCapture::*;
+        assert!(voice_script(Instant).contains("'instant'"));
+        assert!(voice_script(Enhanced).contains("'enhanced'"));
+        assert!(voice_script(Clean).contains("'clean'"));
+    }
 }

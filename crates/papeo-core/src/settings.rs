@@ -37,6 +37,8 @@ pub struct Settings {
     pub open_links: LinkTarget,
     /// O que fazer com os anexos baixados nos serviços.
     pub attachments: AttachmentMode,
+    /// Como o microfone é aberto nas mensagens de voz (macOS).
+    pub voice_capture: VoiceCapture,
     /// Textos salvos para a resposta rápida (chamados com "/").
     pub quick_replies: Vec<QuickReply>,
     /// Modo escolhido: todas as contas, só trabalho, só pessoal ou pelo
@@ -240,6 +242,22 @@ pub enum AttachmentMode {
     Preview,
 }
 
+/// Gravação das mensagens de voz. No WebKit (macOS), a redução de eco e
+/// ruído do sistema leva ~1 s para começar e o começo do áudio sai mudo; por
+/// isso o padrão é sem ela. A limpeza do Papeo (RNNoise e nivelador) começa
+/// na hora e vale também no Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceCapture {
+    /// Começa na hora: som original no macOS, padrão do sistema no Windows.
+    #[default]
+    Instant,
+    /// Começa na hora, com a limpeza do Papeo.
+    Enhanced,
+    /// Redução de eco e ruído do navegador (no macOS, a do sistema).
+    Clean,
+}
+
 /// Limite padrão e faixa aceita para `reload_above_mb`.
 pub const RELOAD_DEFAULT_MB: u32 = 2048;
 pub const RELOAD_MIN_MB: u32 = 512;
@@ -328,6 +346,7 @@ impl Default for Settings {
             reload_above_mb: RELOAD_DEFAULT_MB,
             open_links: LinkTarget::Browser,
             attachments: AttachmentMode::Save,
+            voice_capture: VoiceCapture::Instant,
             quick_replies: Vec::new(),
             mode: ModeChoice::All,
             work_hours: WorkHours::default(),
@@ -682,6 +701,11 @@ mod tests {
         assert_eq!(old.attachments, AttachmentMode::Save);
         let shown: Settings = serde_json::from_str(r#"{"attachments":"preview"}"#).unwrap();
         assert_eq!(shown.attachments, AttachmentMode::Preview);
+        assert_eq!(old.voice_capture, VoiceCapture::Instant);
+        let clean: Settings = serde_json::from_str(r#"{"voiceCapture":"clean"}"#).unwrap();
+        assert_eq!(clean.voice_capture, VoiceCapture::Clean);
+        let enhanced: Settings = serde_json::from_str(r#"{"voiceCapture":"enhanced"}"#).unwrap();
+        assert_eq!(enhanced.voice_capture, VoiceCapture::Enhanced);
     }
 
     #[test]

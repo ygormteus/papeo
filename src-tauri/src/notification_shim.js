@@ -173,11 +173,77 @@
   // o Papeo não recarrega o serviço para liberar memória enquanto isso.
   const captures = new Set();
   const media = navigator.mediaDevices;
+  // Mensagens de voz do WhatsApp, conforme a escolha nas Configurações
+  // (`window.__papeoVoice`, vindo do Papeo), só no pedido de microfone que vem
+  // logo após tocar no botão de gravar do rodapé da conversa (chamadas e
+  // vídeo nunca mudam):
+  // - "instant" (padrão): no WebKit (macOS), sem cancelamento de eco. Com ele,
+  //   o WebKit liga o processamento de voz do sistema, que leva ~1 s para
+  //   começar e entrega silêncio até lá. No Windows, fica o padrão do sistema;
+  // - "enhanced": microfone cru tratado pelo Papeo (`voice_enhance.js`);
+  // - "clean": o padrão do navegador (no macOS, a redução do sistema).
+  const webkit = !/Chrome|Chromium|Edg\//.test(navigator.userAgent || "");
+  const voiceMode = () => (["enhanced", "clean"].includes(window.__papeoVoice) ? window.__papeoVoice : "instant");
+  let voicePress = 0;
+  const isVoiceButton = (target) => {
+    const button = target?.closest?.('button, [role="button"]');
+    if (!button?.closest?.("footer")) return false;
+    const label = button.getAttribute?.("aria-label") || "";
+    const icon = button.querySelector?.("[data-icon]")?.getAttribute?.("data-icon") || "";
+    if (/chamada|call|llamada/i.test(label)) return false;
+    return /ptt|mic/i.test(icon) || /voz|voice|áudio|audio/i.test(label);
+  };
+  if (location.hostname === "web.whatsapp.com") {
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (!isVoiceButton(e.target)) return;
+        voicePress = Date.now();
+        // Prepara a limpeza enquanto o microfone ainda abre.
+        if (voiceMode() === "enhanced") window.__papeoVoiceWarmup?.();
+      },
+      true,
+    );
+  }
+  // Pedido de mensagem de voz (só áudio, logo após o toque): consome o toque.
+  const isVoiceNote = (constraints) => {
+    if (!voicePress || Date.now() - voicePress > 3000) return false;
+    if (!constraints || constraints.video || !constraints.audio) return false;
+    voicePress = 0;
+    return true;
+  };
+  const withAudio = (constraints, extra) => {
+    const audio = typeof constraints.audio === "object" ? constraints.audio : {};
+    return { ...constraints, audio: { ...audio, ...extra } };
+  };
   for (const name of ["getUserMedia", "getDisplayMedia"]) {
     if (!media || typeof media[name] !== "function") continue;
     const original = media[name].bind(media);
     media[name] = async (...args) => {
-      const stream = await original(...args);
+      let enhance = null;
+      // Pedido "instantâneo": é o que vai se a limpeza do Papeo falhar.
+      let plain = args[0];
+      if (name === "getUserMedia" && isVoiceNote(args[0])) {
+        const mode = voiceMode();
+        if (webkit && mode !== "clean") plain = withAudio(args[0], { echoCancellation: false });
+        if (mode === "enhanced" && typeof window.__papeoEnhanceVoice === "function") {
+          enhance = window.__papeoEnhanceVoice;
+          args[0] = withAudio(args[0], { echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+        } else {
+          args[0] = plain;
+        }
+      }
+      let stream = await original(...args);
+      if (enhance) {
+        const raw = stream;
+        stream = await enhance(raw).catch(() => raw);
+        // Sem limpeza, o microfone cru (sem nenhum tratamento) não serve:
+        // pede de novo como na gravação instantânea.
+        if (stream === raw) {
+          for (const t of raw.getTracks?.() ?? []) t.stop();
+          stream = await original(plain, ...args.slice(1));
+        }
+      }
       captures.add(stream);
       return stream;
     };

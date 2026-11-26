@@ -17,6 +17,11 @@
     Info,
     FolderOpen,
     HardDrive,
+    Link,
+    MemoryStick,
+    Mic,
+    Power,
+    RefreshCw,
     Monitor,
     Palette,
     ShieldCheck,
@@ -49,6 +54,7 @@
     type LinkTarget,
     type AttachmentMode,
     ATTACHMENT_OPTIONS,
+    VOICE_OPTIONS,
     type ModeChoice,
     type Snapshot,
     type WorkHours,
@@ -196,6 +202,7 @@
     notificacoes: BellOff,
     privacidade: ShieldCheck,
     sistema: Monitor,
+    arquivos: FolderOpen,
     dados: Cloud,
     sobre: Info,
   };
@@ -232,7 +239,7 @@
       void row.offsetWidth; // reinicia a animação se a mesma linha for buscada de novo
       row.classList.add("found");
       // Num grupo de opções, o foco vai na opção marcada.
-      (row.querySelector<HTMLElement>("[role=radio][aria-checked=true]") ?? row
+      (row.querySelector<HTMLElement>("[role=radio][aria-checked=true], input[type=radio]:checked") ?? row
         .querySelector<HTMLElement>(
           ":is(button, input, select, textarea, [role=switch]):not(:disabled, [aria-disabled=true])",
         ))
@@ -416,6 +423,45 @@
       </section>
 
       <QuickReplies replies={settings.quickReplies} {run} />
+
+      <section class="card" aria-labelledby="s-voice">
+        <h2 id="s-voice"><Mic size={18} /> Mensagens de voz</h2>
+        <div class="row stack">
+          <div class="text">
+            <span class="label">Gravação de mensagens de voz</span>
+            <span class="hint">Como o Papeo grava as mensagens de voz do WhatsApp. Chamadas usam sempre a redução do sistema.</span>
+          </div>
+          <div class="voice-options" role="radiogroup" aria-label="Gravação de mensagens de voz">
+            {#each VOICE_OPTIONS as option (option.value)}
+              {@const current = isMac || settings.voiceCapture !== "clean" ? settings.voiceCapture : "instant"}
+              <label class="voice-option" class:selected={current === option.value}>
+                <input
+                  type="radio"
+                  name="voice-capture"
+                  value={option.value}
+                  checked={current === option.value}
+                  aria-labelledby="voice-{option.value}"
+                  aria-describedby="voice-{option.value}-desc"
+                  onchange={() => run(api.setPreferences({ voiceCapture: option.value }))}
+                />
+                <span class="voice-text">
+                  <span class="voice-title">
+                    <span id="voice-{option.value}">{option.label}</span>
+                    {#if option.value === "instant"}<span class="badge" aria-hidden="true">Padrão</span>{/if}
+                  </span>
+                  <span class="hint" id="voice-{option.value}-desc">{option.description}</span>
+                </span>
+              </label>
+            {/each}
+          </div>
+          {#if isMac}
+            <p class="hint voice-tip">
+              Dica: durante uma gravação, dá para ligar o Isolamento de voz da Apple em Central de Controle → Modo do
+              microfone.
+            </p>
+          {/if}
+        </div>
+      </section>
     {:else if tab === "notificacoes"}
       <section class="card" aria-labelledby="s-notif">
         <h2 id="s-notif"><BellOff size={18} /> Não perturbe</h2>
@@ -572,8 +618,7 @@
       </section>
     {:else if tab === "sistema"}
       <section class="card" aria-labelledby="s-system">
-        <h2 id="s-system"><Monitor size={18} /> Sistema</h2>
-
+        <h2 id="s-system"><Power size={18} /> Inicialização e janela</h2>
         <div class="row">
           <div class="text">
             <span class="label">Abrir com o sistema</span>
@@ -606,7 +651,10 @@
             onchange={(v) => run(api.setPreferences({ closeToTray: v }))}
           />
         </div>
+      </section>
 
+      <section class="card" aria-labelledby="s-memory">
+        <h2 id="s-memory"><MemoryStick size={18} /> Memória</h2>
         <div class="row">
           <div class="text">
             <span class="label">Recarregar serviço pesado</span>
@@ -631,47 +679,6 @@
 
         <div class="row">
           <div class="text">
-            <span class="label">Abrir links</span>
-            <span class="hint">
-              Na prévia, o link abre numa janela pequena sobre o Papeo, sem login e sem guardar nada.
-              Fechar a prévia libera a memória; "Abrir no navegador" continua de onde parou.
-            </span>
-          </div>
-          <select
-            class="select"
-            aria-label="Abrir links"
-            value={settings.openLinks}
-            onchange={(e) => run(api.setPreferences({ openLinks: e.currentTarget.value as LinkTarget }))}
-          >
-            {#each LINK_OPTIONS as option (option.value)}
-              <option value={option.value}>{option.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="row">
-          <div class="text">
-            <span class="label">Anexos</span>
-            <span class="hint">
-              Ao visualizar antes, planilhas, PDFs, documentos e imagens abrem numa janela do Papeo antes de ir para a pasta
-              de downloads; de lá, salve ou abra no app (Excel, Word…) para editar. Outros arquivos são salvos direto.
-              {#if !isMac}No Windows, Excel e Word abrem pelo próprio app.{/if}
-            </span>
-          </div>
-          <select
-            class="select"
-            aria-label="Anexos"
-            value={settings.attachments}
-            onchange={(e) => run(api.setPreferences({ attachments: e.currentTarget.value as AttachmentMode }))}
-          >
-            {#each ATTACHMENT_OPTIONS as option (option.value)}
-              <option value={option.value}>{option.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="row">
-          <div class="text">
             <span class="label">Confirmar antes de liberar memória</span>
             <span class="hint">Ao clicar no indicador de memória no topo, pergunta antes de recarregar as contas.</span>
           </div>
@@ -681,7 +688,10 @@
             onchange={setConfirmFree}
           />
         </div>
+      </section>
 
+      <section class="card" aria-labelledby="s-updates">
+        <h2 id="s-updates"><RefreshCw size={18} /> Atualizações</h2>
         <div class="row">
           <div class="text">
             <span class="label">Verificar atualizações</span>
@@ -722,6 +732,50 @@
               Verificar agora
             </button>
           {/if}
+        </div>
+      </section>
+    {:else if tab === "arquivos"}
+      <section class="card" aria-labelledby="s-links">
+        <h2 id="s-links"><Link size={18} /> Links e anexos</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Abrir links</span>
+            <span class="hint">
+              Na prévia, o link abre numa janela pequena sobre o Papeo, sem login e sem guardar nada.
+              Fechar a prévia libera a memória; "Abrir no navegador" continua de onde parou.
+            </span>
+          </div>
+          <select
+            class="select"
+            aria-label="Abrir links"
+            value={settings.openLinks}
+            onchange={(e) => run(api.setPreferences({ openLinks: e.currentTarget.value as LinkTarget }))}
+          >
+            {#each LINK_OPTIONS as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Anexos</span>
+            <span class="hint">
+              Ao visualizar antes, planilhas, PDFs, documentos e imagens abrem numa janela do Papeo antes de ir para a pasta
+              de downloads; de lá, salve ou abra no app (Excel, Word…) para editar. Outros arquivos são salvos direto.
+              {#if !isMac}No Windows, Excel e Word abrem pelo próprio app.{/if}
+            </span>
+          </div>
+          <select
+            class="select"
+            aria-label="Anexos"
+            value={settings.attachments}
+            onchange={(e) => run(api.setPreferences({ attachments: e.currentTarget.value as AttachmentMode }))}
+          >
+            {#each ATTACHMENT_OPTIONS as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
         </div>
       </section>
 
@@ -790,6 +844,10 @@
         <p class="hint about-license">
           Software livre e gratuito, sob a licença GPL-3.0. Sem propaganda e sem coleta de dados.
         </p>
+        <p class="hint about-license">
+          Inclui o RNNoise (© Xiph.Org, Mozilla, Jean-Marc Valin e outros; licença BSD-3-Clause), compilado pelo Jitsi
+          (Apache-2.0), na limpeza das mensagens de voz.
+        </p>
       </section>
     {/if}
   </div>
@@ -828,6 +886,18 @@
     gap: 4px;
     overflow-x: auto;
     scrollbar-width: none;
+  }
+
+  /* Área estreita (janela mínima com a barra lateral aberta): as abas perdem
+     o ícone para todas caberem sem rolar. */
+  .head {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 760px) {
+    .tab :global(svg) {
+      display: none;
+    }
   }
 
   .tab {
@@ -973,6 +1043,77 @@
   .select {
     height: 34px;
     width: auto;
+  }
+
+  .row.stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .voice-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+  }
+
+  .voice-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+
+  .voice-option:hover {
+    background: var(--bg-hover);
+  }
+
+  .voice-option.selected {
+    border-color: var(--accent);
+  }
+
+  .voice-option:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .voice-option input {
+    flex: none;
+    margin: 3px 0 0;
+    accent-color: var(--accent);
+  }
+
+  .voice-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .voice-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+  }
+
+  .badge {
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--bg-hover);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .voice-tip {
+    margin: 0;
   }
 
   .choices.wrap {

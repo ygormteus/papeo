@@ -192,3 +192,5 @@ O Papeo é criado e mantido por **[Ygor Moura](https://github.com/ygormteus)**. 
 ## Licença
 
 [GPL-3.0](LICENSE): você pode usar, estudar, modificar e compartilhar o Papeo à vontade. Quem distribuir uma versão modificada precisa publicar o código dela também.
+
+Inclui o [RNNoise](https://gitlab.xiph.org/xiph/rnnoise) (BSD-3-Clause, Xiph.Org e colaboradores), compilado para WebAssembly pelo [Jitsi](https://github.com/jitsi/rnnoise-wasm) (Apache-2.0), usado na limpeza das mensagens de voz. Licenças e origem em [`src-tauri/vendor/rnnoise`](src-tauri/vendor/rnnoise).

@@ -150,6 +150,8 @@ export interface Settings {
   openLinks: LinkTarget;
   /** Anexos baixados nos serviços: salvar direto ou visualizar antes. */
   attachments: AttachmentMode;
+  /** Mensagens de voz: som original, limpeza do Papeo ou redução do sistema (macOS). */
+  voiceCapture: VoiceCapture;
   /** Textos salvos para a resposta rápida, chamados com "/". */
   quickReplies: QuickReply[];
   mode: ModeChoice;
@@ -167,9 +169,9 @@ export interface QuickReply {
   text: string;
 }
 
-
 export type LinkTarget = "browser" | "preview";
 export type AttachmentMode = "save" | "preview";
+export type VoiceCapture = "instant" | "enhanced" | "clean";
 
 export type UpdateStatus =
   | { state: "idle" | "checking" | "upToDate" }
@@ -272,6 +274,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     reloadAboveMb: 2048,
     openLinks: "browser",
     attachments: "save",
+    voiceCapture: "instant",
     quickReplies: [],
     mode: "all",
     workHours: { days: [1, 2, 3, 4, 5], start: 9 * 60, end: 18 * 60 },
@@ -349,6 +352,7 @@ export const api = {
         | "reloadAboveMb"
         | "openLinks"
         | "attachments"
+        | "voiceCapture"
         | "sleepOutsideMode"
         | "accountFrame"
       >
@@ -522,6 +526,39 @@ export function updateLabel(update: UpdateStatus): string {
 
 export const isMac = navigator.userAgent.includes("Mac");
 export const modKey = isMac ? "⌘" : "Ctrl";
+
+// "Com redução do macOS" só existe no Mac (no Windows, a redução do sistema
+// já é o padrão e começa na hora).
+export const VOICE_OPTIONS: { value: VoiceCapture; label: string; description: string }[] = isMac
+  ? [
+      {
+        value: "instant",
+        label: "Instantânea",
+        description: "Grava no toque, com o som do microfone como ele chega, sem tratamento.",
+      },
+      {
+        value: "enhanced",
+        label: "Instantânea com limpeza do Papeo",
+        description: "Grava no toque e tira o ruído de fundo (ventilador, teclado, rua), deixando a voz num volume constante.",
+      },
+      {
+        value: "clean",
+        label: "Redução do macOS",
+        description: "O macOS tira eco e ruído, mas o começo da gravação pode atrasar cerca de 1 segundo.",
+      },
+    ]
+  : [
+      {
+        value: "instant",
+        label: "Padrão do Windows",
+        description: "Grava no toque, com a redução de eco e ruído de sempre do Windows.",
+      },
+      {
+        value: "enhanced",
+        label: "Com limpeza do Papeo",
+        description: "Grava no toque e tira mais ruído de fundo (ventilador, teclado, rua), deixando a voz num volume constante.",
+      },
+    ];
 
 export const KIND_META: Record<ServiceKind, { label: string; color: string; hint: string }> = {
   whatsapp: { label: "WhatsApp", color: "#25d366", hint: "web.whatsapp.com" },

@@ -397,6 +397,7 @@ pub struct Preferences {
     attachments: Option<papeo_core::AttachmentMode>,
     sleep_outside_mode: Option<bool>,
     account_frame: Option<bool>,
+    voice_capture: Option<papeo_core::VoiceCapture>,
 }
 
 #[tauri::command]
@@ -435,6 +436,9 @@ pub async fn set_preferences(
         if let Some(v) = prefs.account_frame {
             s.account_frame = v;
         }
+        if let Some(v) = prefs.voice_capture {
+            s.voice_capture = v;
+        }
         if let Some(v) = prefs.reload_above_mb {
             s.reload_above_mb = v;
             *s = std::mem::take(s).sanitized();
@@ -453,6 +457,9 @@ pub async fn set_preferences(
     }
     if prefs.open_links == Some(papeo_core::LinkTarget::Browser) {
         crate::preview::close(&app);
+    }
+    if let Some(v) = prefs.voice_capture {
+        crate::webviews::set_voice_capture(&app, v);
     }
     Ok(publish(&app))
 }

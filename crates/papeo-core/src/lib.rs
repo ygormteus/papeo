@@ -24,7 +24,8 @@ pub use service::{
 };
 pub use settings::{
     should_notify, AppLock, Appearance, AttachmentMode, LinkTarget, Mode, ModeChoice, ModeOverride,
-    QuickReply, QuietHours, Settings, UpdatePrefs, WorkHours, DND_FOREVER, LOCK_MAX_MINUTES,
+    QuickReply, QuietHours, Settings, UpdatePrefs, VoiceCapture, WorkHours, DND_FOREVER,
+    LOCK_MAX_MINUTES,
 };
 pub use store::{
     encode_config, export_backup, load, read_backup, save, write_atomic, Backup, Config,

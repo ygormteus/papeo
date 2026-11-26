@@ -3,13 +3,14 @@
 // SyncSettings.svelte ou QuickReplies.svelte: é por ele que a tela encontra a
 // linha para rolar e destacar. `tests/settings-index.test.mjs` confere isso.
 
-export type SettingsTab = "geral" | "notificacoes" | "privacidade" | "sistema" | "dados" | "sobre";
+export type SettingsTab = "geral" | "notificacoes" | "privacidade" | "sistema" | "arquivos" | "dados" | "sobre";
 
 export const TAB_LABEL: Record<SettingsTab, string> = {
   geral: "Geral",
   notificacoes: "Notificações",
   privacidade: "Privacidade",
   sistema: "Sistema",
+  arquivos: "Arquivos",
   dados: "Dados",
   sobre: "Sobre",
 };
@@ -27,6 +28,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: "geral", label: "Hibernar as contas fora do modo", keywords: "memória trabalho pessoal dormir" },
   { tab: "geral", label: "Moldura com a cor da conta", keywords: "borda cor conta errada" },
   { tab: "geral", label: "Respostas prontas", keywords: "atalho texto modelo resposta rápida barra" },
+  {
+    tab: "geral",
+    label: "Gravação de mensagens de voz",
+    keywords: "áudio audio microfone whatsapp eco ruído atraso gravar voz mudo limpeza isolamento instantânea redução",
+  },
   { tab: "notificacoes", label: "Silenciar todas as notificações", keywords: "não perturbe dnd mudo silêncio pausar" },
   { tab: "notificacoes", label: "Horário silencioso todos os dias", keywords: "não perturbe noite dormir agenda" },
   {
@@ -46,11 +52,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: "sistema", label: "Começar escondido na bandeja", keywords: "minimizado menu bar oculto" },
   { tab: "sistema", label: "Fechar a janela mantém o Papeo na bandeja", keywords: "sair fechar segundo plano" },
   { tab: "sistema", label: "Recarregar serviço pesado", keywords: "memória ram limite gb" },
-  { tab: "sistema", label: "Abrir links", keywords: "navegador prévia link" },
-  { tab: "sistema", label: "Anexos", keywords: "arquivos visualizar pdf planilha quick look" },
+  { tab: "arquivos", label: "Abrir links", keywords: "navegador prévia link" },
+  { tab: "arquivos", label: "Anexos", keywords: "arquivos visualizar pdf planilha quick look" },
   { tab: "sistema", label: "Confirmar antes de liberar memória", keywords: "ram recarregar perguntar" },
   { tab: "sistema", label: "Verificar atualizações", keywords: "versão update atualizar nova" },
-  { tab: "sistema", label: "Pasta dos arquivos baixados", keywords: "downloads pasta salvar" },
+  { tab: "arquivos", label: "Pasta dos arquivos baixados", keywords: "downloads pasta salvar" },
   { tab: "dados", label: "Sincronização", keywords: "google drive nuvem outro computador sync" },
   { tab: "dados", label: "Exportar ou restaurar a configuração", keywords: "backup importar exportar copiar" },
   { tab: "sobre", label: "Sobre", keywords: "versão autor github licença código problema bug" },

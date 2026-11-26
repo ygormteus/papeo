@@ -45,11 +45,20 @@ globalThis.document = {
 class SWR {}
 window.ServiceWorkerRegistration = SWR;
 let micLive = true;
+let asked;
+let requests = [];
 Object.defineProperty(globalThis, "navigator", {
   value: {
     permissions: { query: async (d) => ({ state: "prompt", d }) },
     mediaDevices: {
-      getUserMedia: async () => ({ getTracks: () => [{ readyState: micLive ? "live" : "ended" }] }),
+      getUserMedia: async (c) => (
+        (asked = c),
+        requests.push(c),
+        (() => {
+          const track = { get readyState() { return micLive && !this.stopped ? "live" : "ended"; }, stopped: false, stop() { this.stopped = true; } };
+          return { track, getTracks: () => [track] };
+        })()
+      ),
     },
   },
   configurable: true,
@@ -115,6 +124,72 @@ check(lastMedia() === true, "microfone em uso conta como mídia");
 micLive = false;
 timers[0]();
 check(lastMedia() === false, "microfone encerrado deixa de contar");
+
+// Mensagem de voz do WhatsApp no WebKit: sem cancelamento de eco (o
+// processamento de voz do macOS atrasa ~1 s o começo da gravação).
+const button = (label, icon, inFooter = true) => {
+  const el = {
+    getAttribute: () => label,
+    querySelector: () => (icon ? { getAttribute: () => icon } : null),
+    closest: (sel) => (sel === "footer" ? (inFooter ? {} : null) : el),
+  };
+  return { target: el };
+};
+check(typeof docListeners.pointerdown === "function", "botão de gravar é percebido");
+await navigator.mediaDevices.getUserMedia({ audio: true });
+check(asked.audio === true, "sem clicar em gravar, o pedido fica igual");
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+await navigator.mediaDevices.getUserMedia({ audio: { deviceId: "x" } });
+check(asked.audio.echoCancellation === false && asked.audio.deviceId === "x", "gravar áudio: sem cancelamento de eco");
+await navigator.mediaDevices.getUserMedia({ audio: true });
+check(asked.audio === true, "só o pedido logo após o clique muda");
+docListeners.pointerdown(button("Chamada de voz", "voice-call"));
+await navigator.mediaDevices.getUserMedia({ audio: true });
+check(asked.audio === true, "chamada mantém o cancelamento de eco");
+docListeners.pointerdown(button("Mensagem de voz", "ptt", false));
+await navigator.mediaDevices.getUserMedia({ audio: true });
+check(asked.audio === true, "botão fora do rodapé não conta");
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+check(asked.audio === true, "vídeo mantém o cancelamento de eco");
+window.__papeoVoice = "clean";
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+await navigator.mediaDevices.getUserMedia({ audio: true });
+check(asked.audio === true, "com redução de eco e ruído escolhida, o pedido fica igual");
+let warmed = 0;
+window.__papeoVoice = "enhanced";
+window.__papeoVoiceWarmup = () => warmed++;
+window.__papeoEnhanceVoice = async (stream) => ({ enhanced: stream, getTracks: () => [] });
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+check(warmed === 1, "limpeza do Papeo é preparada no toque");
+const cleaned = await navigator.mediaDevices.getUserMedia({ audio: true });
+check(cleaned.enhanced !== undefined, "limpeza do Papeo trata o áudio");
+check(
+  asked.audio.echoCancellation === false && asked.audio.noiseSuppression === false && asked.audio.autoGainControl === false,
+  "limpeza do Papeo pede o microfone cru",
+);
+const plain = await navigator.mediaDevices.getUserMedia({ audio: true });
+check(plain.enhanced === undefined && asked.audio === true, "sem toque, nada de limpeza");
+window.__papeoEnhanceVoice = async () => {
+  throw new Error("falhou");
+};
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+requests = [];
+const fallback = await navigator.mediaDevices.getUserMedia({ audio: true });
+check(fallback.enhanced === undefined && typeof fallback.getTracks === "function", "falha na limpeza grava assim mesmo");
+check(requests.length === 2, "falha na limpeza pede o microfone de novo");
+check(
+  requests[1].audio.echoCancellation === false && requests[1].audio.noiseSuppression === undefined,
+  "falha na limpeza grava como a instantânea, não com o microfone cru",
+);
+window.__papeoEnhanceVoice = async (stream) => stream;
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+requests = [];
+const again = await navigator.mediaDevices.getUserMedia({ audio: true });
+check(requests.length === 2 && again.track.stopped === false, "limpeza que desiste troca o microfone cru pelo normal");
+delete window.__papeoEnhanceVoice;
+delete window.__papeoVoiceWarmup;
+delete window.__papeoVoice;
 const gif = new FakeMedia();
 gif.muted = true;
 gif.volume = 1;
