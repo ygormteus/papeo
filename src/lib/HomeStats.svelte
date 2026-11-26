@@ -9,12 +9,10 @@
   let {
     snap,
     run,
-    onadd,
     onopen,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
-    onadd: () => void;
     onopen: (id: string) => void;
   } = $props();
 
@@ -62,8 +60,8 @@
       icon: Layers,
       value: String(snap.services.length),
       label: snap.services.length === 1 ? "serviço" : "serviços",
-      title: `${loaded} em memória · ${snap.services.length - loaded} dormindo. Clique para adicionar um serviço.`,
-      onclick: onadd,
+      title: `${loaded} em memória · ${snap.services.length - loaded} dormindo. Clique para ver os serviços.`,
+      onclick: () => (home.servicesOpen = true),
       disabled: false,
       tone: "",
     },

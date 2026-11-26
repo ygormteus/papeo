@@ -64,6 +64,29 @@
     background: rgb(0 0 0 / 0.32);
   }
 
+  /* Abertura: só opacidade e escala (a placa de vídeo faz, sem recalcular
+     layout). Com "reduzir movimento", o app.css desliga as animações. */
+  dialog[open] {
+    animation: modal-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+
+  dialog[open]::backdrop {
+    animation: backdrop-in 0.2s ease-out;
+  }
+
+  @keyframes modal-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.97);
+    }
+  }
+
+  @keyframes backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
   .body {
     padding: 22px;
   }

@@ -32,6 +32,7 @@
   import HomeStats from "./lib/HomeStats.svelte";
   import WhatsNew from "./lib/WhatsNew.svelte";
   import { bundledNotes } from "./lib/bundledNotes";
+  import { home } from "./lib/homeState.svelte";
   import {
     EMPTY_ORGANIZER,
     EMPTY_SNAPSHOT,
@@ -557,10 +558,11 @@
       {panelOpen}
       onpanel={togglePanel}
       extra={!active && page === "home" && snap.services.length ? homeStats : undefined}
+      onservices={!active && page === "home" && snap.services.length ? () => (home.servicesOpen = true) : undefined}
       {twin}
     />
     {#snippet homeStats()}
-      <HomeStats {snap} {run} onadd={openAdd} onopen={select} />
+      <HomeStats {snap} {run} onopen={select} />
     {/snippet}
     <div class="body">
     <section

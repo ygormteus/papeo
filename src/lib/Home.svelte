@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
-    ChevronRight,
+    X,
+    LayoutList,
     LogIn,
     Mail,
     MessagesSquare,
@@ -18,6 +19,7 @@
   import { HEAVY_BYTES, freeMemory as freeMemoryOf, home, watchMemory } from "./homeState.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import Switch from "./Switch.svelte";
+  import Modal from "./Modal.svelte";
   import {
     HIBERNATE_OPTIONS,
     STATUS_LABEL,
@@ -68,25 +70,6 @@
 
   const memory = $derived(home.memory);
 
-  // Tabela de serviços recolhida por padrão; a escolha fica neste computador.
-  const SERVICES_KEY = "papeo.homeServicesOpen";
-  let servicesOpen = $state(readServicesOpen());
-  function readServicesOpen(): boolean {
-    try {
-      return localStorage.getItem(SERVICES_KEY) === "1";
-    } catch {
-      return false;
-    }
-  }
-  function toggleServices() {
-    servicesOpen = !servicesOpen;
-    try {
-      if (servicesOpen) localStorage.setItem(SERVICES_KEY, "1");
-      else localStorage.removeItem(SERVICES_KEY);
-    } catch {
-      /* preferência local apenas */
-    }
-  }
   const servicesSummary = $derived.by(() => {
     const n = snap.services.length;
     const parts = [`${n} ${n === 1 ? "conta" : "contas"}`];
@@ -98,7 +81,6 @@
     if (unread > 0) parts.push(`${unread} ${unread === 1 ? "não lida" : "não lidas"}`);
     return parts.join(" · ");
   });
-  const servicesShown = $derived(servicesOpen || snap.services.length === 0);
 
   // Conversas recentes: todas ou só as não lidas (escolha deste computador).
   const RECENT_KEY = "papeo.recentUnreadOnly";
@@ -222,6 +204,16 @@
     return s.unread ? `${s.unread} ${s.unread === 1 ? "não lida" : "não lidas"}` : "Nenhuma não lida";
   }
 
+  const closeServices = () => (home.servicesOpen = false);
+  function openFromList(id: string) {
+    closeServices();
+    onopen(id);
+  }
+  // Sem contas, o modal não tem o que mostrar (o Início mostra o "Adicionar").
+  $effect(() => {
+    if (snap.services.length === 0) home.servicesOpen = false;
+  });
+
   function serviceOf(id: string) {
     return snap.services.find((s) => s.id === id);
   }
@@ -309,38 +301,67 @@
     </section>
   {/if}
 
-  <section class="card block services" class:collapsed={!servicesShown} aria-labelledby="services-title">
-    <div class="block-head">
-      {#if snap.services.length === 0}
+  {#if snap.services.length === 0}
+    <section class="card block" aria-labelledby="services-title">
+      <div class="block-head">
         <h2 id="services-title">Serviços</h2>
-      {:else}
-        <h2 id="services-title">
-          <button
-            class="collapse"
-            aria-expanded={servicesOpen}
-            aria-controls="services-body"
-            onclick={toggleServices}
-          >
-            <span class="chevron" class:open={servicesOpen}><ChevronRight size={18} /></span>
-            Serviços
-          </button>
-        </h2>
-      {/if}
-      {#if servicesShown}
-        <span class="hint">Arraste na barra lateral para reordenar · botão direito para mais opções</span>
-      {:else}
-        <span class="hint">{servicesSummary}</span>
-      {/if}
-    </div>
-
-    {#if !servicesShown}
-      <!-- Recolhido: só o resumo no cabeçalho. -->
-    {:else if snap.services.length === 0}
+      </div>
       <div class="empty">
         <p>Nenhum serviço configurado.</p>
         <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> Adicionar o primeiro</button>
       </div>
-    {:else}
+    </section>
+  {/if}
+
+  {#if snap.downloads.length > 0}
+    <section class="card block" aria-labelledby="dl-title">
+      <div class="block-head">
+        <h2 id="dl-title">Downloads recentes</h2>
+        <div class="head-actions">
+          <button class="btn small" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={15} /> Abrir pasta</button>
+          <button class="btn small" onclick={() => run(api.clearDownloads())}>Limpar lista</button>
+        </div>
+      </div>
+      <ul class="downloads">
+        {#each snap.downloads as d (d.id)}
+          {@const svc = serviceOf(d.serviceId)}
+          <li>
+            {#if svc}<ServiceAvatar service={svc} size={22} />{/if}
+            <span class="file">{d.fileName}</span>
+            {#if d.state === "downloading"}
+              <span class="pill">Baixando…</span>
+            {:else if d.state === "failed"}
+              <span class="pill pill-danger">Falhou</span>
+            {:else}
+              <button class="btn small" onclick={() => run(api.revealDownload(d.id))}>Mostrar na pasta</button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+</div>
+
+{#if home.servicesOpen && snap.services.length}
+  <Modal onclose={closeServices} label="Serviços" width={1040} flush>
+    <div class="services">
+      <header class="services-head">
+        <span class="services-icon" aria-hidden="true"><LayoutList size={20} /></span>
+        <div class="services-title">
+          <h2>Serviços</h2>
+          <p>{servicesSummary}</p>
+        </div>
+        <button
+          class="btn small"
+          onclick={() => {
+            closeServices();
+            onadd();
+          }}
+        >
+          <Plus size={15} /> Adicionar serviço
+        </button>
+        <button class="close" onclick={closeServices} aria-label="Fechar"><X size={18} /></button>
+      </header>
       <div class="table-wrap" id="services-body">
       <table>
         <thead>
@@ -360,7 +381,7 @@
             {@const suggest = suggestHibernate(service)}
             <tr class:suggest>
               <td>
-                <button class="svc" onclick={() => onopen(service.id)}>
+                <button class="svc" onclick={() => openFromList(service.id)}>
                   <ServiceAvatar {service} size={30} dimmed={!service.loaded} />
                   <span class="svc-text">
                     <span class="svc-name">{service.name}</span>
@@ -410,7 +431,7 @@
               </td>
               <td>
                 <div class="actions">
-                  <button class="btn c-open" onclick={() => onopen(service.id)}>Abrir</button>
+                  <button class="btn c-open" onclick={() => openFromList(service.id)}>Abrir</button>
                   <button
                     class="icon-btn"
                     onclick={() => oncustomize(service)}
@@ -444,40 +465,17 @@
         </tbody>
       </table>
       </div>
-      {#if snap.services.some(suggestHibernate)}
-        <p class="tip"><TriangleAlert size={15} /> Serviços destacados estão pesados e parados: hiberne para liberar memória.</p>
-      {/if}
-    {/if}
-  </section>
-
-  {#if snap.downloads.length > 0}
-    <section class="card block" aria-labelledby="dl-title">
-      <div class="block-head">
-        <h2 id="dl-title">Downloads recentes</h2>
-        <div class="head-actions">
-          <button class="btn small" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={15} /> Abrir pasta</button>
-          <button class="btn small" onclick={() => run(api.clearDownloads())}>Limpar lista</button>
-        </div>
-      </div>
-      <ul class="downloads">
-        {#each snap.downloads as d (d.id)}
-          {@const svc = serviceOf(d.serviceId)}
-          <li>
-            {#if svc}<ServiceAvatar service={svc} size={22} />{/if}
-            <span class="file">{d.fileName}</span>
-            {#if d.state === "downloading"}
-              <span class="pill">Baixando…</span>
-            {:else if d.state === "failed"}
-              <span class="pill pill-danger">Falhou</span>
-            {:else}
-              <button class="btn small" onclick={() => run(api.revealDownload(d.id))}>Mostrar na pasta</button>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/if}
-</div>
+      <footer class="services-foot">
+        {#if snap.services.some(suggestHibernate)}
+          <p class="tip"><TriangleAlert size={15} /> Destacados: pesados e parados. Hiberne para liberar memória.</p>
+        {:else}
+          <span>Clique no nome para abrir a conta.</span>
+        {/if}
+        <span>Arraste na barra lateral para reordenar · botão direito para mais opções</span>
+      </footer>
+    </div>
+  </Modal>
+{/if}
 
 <style>
   .home {
@@ -568,42 +566,11 @@
     margin-bottom: 8px;
   }
 
-  .block.collapsed {
-    padding-bottom: 20px;
-  }
 
-  .block.collapsed .block-head {
-    margin-bottom: 0;
-  }
 
-  .collapse {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin: -4px 0 -4px -6px;
-    padding: 4px 8px 4px 4px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
 
-  .collapse:hover {
-    background: var(--bg-hover);
-  }
 
-  .chevron {
-    display: inline-grid;
-    place-items: center;
-    color: var(--text-muted);
-    transition: transform 0.15s;
-  }
 
-  .chevron.open {
-    transform: rotate(90deg);
-  }
 
   .segmented {
     display: inline-flex;
@@ -884,8 +851,96 @@
   /* A tabela acompanha a largura disponível: some primeiro o "hibernar após"
      e as notificações (também no botão direito da conta); se ainda faltar
      espaço, ela rola na horizontal em vez de cortar. */
+  /* Modal "Serviços": cabeçalho fixo e tabela rolando por baixo. */
   .services {
     container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    max-height: min(80vh, 760px);
+  }
+
+  .services-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 20px 18px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .services-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    background: var(--bg-subtle);
+    color: var(--text-muted);
+  }
+
+  .services-title {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .services-title h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .services-title p {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .services .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 4px 12px 8px;
+  }
+
+  .services thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg);
+  }
+
+  .services-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+
+  .services-foot .tip {
+    margin: 0;
+  }
+
+  .close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
   }
 
   .table-wrap {

@@ -21,6 +21,8 @@ export const home = $state({
   memory: null as MemoryReport | null,
   /** Contas recarregando para liberar memória (o site leva alguns segundos). */
   reloading: {} as Record<string, boolean>,
+  /** Modal "Serviços" (tabela das contas), aberto pela barra do topo no Início. */
+  servicesOpen: false,
 });
 
 let watchers = 0;
