@@ -182,6 +182,7 @@
   //   começar e entrega silêncio até lá. No Windows, fica o padrão do sistema;
   // - "enhanced": microfone cru tratado pelo Papeo (`voice_enhance.js`);
   // - "clean": o padrão do navegador (no macOS, a redução do sistema).
+  // Em todos, o microfone já abre no toque do botão (ver `warm`).
   const webkit = !/Chrome|Chromium|Edg\//.test(navigator.userAgent || "");
   const voiceMode = () => (["enhanced", "clean"].includes(window.__papeoVoice) ? window.__papeoVoice : "instant");
   let voicePress = 0;
@@ -193,14 +194,55 @@
     if (/chamada|call|llamada/i.test(label)) return false;
     return /ptt|mic/i.test(icon) || /voz|voice|áudio|audio/i.test(label);
   };
+  const withAudio = (constraints, extra) => {
+    const audio = typeof constraints?.audio === "object" ? constraints.audio : {};
+    return { ...constraints, audio: { ...audio, ...extra } };
+  };
+  // Pedido de microfone de cada modo: o "instantâneo" (`plain`, também o
+  // reserva da limpeza) e o que vai de fato (`ask`).
+  const voiceRequest = (constraints, mode) => {
+    const plain = webkit && mode !== "clean" ? withAudio(constraints, { echoCancellation: false }) : constraints;
+    const enhanced = mode === "enhanced" && typeof window.__papeoEnhanceVoice === "function";
+    const ask = enhanced
+      ? withAudio(constraints, { echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+      : plain;
+    return { plain, ask, enhanced };
+  };
+  const stopAll = (stream) => {
+    for (const t of stream?.getTracks?.() ?? []) t.stop();
+  };
+  const getUserMedia = media && typeof media.getUserMedia === "function" ? media.getUserMedia.bind(media) : null;
+  // Microfone aberto já no toque do botão: o Mac leva ~0,1 s para ligá-lo e o
+  // WhatsApp só pede depois do clique. O pedido do WhatsApp recebe este
+  // microfone; sem pedido em 3 s, ele é fechado.
+  let warm = null;
+  const dropWarm = () => {
+    const w = warm;
+    warm = null;
+    w?.stream.then(stopAll, () => {});
+  };
   if (location.hostname === "web.whatsapp.com") {
     document.addEventListener(
       "pointerdown",
       (e) => {
-        if (!isVoiceButton(e.target)) return;
+        if (!isVoiceButton(e.target)) {
+          // Tocou em outra coisa: o toque anterior no botão de gravar não vale mais.
+          voicePress = 0;
+          dropWarm();
+          return;
+        }
         voicePress = Date.now();
-        // Prepara a limpeza enquanto o microfone ainda abre.
-        if (voiceMode() === "enhanced") window.__papeoVoiceWarmup?.();
+        const mode = voiceMode();
+        // Prepara a limpeza enquanto o microfone abre.
+        if (mode === "enhanced") window.__papeoVoiceWarmup?.();
+        if (!getUserMedia) return;
+        dropWarm();
+        const { ask } = voiceRequest({ audio: true }, mode);
+        const stream = getUserMedia(ask);
+        stream.catch(() => {});
+        const w = { stream, mode };
+        warm = w;
+        setTimeout(() => warm === w && dropWarm(), 3000);
       },
       true,
     );
@@ -212,35 +254,42 @@
     voicePress = 0;
     return true;
   };
-  const withAudio = (constraints, extra) => {
-    const audio = typeof constraints.audio === "object" ? constraints.audio : {};
-    return { ...constraints, audio: { ...audio, ...extra } };
+  // O microfone aberto no toque serve se é o mesmo modo, está vivo e é o
+  // aparelho pedido (`deviceId` exato).
+  const claimWarm = async (constraints, mode) => {
+    const w = warm;
+    warm = null;
+    if (!w) return null;
+    const stream = await w.stream.catch(() => null);
+    const track = stream?.getAudioTracks?.()[0];
+    const wanted = constraints.audio?.deviceId;
+    const exact = typeof wanted === "object" ? wanted?.exact : wanted;
+    const device = track?.getSettings?.().deviceId;
+    const fits =
+      w.mode === mode && track?.readyState === "live" && (!exact || [exact].flat().includes(device));
+    if (fits) return stream;
+    stopAll(stream);
+    return null;
   };
   for (const name of ["getUserMedia", "getDisplayMedia"]) {
     if (!media || typeof media[name] !== "function") continue;
     const original = media[name].bind(media);
     media[name] = async (...args) => {
-      let enhance = null;
-      // Pedido "instantâneo": é o que vai se a limpeza do Papeo falhar.
-      let plain = args[0];
-      if (name === "getUserMedia" && isVoiceNote(args[0])) {
-        const mode = voiceMode();
-        if (webkit && mode !== "clean") plain = withAudio(args[0], { echoCancellation: false });
-        if (mode === "enhanced" && typeof window.__papeoEnhanceVoice === "function") {
-          enhance = window.__papeoEnhanceVoice;
-          args[0] = withAudio(args[0], { echoCancellation: false, noiseSuppression: false, autoGainControl: false });
-        } else {
-          args[0] = plain;
-        }
+      if (name !== "getUserMedia" || !isVoiceNote(args[0])) {
+        const stream = await original(...args);
+        captures.add(stream);
+        return stream;
       }
-      let stream = await original(...args);
-      if (enhance) {
+      const mode = voiceMode();
+      const { plain, ask, enhanced } = voiceRequest(args[0], mode);
+      let stream = (await claimWarm(args[0], mode)) ?? (await original(ask, ...args.slice(1)));
+      if (enhanced) {
         const raw = stream;
-        stream = await enhance(raw).catch(() => raw);
+        stream = await window.__papeoEnhanceVoice(raw).catch(() => raw);
         // Sem limpeza, o microfone cru (sem nenhum tratamento) não serve:
         // pede de novo como na gravação instantânea.
         if (stream === raw) {
-          for (const t of raw.getTracks?.() ?? []) t.stop();
+          stopAll(raw);
           stream = await original(plain, ...args.slice(1));
         }
       }

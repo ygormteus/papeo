@@ -55,8 +55,15 @@ Object.defineProperty(globalThis, "navigator", {
         (asked = c),
         requests.push(c),
         (() => {
-          const track = { get readyState() { return micLive && !this.stopped ? "live" : "ended"; }, stopped: false, stop() { this.stopped = true; } };
-          return { track, getTracks: () => [track] };
+          const wanted = typeof c.audio === "object" ? c.audio.deviceId : undefined;
+          const device = (typeof wanted === "object" ? wanted?.exact : wanted) || "default";
+          const track = {
+            get readyState() { return micLive && !this.stopped ? "live" : "ended"; },
+            stopped: false,
+            stop() { this.stopped = true; },
+            getSettings: () => ({ deviceId: device }),
+          };
+          return { track, getTracks: () => [track], getAudioTracks: () => [track] };
         })()
       ),
     },
@@ -143,6 +150,26 @@ await navigator.mediaDevices.getUserMedia({ audio: { deviceId: "x" } });
 check(asked.audio.echoCancellation === false && asked.audio.deviceId === "x", "gravar áudio: sem cancelamento de eco");
 await navigator.mediaDevices.getUserMedia({ audio: true });
 check(asked.audio === true, "só o pedido logo após o clique muda");
+// O microfone abre já no toque e é o que o WhatsApp recebe.
+micLive = true;
+requests = [];
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+check(requests.length === 1 && requests[0].audio.echoCancellation === false, "toque já abre o microfone");
+const early = await navigator.mediaDevices.getUserMedia({ audio: true });
+check(requests.length === 1 && early.track.stopped === false, "pedido do WhatsApp usa o microfone já aberto");
+// Outro aparelho pedido: o aberto no toque é fechado e vem o pedido.
+requests = [];
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+const otherMic = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: "usb" } } });
+check(requests.length === 2 && otherMic.track.getSettings().deviceId === "usb", "outro microfone pedido é respeitado");
+// Toque no botão e depois em outra coisa: o microfone aberto fecha.
+requests = [];
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
+docListeners.pointerdown(button("Anexar", "plus"));
+await new Promise((r) => setTimeout(r, 0));
+check(requests.length === 1, "toque em outro botão não pede microfone");
+early.track.stop();
+otherMic.track.stop();
 docListeners.pointerdown(button("Chamada de voz", "voice-call"));
 await navigator.mediaDevices.getUserMedia({ audio: true });
 check(asked.audio === true, "chamada mantém o cancelamento de eco");
@@ -173,23 +200,24 @@ check(plain.enhanced === undefined && asked.audio === true, "sem toque, nada de 
 window.__papeoEnhanceVoice = async () => {
   throw new Error("falhou");
 };
-docListeners.pointerdown(button("Mensagem de voz", "ptt"));
 requests = [];
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
 const fallback = await navigator.mediaDevices.getUserMedia({ audio: true });
 check(fallback.enhanced === undefined && typeof fallback.getTracks === "function", "falha na limpeza grava assim mesmo");
-check(requests.length === 2, "falha na limpeza pede o microfone de novo");
+check(requests.length === 2 && requests[0].audio.noiseSuppression === false, "falha na limpeza pede o microfone de novo");
 check(
   requests[1].audio.echoCancellation === false && requests[1].audio.noiseSuppression === undefined,
   "falha na limpeza grava como a instantânea, não com o microfone cru",
 );
 window.__papeoEnhanceVoice = async (stream) => stream;
-docListeners.pointerdown(button("Mensagem de voz", "ptt"));
 requests = [];
+docListeners.pointerdown(button("Mensagem de voz", "ptt"));
 const again = await navigator.mediaDevices.getUserMedia({ audio: true });
 check(requests.length === 2 && again.track.stopped === false, "limpeza que desiste troca o microfone cru pelo normal");
 delete window.__papeoEnhanceVoice;
 delete window.__papeoVoiceWarmup;
 delete window.__papeoVoice;
+micLive = false;
 const gif = new FakeMedia();
 gif.muted = true;
 gif.volume = 1;
