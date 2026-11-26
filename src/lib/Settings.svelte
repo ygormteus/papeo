@@ -1,9 +1,16 @@
+<script module lang="ts">
+  /** Última aba aberta: volta nela ao reabrir as configurações (só nesta sessão). */
+  let lastTab = "geral";
+</script>
+
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { TAB_LABEL, type SettingsTab, type SettingsTarget } from "./settingsIndex";
   import SyncSettings from "./SyncSettings.svelte";
   import {
     BellOff,
     Briefcase,
+    Cloud,
     Bug,
     CodeXml,
     Download,
@@ -13,6 +20,7 @@
     Monitor,
     Palette,
     ShieldCheck,
+    SlidersHorizontal,
     Upload,
     UserRound,
   } from "@lucide/svelte";
@@ -21,7 +29,7 @@
   import Switch from "./Switch.svelte";
   import QuickReplies from "./QuickReplies.svelte";
   import { home, setConfirmFree } from "./homeState.svelte";
-  import { bundledNotes } from "./bundledNotes";
+  import { notesHistory } from "./bundledNotes";
   import {
     ABOUT,
     LOCK_OPTIONS,
@@ -51,13 +59,16 @@
     run,
     onrestore,
     onnotes,
+    target = null,
   }: {
     snap: Snapshot;
     run: (action: Promise<Snapshot | void>) => Promise<void>;
     onrestore: (path: string, preview: { services: string[]; tasks?: number | null; notes?: number | null }) => void;
     onnotes: (mode: "available" | "installed") => void;
+    /** Opção a mostrar ao abrir (vinda da busca): troca de aba, rola e destaca a linha. */
+    target?: SettingsTarget | null;
   } = $props();
-  const hasNotes = $derived(!!bundledNotes(snap.appVersion));
+  const hasNotes = $derived(notesHistory(snap.appVersion).length > 0);
 
   const settings = $derived(snap.settings);
   const dndManual = $derived((settings.dndUntil ?? 0) > Date.now() / 1000);
@@ -179,508 +190,609 @@
       backupMessage = errorMessage(err);
     }
   }
+
+  const TAB_ICON = {
+    geral: SlidersHorizontal,
+    notificacoes: BellOff,
+    privacidade: ShieldCheck,
+    sistema: Monitor,
+    dados: Cloud,
+    sobre: Info,
+  };
+  const TABS = (Object.keys(TAB_LABEL) as SettingsTab[]).map((id) => ({
+    id,
+    label: TAB_LABEL[id],
+    icon: TAB_ICON[id],
+  }));
+  type Tab = SettingsTab;
+
+  // Com atualização pendente, abre direto onde está o botão de atualizar.
+  let tab = $state<Tab>(
+    untrack(() => target?.tab ?? (snap.update.state === "available" ? "sistema" : (lastTab as Tab))),
+  );
+
+  // Busca (⌘K): vai à aba, rola até a linha, destaca e põe o foco no controle dela.
+  $effect(() => {
+    const t = target;
+    if (!t) return;
+    untrack(() => selectTab(t.tab));
+    // Algumas seções (Sincronização) só aparecem depois de carregar o status:
+    // tenta por até ~1 s antes de desistir (fica só na aba).
+    let tries = 0;
+    const find = () => {
+      const heads = [...(page?.querySelectorAll<HTMLElement>(".row .label, h2") ?? [])];
+      const hit = heads.find((el) => el.textContent?.trim() === t.label);
+      const row = hit?.closest<HTMLElement>(".row, section");
+      if (!row) {
+        if (++tries < 60 && target === t) requestAnimationFrame(find);
+        return;
+      }
+      row.scrollIntoView({ block: "center" });
+      row.classList.remove("found");
+      void row.offsetWidth; // reinicia a animação se a mesma linha for buscada de novo
+      row.classList.add("found");
+      // Num grupo de opções, o foco vai na opção marcada.
+      (row.querySelector<HTMLElement>("[role=radio][aria-checked=true]") ?? row
+        .querySelector<HTMLElement>(
+          ":is(button, input, select, textarea, [role=switch]):not(:disabled, [aria-disabled=true])",
+        ))
+        ?.focus({ preventScroll: true });
+    };
+    tick().then(find);
+  });
+  let page = $state<HTMLDivElement>();
+
+  function selectTab(id: Tab) {
+    tab = id;
+    lastTab = id;
+    if (page) page.scrollTop = 0;
+  }
+
+  /** Setas, Home e End entre as abas (padrão WAI-ARIA de abas com ativação automática). */
+  function tabKey(e: KeyboardEvent) {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next =
+      e.key === "ArrowRight" ? (i + 1) % TABS.length
+      : e.key === "ArrowLeft" ? (i - 1 + TABS.length) % TABS.length
+      : e.key === "Home" ? 0
+      : e.key === "End" ? TABS.length - 1
+      : -1;
+    if (next === -1) return;
+    e.preventDefault();
+    selectTab(TABS[next].id);
+    document.getElementById(`tab-${TABS[next].id}`)?.focus();
+  }
 </script>
 
-<div class="page">
-  <h1>Configurações</h1>
-
-  <section class="card" aria-labelledby="s-look">
-    <h2 id="s-look"><Palette size={18} /> Aparência</h2>
-    <div class="row">
-      <div class="text">
-        <span class="label">Tema</span>
-        <span class="hint">
-          OLED usa preto puro: economiza bateria em telas OLED. WhatsApp e Telegram acompanham o claro/escuro
-          quando estão no tema do sistema.
-        </span>
-      </div>
-      <div class="segmented" role="radiogroup" aria-label="Tema">
-        {#each THEME_OPTIONS as option (option.value)}
-          <button
-            role="radio"
-            aria-checked={settings.appearance === option.value}
-            class:selected={settings.appearance === option.value}
-            onclick={() => run(api.setAppearance(option.value))}
-          >
-            {option.label}
-          </button>
-        {/each}
-      </div>
-    </div>
-  </section>
-
-  <section class="card" aria-labelledby="s-mode">
-    <h2 id="s-mode"><Briefcase size={18} /> Trabalho e pessoal</h2>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Contas mostradas</span>
-        <span class="hint">
-          {#if marked === 0}
-            Marque cada conta como Trabalho ou Pessoal em Personalizar (botão direito na conta). Contas sem
-            marcação aparecem sempre.
-          {:else}
-            Fora do modo, a conta some da barra, não notifica e não entra nos contadores.
-            {settings.mode === "auto" ? "No expediente, só trabalho; fora dele, só pessoal." : ""}
+<div class="page" bind:this={page}>
+  <header class="head">
+    <h1>Configurações</h1>
+    <div class="tabs" role="tablist" aria-label="Seções das configurações">
+      {#each TABS as t (t.id)}
+        {@const Icon = t.icon}
+        <button
+          id="tab-{t.id}"
+          class="tab"
+          role="tab"
+          aria-selected={tab === t.id}
+          aria-controls={tab === t.id ? `panel-${t.id}` : undefined}
+          tabindex={tab === t.id ? 0 : -1}
+          onclick={() => selectTab(t.id)}
+          onkeydown={tabKey}
+        >
+          <Icon size={15} />
+          {t.label}
+          {#if t.id === "sistema" && snap.update.state === "available"}
+            <span class="tab-dot" aria-label="Atualização disponível"></span>
           {/if}
-        </span>
-      </div>
-      <select
-        class="input select"
-        aria-label="Contas mostradas"
-        value={settings.mode}
-        onchange={(e) => setSchedule(e.currentTarget.value as ModeChoice)}
-      >
-        {#each MODE_CHOICE_OPTIONS as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
+        </button>
+      {/each}
     </div>
+  </header>
 
-    {#if settings.mode === "auto"}
-      <div class="row">
-        <div class="text">
-          <span class="label">Expediente</span>
-          <span class="hint">
-            {modKey}⇧M ou o seletor da barra lateral trocam o modo até o expediente começar ou terminar.
-          </span>
-        </div>
-        <div class="choices wrap">
-          <div class="days" role="group" aria-label="Dias de trabalho">
-            {#each WEEKDAYS as d (d.day)}
+  <div class="panel" id="panel-{tab}" role="tabpanel" aria-labelledby="tab-{tab}">
+    {#if tab === "geral"}
+      <section class="card" aria-labelledby="s-look">
+        <h2 id="s-look"><Palette size={18} /> Aparência</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Tema</span>
+            <span class="hint">
+              OLED usa preto puro: economiza bateria em telas OLED. WhatsApp e Telegram acompanham o claro/escuro
+              quando estão no tema do sistema.
+            </span>
+          </div>
+          <div class="segmented" role="radiogroup" aria-label="Tema">
+            {#each THEME_OPTIONS as option (option.value)}
               <button
-                class="day"
-                class:on={settings.workHours.days.includes(d.day)}
-                aria-pressed={settings.workHours.days.includes(d.day)}
-                aria-label={d.label}
-                title={d.label}
-                onclick={() => toggleDay(d.day)}
+                role="radio"
+                aria-checked={settings.appearance === option.value}
+                class:selected={settings.appearance === option.value}
+                onclick={() => run(api.setAppearance(option.value))}
               >
-                {d.short}
+                {option.label}
               </button>
             {/each}
           </div>
-          <input
-            type="time"
-            class="input time"
-            aria-label="Início do expediente"
-            value={formatClock(settings.workHours.start)}
-            onchange={(e) => workClock("start", e.currentTarget.value)}
-          />
-          <span class="muted">até</span>
-          <input
-            type="time"
-            class="input time"
-            aria-label="Fim do expediente"
-            value={formatClock(settings.workHours.end)}
-            onchange={(e) => workClock("end", e.currentTarget.value)}
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="s-mode">
+        <h2 id="s-mode"><Briefcase size={18} /> Trabalho e pessoal</h2>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Contas mostradas</span>
+            <span class="hint">
+              {#if marked === 0}
+                Marque cada conta como Trabalho ou Pessoal em Personalizar (botão direito na conta). Contas sem
+                marcação aparecem sempre.
+              {:else}
+                Fora do modo, a conta some da barra, não notifica e não entra nos contadores.
+                {settings.mode === "auto" ? "No expediente, só trabalho; fora dele, só pessoal." : ""}
+              {/if}
+            </span>
+          </div>
+          <select
+            class="input select"
+            aria-label="Contas mostradas"
+            value={settings.mode}
+            onchange={(e) => setSchedule(e.currentTarget.value as ModeChoice)}
+          >
+            {#each MODE_CHOICE_OPTIONS as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        {#if settings.mode === "auto"}
+          <div class="row">
+            <div class="text">
+              <span class="label">Expediente</span>
+              <span class="hint">
+                {modKey}⇧M ou o seletor da barra lateral trocam o modo até o expediente começar ou terminar.
+              </span>
+            </div>
+            <div class="choices wrap">
+              <div class="days" role="group" aria-label="Dias de trabalho">
+                {#each WEEKDAYS as d (d.day)}
+                  <button
+                    class="day"
+                    class:on={settings.workHours.days.includes(d.day)}
+                    aria-pressed={settings.workHours.days.includes(d.day)}
+                    aria-label={d.label}
+                    title={d.label}
+                    onclick={() => toggleDay(d.day)}
+                  >
+                    {d.short}
+                  </button>
+                {/each}
+              </div>
+              <input
+                type="time"
+                class="input time"
+                aria-label="Início do expediente"
+                value={formatClock(settings.workHours.start)}
+                onchange={(e) => workClock("start", e.currentTarget.value)}
+              />
+              <span class="muted">até</span>
+              <input
+                type="time"
+                class="input time"
+                aria-label="Fim do expediente"
+                value={formatClock(settings.workHours.end)}
+                onchange={(e) => workClock("end", e.currentTarget.value)}
+              />
+            </div>
+          </div>
+        {/if}
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Hibernar as contas fora do modo</span>
+            <span class="hint">Libera memória. Ao voltar para o modo, a conta recarrega quando for aberta.</span>
+          </div>
+          <Switch
+            checked={settings.sleepOutsideMode}
+            label="Hibernar as contas fora do modo"
+            onchange={(v) => run(api.setPreferences({ sleepOutsideMode: v }))}
           />
         </div>
-      </div>
-    {/if}
 
-    <div class="row">
-      <div class="text">
-        <span class="label">Hibernar as contas fora do modo</span>
-        <span class="hint">Libera memória. Ao voltar para o modo, a conta recarrega quando for aberta.</span>
-      </div>
-      <Switch
-        checked={settings.sleepOutsideMode}
-        label="Hibernar as contas fora do modo"
-        onchange={(v) => run(api.setPreferences({ sleepOutsideMode: v }))}
-      />
-    </div>
+        <div class="row">
+          <div class="text">
+            <span class="label">Moldura com a cor da conta</span>
+            <span class="hint">
+              Contorna o site aberto com a cor da conta quando ela tem cor própria, está marcada como Trabalho ou
+              Pessoal, ou há outra conta do mesmo serviço. Ajuda a não responder pela conta errada.
+            </span>
+          </div>
+          <Switch
+            checked={settings.accountFrame}
+            label="Moldura com a cor da conta"
+            onchange={(v) => run(api.setPreferences({ accountFrame: v }))}
+          />
+        </div>
+      </section>
 
-    <div class="row">
-      <div class="text">
-        <span class="label">Moldura com a cor da conta</span>
-        <span class="hint">
-          Contorna o site aberto com a cor da conta quando ela tem cor própria, está marcada como Trabalho ou
-          Pessoal, ou há outra conta do mesmo serviço. Ajuda a não responder pela conta errada.
-        </span>
-      </div>
-      <Switch
-        checked={settings.accountFrame}
-        label="Moldura com a cor da conta"
-        onchange={(v) => run(api.setPreferences({ accountFrame: v }))}
-      />
-    </div>
-  </section>
+      <QuickReplies replies={settings.quickReplies} {run} />
+    {:else if tab === "notificacoes"}
+      <section class="card" aria-labelledby="s-notif">
+        <h2 id="s-notif"><BellOff size={18} /> Não perturbe</h2>
 
-  <section class="card" aria-labelledby="s-notif">
-    <h2 id="s-notif"><BellOff size={18} /> Não perturbe</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Silenciar todas as notificações</span>
+            <span class="hint">
+              {#if dndManual}Ativo {untilLabel(settings.dndUntil)}.{:else}Os contadores continuam atualizando.{/if}
+            </span>
+          </div>
+          <div class="choices" role="group" aria-label="Duração do não perturbe">
+            {#if dndManual}
+              <button class="btn" onclick={() => run(api.setDnd(null))}>Desativar</button>
+            {:else}
+              {#each DND_CHOICES as choice (choice.minutes)}
+                <button class="btn" onclick={() => run(api.setDnd(choice.minutes))}>{choice.label}</button>
+              {/each}
+            {/if}
+          </div>
+        </div>
 
-    <div class="row">
-      <div class="text">
-        <span class="label">Silenciar todas as notificações</span>
-        <span class="hint">
-          {#if dndManual}Ativo {untilLabel(settings.dndUntil)}.{:else}Os contadores continuam atualizando.{/if}
-        </span>
-      </div>
-      <div class="choices" role="group" aria-label="Duração do não perturbe">
-        {#if dndManual}
-          <button class="btn" onclick={() => run(api.setDnd(null))}>Desativar</button>
-        {:else}
-          {#each DND_CHOICES as choice (choice.minutes)}
-            <button class="btn" onclick={() => run(api.setDnd(choice.minutes))}>{choice.label}</button>
-          {/each}
-        {/if}
-      </div>
-    </div>
+        <div class="row">
+          <div class="text">
+            <span class="label">Horário silencioso todos os dias</span>
+            <span class="hint">Sem notificações entre os horários escolhidos.</span>
+          </div>
+          <div class="choices">
+            <input
+              type="time"
+              class="input time"
+              aria-label="Início do horário silencioso"
+              value={formatClock(settings.quietHours.start)}
+              disabled={!settings.quietHours.enabled}
+              onchange={(e) => clockChange("start", e.currentTarget.value)}
+            />
+            <span class="muted">até</span>
+            <input
+              type="time"
+              class="input time"
+              aria-label="Fim do horário silencioso"
+              value={formatClock(settings.quietHours.end)}
+              disabled={!settings.quietHours.enabled}
+              onchange={(e) => clockChange("end", e.currentTarget.value)}
+            />
+            <Switch
+              checked={settings.quietHours.enabled}
+              label="Usar horário silencioso"
+              onchange={(enabled) => setQuiet({ enabled })}
+            />
+          </div>
+        </div>
 
-    <div class="row">
-      <div class="text">
-        <span class="label">Horário silencioso todos os dias</span>
-        <span class="hint">Sem notificações entre os horários escolhidos.</span>
-      </div>
-      <div class="choices">
-        <input
-          type="time"
-          class="input time"
-          aria-label="Início do horário silencioso"
-          value={formatClock(settings.quietHours.start)}
-          disabled={!settings.quietHours.enabled}
-          onchange={(e) => clockChange("start", e.currentTarget.value)}
-        />
-        <span class="muted">até</span>
-        <input
-          type="time"
-          class="input time"
-          aria-label="Fim do horário silencioso"
-          value={formatClock(settings.quietHours.end)}
-          disabled={!settings.quietHours.enabled}
-          onchange={(e) => clockChange("end", e.currentTarget.value)}
-        />
-        <Switch
-          checked={settings.quietHours.enabled}
-          label="Usar horário silencioso"
-          onchange={(enabled) => setQuiet({ enabled })}
-        />
-      </div>
-    </div>
+        <div class="row">
+          <div class="text">
+            <span class="label">Trocar para a conta da notificação ao voltar</span>
+            <span class="hint">
+              Ao voltar ao Papeo até 20 s depois de uma notificação, mostra a conta que a enviou. Desligado, você
+              continua na conversa em que estava. Clicar na própria notificação sempre abre a conversa dela.
+            </span>
+          </div>
+          <Switch
+            checked={settings.openOnNotificationFocus}
+            label="Trocar para a conta da notificação ao voltar"
+            onchange={(v) => run(api.setPreferences({ openOnNotificationFocus: v }))}
+          />
+        </div>
+      </section>
+    {:else if tab === "privacidade"}
+      <section class="card" aria-labelledby="s-privacy">
+        <h2 id="s-privacy"><ShieldCheck size={18} /> Privacidade</h2>
 
-    <div class="row">
-      <div class="text">
-        <span class="label">Trocar para a conta da notificação ao voltar</span>
-        <span class="hint">
-          Ao voltar ao Papeo até 20 s depois de uma notificação, mostra a conta que a enviou. Desligado, você
-          continua na conversa em que estava. Clicar na própria notificação sempre abre a conversa dela.
-        </span>
-      </div>
-      <Switch
-        checked={settings.openOnNotificationFocus}
-        label="Trocar para a conta da notificação ao voltar"
-        onchange={(v) => run(api.setPreferences({ openOnNotificationFocus: v }))}
-      />
-    </div>
-  </section>
+        <div class="row">
+          <div class="text">
+            <span class="label">Prévia nas notificações</span>
+            <span class="hint">
+              O que aparece na tela bloqueada e na central de notificações do sistema.
+            </span>
+          </div>
+          <div class="segmented" role="radiogroup" aria-label="Prévia nas notificações">
+            {#each PREVIEW_OPTIONS as option (option.value)}
+              <button
+                role="radio"
+                aria-checked={settings.notificationPreview === option.value}
+                class:selected={settings.notificationPreview === option.value}
+                onclick={() => run(api.setPreferences({ notificationPreview: option.value }))}
+              >
+                {option.label}
+              </button>
+            {/each}
+          </div>
+        </div>
 
-  <section class="card" aria-labelledby="s-privacy">
-    <h2 id="s-privacy"><ShieldCheck size={18} /> Privacidade</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Bloquear o Papeo</span>
+            <span class="hint">
+              {#if !snap.lockAvailable}
+                Indisponível: configure {isMac ? "uma senha no Mac" : "o Windows Hello (PIN, rosto ou digital)"}.
+              {:else}
+                Pede {isMac ? "Touch ID ou a senha do Mac" : "o Windows Hello"} ao abrir e depois do tempo escolhido.
+              {/if}
+            </span>
+          </div>
+          <div class="choices">
+            <select
+              class="input select"
+              aria-label="Quando bloquear"
+              value={settings.lock.afterMinutes}
+              disabled={!settings.lock.enabled}
+              onchange={(e) => setLock(true, Number(e.currentTarget.value))}
+            >
+              {#each LOCK_OPTIONS as option (option.minutes)}
+                <option value={option.minutes}>{option.label}</option>
+              {/each}
+            </select>
+            <Switch
+              checked={settings.lock.enabled}
+              label="Bloquear o Papeo"
+              disabled={!snap.lockAvailable && !settings.lock.enabled}
+              onchange={(v) => setLock(v)}
+            />
+          </div>
+        </div>
 
-    <div class="row">
-      <div class="text">
-        <span class="label">Prévia nas notificações</span>
-        <span class="hint">
-          O que aparece na tela bloqueada e na central de notificações do sistema.
-        </span>
-      </div>
-      <div class="segmented" role="radiogroup" aria-label="Prévia nas notificações">
-        {#each PREVIEW_OPTIONS as option (option.value)}
-          <button
-            role="radio"
-            aria-checked={settings.notificationPreview === option.value}
-            class:selected={settings.notificationPreview === option.value}
-            onclick={() => run(api.setPreferences({ notificationPreview: option.value }))}
+        <div class="row">
+          <div class="text">
+            <span class="label">Esconder em capturas e compartilhamento de tela</span>
+            <span class="hint">Em chamadas e gravações, a janela do Papeo aparece vazia.</span>
+          </div>
+          <Switch
+            checked={settings.protectScreen}
+            label="Esconder em capturas de tela"
+            onchange={(v) => run(api.setPreferences({ protectScreen: v }))}
+          />
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Sessões antigas no computador</span>
+            <span class="hint">
+              {#if orphans === null}
+                Logins de serviços que não estão mais na lista (ex.: depois de restaurar um backup).
+              {:else if orphans === 0}
+                Nenhuma sessão antiga guardada.
+              {:else}
+                {orphans === 1 ? "1 login antigo" : `${orphans} logins antigos`} de serviços que não estão mais na lista.
+              {/if}
+            </span>
+          </div>
+          <button class="btn" onclick={() => (confirmOrphans = true)} disabled={!orphans}>Apagar…</button>
+        </div>
+        {#if privacyMessage}<p class="message" role="status">{privacyMessage}</p>{/if}
+      </section>
+    {:else if tab === "sistema"}
+      <section class="card" aria-labelledby="s-system">
+        <h2 id="s-system"><Monitor size={18} /> Sistema</h2>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Abrir com o sistema</span>
+            <span class="hint">O Papeo inicia junto com o computador.</span>
+          </div>
+          <Switch checked={snap.autostart} label="Abrir com o sistema" onchange={(v) => run(api.setAutostart(v))} />
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Começar escondido na bandeja</span>
+            <span class="hint">Quando aberto com o sistema, fica só no ícone da bandeja/menu bar.</span>
+          </div>
+          <Switch
+            checked={settings.startHidden}
+            label="Começar escondido"
+            disabled={!snap.autostart}
+            onchange={(v) => run(api.setPreferences({ startHidden: v }))}
+          />
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Fechar a janela mantém o Papeo na bandeja</span>
+            <span class="hint">As notificações continuam chegando. Para sair, use o ícone da bandeja → Sair.</span>
+          </div>
+          <Switch
+            checked={settings.closeToTray}
+            label="Manter na bandeja ao fechar"
+            onchange={(v) => run(api.setPreferences({ closeToTray: v }))}
+          />
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Recarregar serviço pesado</span>
+            <span class="hint">
+              Sites como o WhatsApp Web acumulam memória com o tempo. Recarrega o serviço quando ele passa
+              do limite, só em segundo plano e parado há 10 min, no máximo uma vez por hora. Com o
+              computador sem uso há 20 min, o limite cai para a metade (mínimo 1 GB), para tudo estar leve
+              quando você voltar. Nunca durante chamadas, áudio ou vídeo. As notificações continuam.
+            </span>
+          </div>
+          <select
+            class="select"
+            aria-label="Recarregar serviço pesado"
+            value={settings.reloadAboveMb}
+            onchange={(e) => run(api.setPreferences({ reloadAboveMb: Number(e.currentTarget.value) }))}
           >
-            {option.label}
+            {#each RELOAD_OPTIONS as option (option.mb)}
+              <option value={option.mb}>{option.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Abrir links</span>
+            <span class="hint">
+              Na prévia, o link abre numa janela pequena sobre o Papeo, sem login e sem guardar nada.
+              Fechar a prévia libera a memória; "Abrir no navegador" continua de onde parou.
+            </span>
+          </div>
+          <select
+            class="select"
+            aria-label="Abrir links"
+            value={settings.openLinks}
+            onchange={(e) => run(api.setPreferences({ openLinks: e.currentTarget.value as LinkTarget }))}
+          >
+            {#each LINK_OPTIONS as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Anexos</span>
+            <span class="hint">
+              Ao visualizar antes, planilhas, PDFs, documentos e imagens abrem numa janela do Papeo antes de ir para a pasta
+              de downloads; de lá, salve ou abra no app (Excel, Word…) para editar. Outros arquivos são salvos direto.
+              {#if !isMac}No Windows, Excel e Word abrem pelo próprio app.{/if}
+            </span>
+          </div>
+          <select
+            class="select"
+            aria-label="Anexos"
+            value={settings.attachments}
+            onchange={(e) => run(api.setPreferences({ attachments: e.currentTarget.value as AttachmentMode }))}
+          >
+            {#each ATTACHMENT_OPTIONS as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Confirmar antes de liberar memória</span>
+            <span class="hint">Ao clicar no indicador de memória no topo, pergunta antes de recarregar as contas.</span>
+          </div>
+          <Switch
+            checked={home.confirmFree}
+            label="Confirmar antes de liberar memória"
+            onchange={setConfirmFree}
+          />
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Verificar atualizações</span>
+            <span class="hint">
+              A cada 2 horas, o Papeo consulta o GitHub (que vê o seu endereço IP). A instalação só
+              acontece quando você clica.
+            </span>
+          </div>
+          <Switch
+            checked={settings.updates.check}
+            label="Verificar atualizações"
+            onchange={(v) => run(api.setUpdates(v))}
+          />
+        </div>
+
+        <div class="row">
+          <div class="text">
+            <span class="label">Papeo {snap.appVersion}</span>
+            {#if updateLabel(snap.update)}
+              <span class="hint" role="status">{updateLabel(snap.update)}</span>
+            {/if}
+            {#if snap.update.state === "available" && snap.update.notes}
+              <button class="inline-link" onclick={() => onnotes("available")}>
+                Ver o que mudou e as versões anteriores
+              </button>
+            {:else if hasNotes}
+              <button class="inline-link" onclick={() => onnotes("installed")}>Histórico de versões</button>
+            {/if}
+          </div>
+          {#if snap.update.state === "available"}
+            <button class="btn btn-primary" onclick={() => run(api.installUpdate())}>Atualizar e reiniciar</button>
+          {:else}
+            <button
+              class="btn"
+              onclick={() => run(api.checkUpdate())}
+              disabled={snap.update.state === "checking" || snap.update.state === "installing"}
+            >
+              Verificar agora
+            </button>
+          {/if}
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="s-dl">
+        <h2 id="s-dl"><HardDrive size={18} /> Downloads</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Pasta dos arquivos baixados</span>
+            <span class="hint path" title={snap.downloadsDir}>{snap.downloadsDir}</span>
+          </div>
+          <div class="choices">
+            <button class="btn" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={16} /> Abrir</button>
+            <button class="btn" onclick={chooseDownloads}>Alterar…</button>
+            {#if settings.downloadsDir}
+              <button class="btn" onclick={() => run(api.setDownloadsDir(null))}>Usar padrão</button>
+            {/if}
+          </div>
+        </div>
+      </section>
+    {:else if tab === "dados"}
+      <SyncSettings />
+
+      <section class="card" aria-labelledby="s-backup">
+        <h2 id="s-backup"><Download size={18} /> Backup</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Exportar ou restaurar a configuração</span>
+            <span class="hint">
+              Serviços, nomes, cores, ordem, preferências, tarefas e anotações (o arquivo não é
+              criptografado: guarde em lugar seguro). Conversas e logins não entram: em outro
+              computador, cada serviço pede login de novo.
+            </span>
+          </div>
+          <div class="choices">
+            <button class="btn" onclick={exportBackup}><Upload size={16} /> Exportar…</button>
+            <button class="btn" onclick={importBackup}><Download size={16} /> Importar…</button>
+          </div>
+        </div>
+        {#if backupMessage}<p class="message" role="status">{backupMessage}</p>{/if}
+      </section>
+    {:else if tab === "sobre"}
+      <section class="card about" aria-labelledby="s-about">
+        <h2 id="s-about"><Info size={18} /> Sobre</h2>
+        <div class="about-head">
+          <img src="/favicon.svg" alt="" width="56" height="56" />
+          <div class="text">
+            <span class="about-name">Papeo</span>
+            <span class="hint">Versão {snap.appVersion}</span>
+            <span class="hint">
+              Feito por
+              <button class="link" onclick={() => run(api.openUrl(ABOUT.profile))}>{ABOUT.author}</button>
+            </span>
+          </div>
+        </div>
+        <div class="choices about-links">
+          <button class="btn" onclick={() => run(api.openUrl(ABOUT.profile))}>
+            <UserRound size={16} /> Perfil no GitHub
           </button>
-        {/each}
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Bloquear o Papeo</span>
-        <span class="hint">
-          {#if !snap.lockAvailable}
-            Indisponível: configure {isMac ? "uma senha no Mac" : "o Windows Hello (PIN, rosto ou digital)"}.
-          {:else}
-            Pede {isMac ? "Touch ID ou a senha do Mac" : "o Windows Hello"} ao abrir e depois do tempo escolhido.
-          {/if}
-        </span>
-      </div>
-      <div class="choices">
-        <select
-          class="input select"
-          aria-label="Quando bloquear"
-          value={settings.lock.afterMinutes}
-          disabled={!settings.lock.enabled}
-          onchange={(e) => setLock(true, Number(e.currentTarget.value))}
-        >
-          {#each LOCK_OPTIONS as option (option.minutes)}
-            <option value={option.minutes}>{option.label}</option>
-          {/each}
-        </select>
-        <Switch
-          checked={settings.lock.enabled}
-          label="Bloquear o Papeo"
-          disabled={!snap.lockAvailable && !settings.lock.enabled}
-          onchange={(v) => setLock(v)}
-        />
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Esconder em capturas e compartilhamento de tela</span>
-        <span class="hint">Em chamadas e gravações, a janela do Papeo aparece vazia.</span>
-      </div>
-      <Switch
-        checked={settings.protectScreen}
-        label="Esconder em capturas de tela"
-        onchange={(v) => run(api.setPreferences({ protectScreen: v }))}
-      />
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Sessões antigas no computador</span>
-        <span class="hint">
-          {#if orphans === null}
-            Logins de serviços que não estão mais na lista (ex.: depois de restaurar um backup).
-          {:else if orphans === 0}
-            Nenhuma sessão antiga guardada.
-          {:else}
-            {orphans === 1 ? "1 login antigo" : `${orphans} logins antigos`} de serviços que não estão mais na lista.
-          {/if}
-        </span>
-      </div>
-      <button class="btn" onclick={() => (confirmOrphans = true)} disabled={!orphans}>Apagar…</button>
-    </div>
-    {#if privacyMessage}<p class="message" role="status">{privacyMessage}</p>{/if}
-  </section>
-
-  <section class="card" aria-labelledby="s-system">
-    <h2 id="s-system"><Monitor size={18} /> Sistema</h2>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Abrir com o sistema</span>
-        <span class="hint">O Papeo inicia junto com o computador.</span>
-      </div>
-      <Switch checked={snap.autostart} label="Abrir com o sistema" onchange={(v) => run(api.setAutostart(v))} />
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Começar escondido na bandeja</span>
-        <span class="hint">Quando aberto com o sistema, fica só no ícone da bandeja/menu bar.</span>
-      </div>
-      <Switch
-        checked={settings.startHidden}
-        label="Começar escondido"
-        disabled={!snap.autostart}
-        onchange={(v) => run(api.setPreferences({ startHidden: v }))}
-      />
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Fechar a janela mantém o Papeo na bandeja</span>
-        <span class="hint">As notificações continuam chegando. Para sair, use o ícone da bandeja → Sair.</span>
-      </div>
-      <Switch
-        checked={settings.closeToTray}
-        label="Manter na bandeja ao fechar"
-        onchange={(v) => run(api.setPreferences({ closeToTray: v }))}
-      />
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Recarregar serviço pesado</span>
-        <span class="hint">
-          Sites como o WhatsApp Web acumulam memória com o tempo. Recarrega o serviço quando ele passa
-          do limite, só em segundo plano e parado há 10 min, no máximo uma vez por hora. Com o
-          computador sem uso há 20 min, o limite cai para a metade (mínimo 1 GB), para tudo estar leve
-          quando você voltar. Nunca durante chamadas, áudio ou vídeo. As notificações continuam.
-        </span>
-      </div>
-      <select
-        class="select"
-        aria-label="Recarregar serviço pesado"
-        value={settings.reloadAboveMb}
-        onchange={(e) => run(api.setPreferences({ reloadAboveMb: Number(e.currentTarget.value) }))}
-      >
-        {#each RELOAD_OPTIONS as option (option.mb)}
-          <option value={option.mb}>{option.label}</option>
-        {/each}
-      </select>
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Abrir links</span>
-        <span class="hint">
-          Na prévia, o link abre numa janela pequena sobre o Papeo, sem login e sem guardar nada.
-          Fechar a prévia libera a memória; "Abrir no navegador" continua de onde parou.
-        </span>
-      </div>
-      <select
-        class="select"
-        aria-label="Abrir links"
-        value={settings.openLinks}
-        onchange={(e) => run(api.setPreferences({ openLinks: e.currentTarget.value as LinkTarget }))}
-      >
-        {#each LINK_OPTIONS as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Anexos</span>
-        <span class="hint">
-          Ao visualizar antes, planilhas, PDFs, documentos e imagens abrem numa janela do Papeo antes de ir para a pasta
-          de downloads; de lá, salve ou abra no app (Excel, Word…) para editar. Outros arquivos são salvos direto.
-          {#if !isMac}No Windows, Excel e Word abrem pelo próprio app.{/if}
-        </span>
-      </div>
-      <select
-        class="select"
-        aria-label="Anexos"
-        value={settings.attachments}
-        onchange={(e) => run(api.setPreferences({ attachments: e.currentTarget.value as AttachmentMode }))}
-      >
-        {#each ATTACHMENT_OPTIONS as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Confirmar antes de liberar memória</span>
-        <span class="hint">Ao clicar no indicador de memória no topo, pergunta antes de recarregar as contas.</span>
-      </div>
-      <Switch
-        checked={home.confirmFree}
-        label="Confirmar antes de liberar memória"
-        onchange={setConfirmFree}
-      />
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Verificar atualizações</span>
-        <span class="hint">
-          A cada 2 horas, o Papeo consulta o GitHub (que vê o seu endereço IP). A instalação só
-          acontece quando você clica.
-        </span>
-      </div>
-      <Switch
-        checked={settings.updates.check}
-        label="Verificar atualizações"
-        onchange={(v) => run(api.setUpdates(v))}
-      />
-    </div>
-
-    <div class="row">
-      <div class="text">
-        <span class="label">Papeo {snap.appVersion}</span>
-        {#if updateLabel(snap.update)}
-          <span class="hint" role="status">{updateLabel(snap.update)}</span>
-        {/if}
-        {#if snap.update.state === "available" && snap.update.notes}
-          <button class="inline-link" onclick={() => onnotes("available")}>Ver o que mudou</button>
-        {:else if hasNotes}
-          <button class="inline-link" onclick={() => onnotes("installed")}>O que mudou nesta versão</button>
-        {/if}
-      </div>
-      {#if snap.update.state === "available"}
-        <button class="btn btn-primary" onclick={() => run(api.installUpdate())}>Atualizar e reiniciar</button>
-      {:else}
-        <button
-          class="btn"
-          onclick={() => run(api.checkUpdate())}
-          disabled={snap.update.state === "checking" || snap.update.state === "installing"}
-        >
-          Verificar agora
-        </button>
-      {/if}
-    </div>
-  </section>
-
-  <QuickReplies replies={settings.quickReplies} {run} />
-
-  <section class="card" aria-labelledby="s-dl">
-    <h2 id="s-dl"><HardDrive size={18} /> Downloads</h2>
-    <div class="row">
-      <div class="text">
-        <span class="label">Pasta dos arquivos baixados</span>
-        <span class="hint path" title={snap.downloadsDir}>{snap.downloadsDir}</span>
-      </div>
-      <div class="choices">
-        <button class="btn" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={16} /> Abrir</button>
-        <button class="btn" onclick={chooseDownloads}>Alterar…</button>
-        {#if settings.downloadsDir}
-          <button class="btn" onclick={() => run(api.setDownloadsDir(null))}>Usar padrão</button>
-        {/if}
-      </div>
-    </div>
-  </section>
-
-  <SyncSettings />
-
-  <section class="card" aria-labelledby="s-backup">
-    <h2 id="s-backup"><Download size={18} /> Backup</h2>
-    <div class="row">
-      <div class="text">
-        <span class="label">Exportar ou restaurar a configuração</span>
-        <span class="hint">
-          Serviços, nomes, cores, ordem, preferências, tarefas e anotações (o arquivo não é
-          criptografado: guarde em lugar seguro). Conversas e logins não entram: em outro
-          computador, cada serviço pede login de novo.
-        </span>
-      </div>
-      <div class="choices">
-        <button class="btn" onclick={exportBackup}><Upload size={16} /> Exportar…</button>
-        <button class="btn" onclick={importBackup}><Download size={16} /> Importar…</button>
-      </div>
-    </div>
-    {#if backupMessage}<p class="message" role="status">{backupMessage}</p>{/if}
-  </section>
-
-  <section class="card about" aria-labelledby="s-about">
-    <h2 id="s-about"><Info size={18} /> Sobre</h2>
-    <div class="about-head">
-      <img src="/favicon.svg" alt="" width="56" height="56" />
-      <div class="text">
-        <span class="about-name">Papeo</span>
-        <span class="hint">Versão {snap.appVersion}</span>
-        <span class="hint">
-          Feito por
-          <button class="link" onclick={() => run(api.openUrl(ABOUT.profile))}>{ABOUT.author}</button>
-        </span>
-      </div>
-    </div>
-    <div class="choices about-links">
-      <button class="btn" onclick={() => run(api.openUrl(ABOUT.profile))}>
-        <UserRound size={16} /> Perfil no GitHub
-      </button>
-      <button class="btn" onclick={() => run(api.openUrl(ABOUT.repo))}>
-        <CodeXml size={16} /> Código-fonte
-      </button>
-      <button class="btn" onclick={() => run(api.openUrl(ABOUT.issues))}>
-        <Bug size={16} /> Relatar um problema
-      </button>
-    </div>
-    <p class="hint about-license">
-      Software livre e gratuito, sob a licença GPL-3.0. Sem propaganda e sem coleta de dados.
-    </p>
-  </section>
+          <button class="btn" onclick={() => run(api.openUrl(ABOUT.repo))}>
+            <CodeXml size={16} /> Código-fonte
+          </button>
+          <button class="btn" onclick={() => run(api.openUrl(ABOUT.issues))}>
+            <Bug size={16} /> Relatar um problema
+          </button>
+        </div>
+        <p class="hint about-license">
+          Software livre e gratuito, sob a licença GPL-3.0. Sem propaganda e sem coleta de dados.
+        </p>
+      </section>
+    {/if}
+  </div>
 </div>
 
 {#if confirmOrphans}
@@ -697,14 +809,93 @@
   .page {
     height: 100%;
     overflow-y: auto;
-    padding: 30px 32px 40px;
+    padding: 0 32px 40px;
+  }
+
+  /* Título e abas ficam à vista enquanto o conteúdo rola. */
+  .head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 30px 0 0;
+    /* Mesmo fundo da janela principal (hoje `--bg-sidebar`, vindo do CSS global
+       de PreviewBar/AttachmentBar). */
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 40px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .tab:hover {
+    color: var(--text);
+  }
+
+  .tab[aria-selected="true"] {
+    color: var(--text);
+    font-weight: 550;
+    border-bottom-color: var(--text);
+  }
+
+  .tab:focus-visible {
+    outline-offset: -2px;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .tab-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* Linha encontrada pela busca: um realce que some sozinho. */
+  .page :global(.found) {
+    border-radius: 10px;
+    animation: found 2.2s ease-out;
+  }
+
+  @keyframes found {
+    0%,
+    40% {
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    100% {
+      background: transparent;
+      box-shadow: 0 0 0 8px transparent;
+    }
+  }
+
+  .panel {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    padding-top: 20px;
   }
 
   h1 {
-    margin: 0 0 8px;
+    margin: 0 0 14px;
     font-size: 30px;
     font-weight: 500;
     letter-spacing: -0.02em;

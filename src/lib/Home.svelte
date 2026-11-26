@@ -133,6 +133,12 @@
     return best;
   });
 
+  /** "parado há 25 min", "parado há 3 h" ou, sem uso nesta sessão, "sem uso desde que o Papeo abriu". */
+  function idleLabel(minutes: number | null | undefined): string {
+    if (minutes == null) return "sem uso desde que o Papeo abriu";
+    return minutes < 60 ? `parado há ${minutes} min` : `parado há ${Math.floor(minutes / 60)} h`;
+  }
+
   function suggestHibernate(service: ServiceView): boolean {
     const bytes = memory?.services[service.id] ?? 0;
     return (
@@ -188,7 +194,7 @@
           tone: "info",
           service: s,
           title: `${s.name} está usando ${formatBytes(memory?.services[s.id] ?? 0)}`,
-          text: `parado há ${s.idleMinutes} min; recarregar libera (as notificações continuam).`,
+          text: `${idleLabel(s.idleMinutes)}; recarregar libera (as notificações continuam).`,
           action: "Liberar memória",
           icon: RotateCw,
           onclick: () => freeMemory([s.id]),
@@ -376,7 +382,7 @@
                 {#if bytes !== undefined}
                   <span class:heavy={service.id === heaviest && bytes >= HEAVY_BYTES}>{formatBytes(bytes)}</span>
                   {#if suggest}
-                    <span class="suggest-note">parado há {service.idleMinutes} min</span>
+                    <span class="suggest-note">{idleLabel(service.idleMinutes)}</span>
                   {/if}
                 {:else}
                   <span class="muted">—</span>

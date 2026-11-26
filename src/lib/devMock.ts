@@ -63,6 +63,7 @@ export function installDevMock() {
     if (new URLSearchParams(location.search).has("alertas")) {
       services[0].status = "loggedOut";
       services[1].status = "unresponsive";
+      services[4].url = "http://webmail.exemplo.com.br/";
     }
   }
   let autostart = false;
@@ -71,8 +72,12 @@ export function installDevMock() {
   // `?update`: versão nova disponível; `?v=0.2.0`: simula o app já atualizado.
   const params = new URLSearchParams(location.search);
   const appVersion = params.get("v") ?? "0.1.0";
+  // A versão "nova" é sempre a seguinte à instalada (com `?v=0.9.0`, a 0.10.0),
+  // para o histórico do "O que mudou" ficar coerente; as notas são as da 0.2.0.
+  const [maj, min] = appVersion.split(".").map(Number);
+  const nextVersion = `${maj}.${min + 1}.0`;
   let update: Snapshot["update"] = params.has("update")
-    ? { state: "available", version: "0.2.0", notes: notes020 }
+    ? { state: "available", version: nextVersion, notes: notes020 }
     : { state: "idle" };
   let active: string | null = null;
   const minutesAgo = (m: number) => Math.round(Date.now() / 1000 - m * 60);
@@ -283,7 +288,8 @@ export function installDevMock() {
         if (active) {
           const s = find();
           s.loaded = true;
-          s.status = "ok";
+          // `?alertas`: mantém o aviso visível na barra de cima ao abrir a conta.
+          if (!params.has("alertas")) s.status = "ok";
           s.idleMinutes = 0;
         }
         return snap();
@@ -429,7 +435,7 @@ export function installDevMock() {
         locked = false;
         return snap();
       case "check_update":
-        update = { state: "available", version: "0.2.0", notes: notes020 };
+        update = { state: "available", version: nextVersion, notes: notes020 };
         return snap();
       case "install_update":
         if (locked) throw "Desbloqueie o Papeo primeiro.";

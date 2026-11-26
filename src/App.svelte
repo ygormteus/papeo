@@ -15,6 +15,7 @@
   } from "@lucide/svelte";
   import AddServiceDialog from "./lib/AddServiceDialog.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
+  import type { SettingsTarget } from "./lib/settingsIndex";
   import ContactPanel from "./lib/ContactPanel.svelte";
   import TaskList, { type TaskActions } from "./lib/TaskList.svelte";
   import Tasks from "./lib/Tasks.svelte";
@@ -295,7 +296,12 @@
     }),
   );
 
-  function openSettings() {
+  /** Opção das Configurações a mostrar (vinda da busca); objeto novo a cada pedido. */
+  let settingsTarget = $state<SettingsTarget | null>(null);
+
+  function openSettings(target?: SettingsTarget) {
+    settingsTarget = target ?? null;
+    paletteOpen = false;
     page = "settings";
     if (snap.active !== null) run(api.activate(null));
   }
@@ -526,7 +532,7 @@
     {page}
     onselect={select}
     onadd={openAdd}
-    onsettings={openSettings}
+    onsettings={() => openSettings()}
     onmenu={(service, x, y) => (menu = { service, x, y })}
     onmove={(id, to) => run(api.moveService(id, to))}
     onupdate={() => run(api.installUpdate())}
@@ -580,6 +586,7 @@
           {run}
           onrestore={(path, preview) => (restoring = { path, ...preview })}
           onnotes={showNotes}
+          target={settingsTarget}
         />
       {:else if page === "tasks"}
         <Tasks {org} services={snap.services} actions={taskActions} {now} oncreate={createTask} />
@@ -655,6 +662,7 @@
     {org}
     ontasks={openTasks}
     oncontact={taskActions.open}
+    onsetting={openSettings}
   />
 {/if}
 
@@ -739,16 +747,21 @@
 {/if}
 
 {#if whatsNew && !snap.locked}
+  <!-- Trocar de "instalada" para "disponível" com o modal aberto recria o
+       componente (a versão selecionada no histórico recomeça). -->
+  {#key `${whatsNew.mode}-${whatsNew.version}`}
   <WhatsNew
     version={whatsNew.version}
     notes={whatsNew.notes}
     mode={whatsNew.mode}
+    current={snap.appVersion}
     onclose={() => (whatsNew = null)}
     onupdate={() => {
       whatsNew = null;
       run(api.installUpdate());
     }}
   />
+  {/key}
 {/if}
 
 {#if snap.locked}

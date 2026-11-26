@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { CirclePlus, House, ListTodo, MessageCircle, NotebookPen, Search, SquareCheck } from "@lucide/svelte";
+  import { CirclePlus, House, ListTodo, MessageCircle, NotebookPen, Search, Settings, SquareCheck } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import { searchable, type Contact, type Organizer, type RecentChat, type ServiceView } from "./api";
   import { contactLabel, contactOf, whenLabel } from "./tasks";
+  import { TAB_LABEL, searchSettings, type SettingsTarget } from "./settingsIndex";
 
   let {
     services,
@@ -15,11 +16,14 @@
     org,
     ontasks,
     oncontact,
+    onsetting,
   }: {
     services: ServiceView[];
     recent: RecentChat[];
     org: Organizer;
     ontasks: () => void;
+    /** Abre as Configurações na aba e na opção indicadas. */
+    onsetting: (target?: SettingsTarget) => void;
     /** Abre a conversa do contato com o painel. */
     oncontact: (contact: Contact) => void;
     onclose: () => void;
@@ -29,7 +33,7 @@
     onchat: (serviceId: string, query: string, exact: boolean) => void;
   } = $props();
 
-  type Kind = "service" | "chat" | "search" | "home" | "add" | "task" | "note" | "tasks";
+  type Kind = "service" | "chat" | "search" | "home" | "add" | "task" | "note" | "tasks" | "setting";
   type Entry = {
     key: string;
     kind: Kind;
@@ -133,12 +137,30 @@
           })
       : [];
 
+    const settings: Entry[] = searchSettings(raw).map((e) => ({
+      key: `setting-${e.label}`,
+      kind: "setting",
+      group: "Configurações",
+      label: e.label,
+      detail: TAB_LABEL[e.tab],
+      run: () => onsetting({ tab: e.tab, label: e.label }),
+    }));
+
     const extras: Entry[] = [
       { key: "home", kind: "home", group: "Papeo", label: "Início", run: () => onselect(null) },
       { key: "tasks", kind: "tasks", group: "Papeo", label: "Tarefas", run: ontasks },
       { key: "add", kind: "add", group: "Papeo", label: "Adicionar serviço", run: onadd },
+      { key: "settings", kind: "setting", group: "Papeo", label: "Configurações", run: () => onsetting() },
     ];
-    return [...accounts, ...chats, ...tasks, ...notes, ...searches, ...extras.filter((e) => has(e.label))];
+    return [
+      ...accounts,
+      ...chats,
+      ...tasks,
+      ...notes,
+      ...settings,
+      ...searches,
+      ...extras.filter((e) => has(e.label)),
+    ];
   });
 
   $effect(() => {
@@ -165,7 +187,7 @@
     <input
       bind:value={query}
       onkeydown={keydown}
-      placeholder="Ir para uma conta, buscar contato, tarefa ou anotação…"
+      placeholder="Conta, contato, tarefa, anotação ou configuração…"
       autofocus
       autocomplete="off"
       autocorrect="off"
@@ -205,6 +227,8 @@
           <span class="glyph"><NotebookPen size={17} /></span>
         {:else if entry.kind === "tasks"}
           <span class="glyph"><ListTodo size={17} /></span>
+        {:else if entry.kind === "setting"}
+          <span class="glyph"><Settings size={17} /></span>
         {:else}
           <span class="glyph"><CirclePlus size={17} /></span>
         {/if}

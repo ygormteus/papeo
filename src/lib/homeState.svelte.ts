@@ -31,7 +31,9 @@ function refresh() {
   if (document.hidden) return;
   api
     .getMemory()
-    .then((m) => (home.memory = m))
+    .then((m) => {
+      home.memory = m;
+    })
     .catch(() => {});
 }
 

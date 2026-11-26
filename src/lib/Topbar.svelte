@@ -77,7 +77,7 @@
     <PanelLeft size={18} />
   </button>
   <span class="divider" aria-hidden="true"></span>
-  <button class="search" onclick={onsearch} aria-label="Buscar conta ou contato">
+  <button class="search" onclick={onsearch} aria-label="Buscar contas, contatos e configurações" title="Buscar ({modKey}K)">
     <Search size={17} />
     <span>Buscar</span>
     <kbd>{modKey} K</kbd>
@@ -97,8 +97,8 @@
         data-tauri-drag-region
       >
         <ServiceAvatar service={active} size={20} />
-        <span data-tauri-drag-region>{active.name}</span>
-        {#if active.context}
+        <span class="name" data-tauri-drag-region>{active.name}</span>
+        {#if active.context && MODE_LABEL[active.context].toLowerCase() !== active.name.trim().toLowerCase()}
           <span class="ctx" data-tauri-drag-region>{MODE_LABEL[active.context]}</span>
         {/if}
       </span>
@@ -111,18 +111,17 @@
       role="status"
       title="Este site usa http: o que você envia e recebe pode ser lido por quem estiver na mesma rede."
     >
-      <LockOpen size={15} /> Conexão não criptografada
+      <LockOpen size={15} /> <span class="alert-text">Conexão não criptografada</span>
     </span>
   {/if}
 
   {#if active?.status === "unresponsive" || active?.status === "loggedOut"}
-    <span class="alert" class:danger={active.status === "unresponsive"} role="status">
-      {active.status === "unresponsive"
-        ? `${active.name} não responde.`
+    {@const message =
+      active.status === "unresponsive"
+        ? `${active.name} não responde — recarregue a conta.`
         : `${active.name} está desconectado — faça login de novo.`}
-      {#if active.status === "unresponsive"}
-        <button class="link" onclick={onreload}>Recarregar</button>
-      {/if}
+    <span class="alert" class:danger={active.status === "unresponsive"} role="status" title={message}>
+      <span class="alert-text">{message}</span>
     </span>
   {/if}
 
@@ -166,7 +165,14 @@
     >
       <NotebookPen size={17} />
     </button>
-    <button class="icon-btn" onclick={onreload} title="Recarregar ({modKey}R)" aria-label="Recarregar {active.name}">
+    <!-- Conta travada: o próprio botão de recarregar vira o destaque (sem um segundo "Recarregar" no alerta). -->
+    <button
+      class="icon-btn"
+      class:urgent={active.status === "unresponsive"}
+      onclick={onreload}
+      title="Recarregar ({modKey}R)"
+      aria-label="Recarregar {active.name}"
+    >
       <RotateCw size={17} />
     </button>
     <button class="icon-btn" onclick={onhibernate} title="Hibernar e liberar memória" aria-label="Hibernar {active.name}">
@@ -179,7 +185,7 @@
     </button>
   {/if}
   <button
-    class="icon-btn solid"
+    class="icon-btn ghost"
     onclick={ontheme}
     title="Tema: {themeLabel} (clique para {nextLabel})"
     aria-label="Tema: {themeLabel}. Mudar para {nextLabel}"
@@ -294,13 +300,14 @@
     border-color: color-mix(in srgb, var(--danger) 35%, transparent);
   }
 
-  .link {
-    border: 0;
-    background: none;
-    padding: 0;
-    color: inherit;
-    font-weight: 600;
-    text-decoration: underline;
+  .urgent {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  }
+
+  .urgent:hover {
+    background: color-mix(in srgb, var(--danger) 18%, var(--bg));
   }
 
   .zoom {
@@ -355,14 +362,61 @@
     align-self: stretch;
   }
 
-  .solid {
-    background: var(--primary);
-    color: var(--primary-text);
-    border-color: var(--primary);
+  /* Controles e textos não encolhem nem quebram: quem cede espaço é o nome da
+     conta e o texto do alerta (com reticências e o texto completo no title). */
+  .topbar > :global(*) {
+    flex: none;
   }
 
-  .solid:hover {
-    background: var(--primary);
-    opacity: 0.88;
+  /* O alerta cede espaço antes do nome da conta (que tem teto próprio). */
+  .topbar > .alert,
+  .topbar > .spacer {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .topbar > .current {
+    flex: 0 1 auto;
+    min-width: 72px;
+    max-width: 240px;
+  }
+
+  .topbar > .alert {
+    flex-shrink: 1000;
+  }
+
+  .topbar > .spacer {
+    flex-grow: 1;
+  }
+
+  .search,
+  kbd,
+  .current,
+  .alert {
+    white-space: nowrap;
+  }
+
+  .name,
+  .alert-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .current :global(*),
+  .alert > :global(svg) {
+    flex: none;
+  }
+
+  .current .name {
+    flex: 0 1 auto;
+  }
+
+  /* Janela estreita: a busca vira só ícone (o atalho continua no title). */
+  @media (max-width: 1180px) {
+    .search > span,
+    .search > kbd {
+      display: none;
+    }
   }
 </style>

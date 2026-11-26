@@ -109,6 +109,15 @@
 
   const loadedCount = $derived(snap.services.filter((s) => s.loaded).length);
 
+  /** Estado da conta no title: na barra recolhida é o único texto que sobra. */
+  function stateNote(service: ServiceView): string {
+    if (service.status === "unresponsive") return " — não responde";
+    if (service.status === "loggedOut") return " — desconectado";
+    if (!service.loaded) return " — hibernado";
+    if (service.unread > 0) return ` — ${service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}`;
+    return "";
+  }
+
   function contextMenu(e: MouseEvent, service: ServiceView) {
     e.preventDefault();
     onmenu(service, e.clientX, e.clientY);
@@ -157,18 +166,22 @@
       class:active={snap.active === null && page === "tasks"}
       aria-current={snap.active === null && page === "tasks" ? "page" : undefined}
       onclick={ontasks}
-      title="Tarefas e lembretes"
+      title={collapsed && snap.tasks.overdue > 0
+        ? `Tarefas — ${snap.tasks.overdue === 1 ? "1 atrasada" : `${snap.tasks.overdue} atrasadas`}`
+        : collapsed && snap.tasks.today > 0
+          ? `Tarefas — ${snap.tasks.today} para hoje`
+          : "Tarefas e lembretes"}
     >
       <span class="avatar-wrap">
         <ListTodo size={18} />
         {#if collapsed && due > 0}
-          <span class="dot" class:warn={snap.tasks.overdue > 0} aria-hidden="true"></span>
+          <span class="dot" class:danger={snap.tasks.overdue > 0} aria-hidden="true"></span>
         {/if}
       </span>
       {#if !collapsed}
         <span class="label">Tarefas</span>
         {#if snap.tasks.overdue > 0}
-          <span class="pill pill-danger" aria-label="{snap.tasks.overdue} atrasadas">{snap.tasks.overdue}</span>
+          <span class="pill pill-danger" aria-label={snap.tasks.overdue === 1 ? "1 atrasada" : `${snap.tasks.overdue} atrasadas`}>{snap.tasks.overdue}</span>
         {:else if snap.tasks.today > 0}
           <span class="pill" aria-label="{snap.tasks.today} para hoje">{snap.tasks.today}</span>
         {/if}
@@ -230,11 +243,13 @@
         onclick={() => onselect(service.id)}
         oncontextmenu={(e) => contextMenu(e, service)}
         onkeydown={(e) => menuKey(e, service)}
-        title={`${service.name}${(numberOf.get(service.id) ?? 99) <= 9 ? ` (${modKey}${numberOf.get(service.id)})` : ""}${service.loaded ? "" : " — hibernado"}`}
+        title={`${service.name}${(numberOf.get(service.id) ?? 99) <= 9 ? ` (${modKey}${numberOf.get(service.id)})` : ""}${stateNote(service)}`}
       >
         <span class="avatar-wrap">
           <ServiceAvatar {service} dimmed={!service.loaded} />
-          {#if collapsed && (service.status === "unresponsive" || service.status === "loggedOut")}
+          {#if collapsed && service.status === "unresponsive"}
+            <span class="dot danger" aria-hidden="true"></span>
+          {:else if collapsed && service.status === "loggedOut"}
             <span class="dot warn" aria-hidden="true"></span>
           {:else if collapsed && service.unread > 0}
             <span class="dot" aria-hidden="true"></span>
@@ -250,7 +265,7 @@
           {:else if service.status === "loggedOut"}
             <span class="pill pill-warn">Desconectado</span>
           {:else if service.unread > 0}
-            <span class="pill pill-success" aria-label="{service.unread} não lidas">
+            <span class="pill pill-success" aria-label={service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}>
               {service.unread > 99 ? "99+" : service.unread}
             </span>
           {:else if !service.loaded}
@@ -494,6 +509,10 @@
 
   .dot.warn {
     background: var(--warn);
+  }
+
+  .dot.danger {
+    background: var(--danger);
   }
 
   .footer-nav {
