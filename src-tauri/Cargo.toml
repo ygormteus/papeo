@@ -36,6 +36,8 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 sha2 = "0.10"
 getrandom = "0.3"
 base64 = "0.21"
+# Corpo do envio de arquivo do Talk sem cópia a cada nova tentativa (já vem com o reqwest).
+bytes = "1"
 url = "2"
 # Avisos de e-mail por IMAP (o mesmo TLS do sistema que o reqwest usa).
 native-tls = "0.2"

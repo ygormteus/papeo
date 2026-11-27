@@ -66,8 +66,10 @@ export interface ServiceView {
   inMode: boolean;
   /** Avisos por IMAP (servidor e usuário; a senha nunca vem para cá). */
   mail?: MailAccount;
-  /** Situação do IMAP (só contas que o usam). */
+  /** Situação do IMAP ou do Talk pela API (só contas que os usam). */
   mailStatus?: MailStatus;
+  /** Leitor do Talk pela API (spec 29): servidor e usuário; a senha de app nunca vem. */
+  talk?: { server: string; user: string; uid: string } | null;
   /** Abre no leitor de e-mail do Papeo (o site só quando pedido). */
   reader?: boolean;
   /** Servidor de envio (SMTP) usado pelo leitor, `host:porta`. */
@@ -395,9 +397,18 @@ export interface DownloadEntry {
   at: number;
 }
 
+/** Tela dividida: duas contas lado a lado; `active` é uma das duas. */
+export interface Split {
+  left: string;
+  right: string;
+  /** Fração da largura da metade esquerda (0,25–0,75). */
+  ratio: number;
+}
+
 export interface Snapshot {
   services: ServiceView[];
   active: string | null;
+  split: Split | null;
   totalUnread: number;
   settings: Settings;
   dndActive: boolean;
@@ -474,6 +485,7 @@ export interface Area {
 }
 
 export const EMPTY_SNAPSHOT: Snapshot = {
+  split: null,
   services: [],
   active: null,
   totalUnread: 0,
@@ -601,6 +613,30 @@ export const api = {
   mailSignature: (id: string) => invoke<{ text: string; html: string }>("mail_signature", { id }),
   /** Conta com o leitor: mostra o site (`true`) ou volta ao leitor. */
   mailShowSite: (id: string, site: boolean) => invoke<Snapshot>("mail_show_site", { id, site }),
+  // ---- Leitor do Nextcloud Talk (spec 29)
+  /** Abre a aprovação no navegador; o resultado chega por `onTalkLogin`. */
+  talkLogin: (id: string) => invoke<void>("talk_login", { id }),
+  talkLoginCancel: (id: string) => invoke<void>("talk_login_cancel", { id }),
+  talkLogout: (id: string) => invoke<Snapshot>("talk_logout", { id }),
+  talkRooms: (id: string) => invoke<TalkRoom[]>("talk_rooms", { id }),
+  talkMessages: (id: string, token: string, before?: number) =>
+    invoke<TalkChunk>("talk_messages", { id, token, before: before ?? null }),
+  /** Espera (até 30 s) mensagens depois de `after`. */
+  talkWait: (id: string, token: string, after: number) => invoke<TalkChunk>("talk_wait", { id, token, after }),
+  talkSend: (id: string, token: string, text: string, replyTo?: number | null) =>
+    invoke<TalkMessage | null>("talk_send", { id, token, text, replyTo: replyTo ?? null }),
+  talkRead: (id: string, token: string, last: number) => invoke<void>("talk_read", { id, token, last }),
+  talkReact: (id: string, token: string, message: number, emoji: string, on: boolean) =>
+    invoke<void>("talk_react", { id, token, message, emoji, on }),
+  talkMentions: (id: string, token: string, search: string) =>
+    invoke<TalkMention[]>("talk_mentions", { id, token, search }),
+  talkAvatar: (id: string, token: string, version: string) =>
+    invoke<string | null>("talk_avatar", { id, token, version }),
+  talkPreview: (id: string, file: string) => invoke<string | null>("talk_preview", { id, file }),
+  /** `open`: visualização (ou salva se não der); devolve o caminho salvo ou "". */
+  talkFile: (id: string, path: string, name: string, open: boolean) =>
+    invoke<string>("talk_file", { id, path, name, open }),
+  talkUpload: (id: string, token: string, path: string) => invoke<void>("talk_upload", { id, token, path }),
   setNotifications: (id: string, enabled: boolean) =>
     invoke<Snapshot>("set_notifications", { id, enabled }),
   muteService: (id: string, minutes: number) => invoke<Snapshot>("mute_service", { id, minutes }),
@@ -624,6 +660,10 @@ export const api = {
   reload: (id: string) => invoke<void>("reload_service", { id }),
   setContentArea: (area: Area) => invoke<void>("set_content_area", { area }),
   setOverlay: (open: boolean) => invoke<void>("set_overlay", { open }),
+  /** Tela dividida: `id` à direita da conta aberta (spec 30). */
+  splitOpen: (id: string, ratio: number) => invoke<Snapshot>("split_open", { id, ratio }),
+  splitClose: () => invoke<Snapshot>("split_close"),
+  splitRatio: (ratio: number) => invoke<void>("split_ratio", { ratio }),
   /** `null` desliga; 0 = até reativar; n = por n minutos. */
   setDnd: (minutes: number | null) => invoke<Snapshot>("set_dnd", { minutes }),
   setQuietHours: (quietHours: QuietHours) => invoke<Snapshot>("set_quiet_hours", { quietHours }),
@@ -861,6 +901,9 @@ export interface MailDraft {
   bcc: string[];
   subject: string;
   body: string;
+  /** Texto com formatação (spec 31): HTML do editor com o marcador da
+   * assinatura; `null` = só o texto. */
+  bodyHtml?: string | null;
   inReplyTo?: string | null;
   references?: string[];
   replyFolder?: string | null;
@@ -879,6 +922,7 @@ export interface MailOpenedDraft {
   bcc: string[];
   subject: string;
   body: string;
+  bodyHtml: string | null;
   inReplyTo: string | null;
   references: string[];
   attachments: { name: string; mime: string; data: string }[];
@@ -919,6 +963,71 @@ export function onMailReveal(
   cb: (r: { id: string; query: string; uid?: number | null }) => void,
 ): Promise<UnlistenFn> {
   return listen<{ id: string; query: string; uid?: number | null }>("papeo://mail-reveal", (e) => cb(e.payload));
+}
+
+export function onTalkLogin(cb: (r: { id: string; ok: boolean; error?: string | null }) => void): Promise<UnlistenFn> {
+  return listen<{ id: string; ok: boolean; error?: string | null }>("papeo://talk-login", (e) => cb(e.payload));
+}
+
+/** Lista de conversas trazida pelo vigia do Talk (a cada 30–60 s). */
+export function onTalkRooms(cb: (r: { id: string; rooms: TalkRoom[] }) => void): Promise<UnlistenFn> {
+  return listen<{ id: string; rooms: TalkRoom[] }>("papeo://talk-rooms", (e) => cb(e.payload));
+}
+
+/** Clique num aviso do Talk com o leitor: abre a conversa. */
+export function onTalkReveal(cb: (r: { id: string; token: string }) => void): Promise<UnlistenFn> {
+  return listen<{ id: string; token: string }>("papeo://talk-reveal", (e) => cb(e.payload));
+}
+
+export interface TalkRoom {
+  token: string;
+  name: string;
+  /** 1 a dois, 2 grupo, 3 pública, 4 novidades, 5 ex-conversa a dois, 6 anotações. */
+  kind: number;
+  unread: number;
+  mention: boolean;
+  favorite: boolean;
+  activity: number;
+  last?: { author: string; text: string; own: boolean } | null;
+  lastId: number;
+  readOnly: boolean;
+  hasCall: boolean;
+  avatarVersion: string;
+}
+
+export interface TalkFile {
+  id: string;
+  name: string;
+  path: string;
+  mime: string;
+  size: number;
+  preview: boolean;
+}
+
+export interface TalkMessage {
+  id: number;
+  author: string;
+  authorId: string;
+  own: boolean;
+  time: number;
+  text: string;
+  system: boolean;
+  files: TalkFile[];
+  parent?: { id: number; author: string; text: string } | null;
+  reactions: { emoji: string; count: number; mine: boolean }[];
+  replyable: boolean;
+}
+
+export interface TalkChunk {
+  messages: TalkMessage[];
+  last: number;
+  first: number;
+  more: boolean;
+}
+
+export interface TalkMention {
+  insert: string;
+  label: string;
 }
 
 export function onSync(cb: (s: SyncStatus) => void): Promise<UnlistenFn> {

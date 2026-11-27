@@ -363,13 +363,18 @@ pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
             return reload(app, id);
         }
         let service = inner.service(id)?.clone();
-        let shown = inner.active.as_deref() == Some(id) && !inner.overlay && !inner.locked;
+        let shown = inner.on_screen(id) && !inner.overlay && !inner.locked;
         // A página nova volta a informar o contador (ou o título).
         inner.page_unread.remove(id);
         inner.last_reload.insert(id.to_owned(), Instant::now());
         // Foco só com a janela em foco: escondida (bandeja), nada aparece.
-        let focus = shown && inner.window_focused;
-        (service, inner.area, shown, focus)
+        let focus = shown && inner.window_focused && inner.active.as_deref() == Some(id);
+        (
+            service,
+            inner.pane_area(id).unwrap_or(inner.area),
+            shown,
+            focus,
+        )
     };
     if let Some(old) = app.get_webview(id) {
         let _ = old.close();
@@ -399,32 +404,28 @@ pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Posiciona e exibe apenas o serviço ativo; os demais carregados ficam ocultos.
+/// Posiciona e exibe o serviço ativo (e a outra metade da tela dividida);
+/// os demais carregados ficam ocultos.
 pub fn apply_layout(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let (ids, active, area, overlay) = {
+    let (ids, overlay) = {
         let inner = state.lock();
         // Contas no leitor de e-mail: o site (se carregado para os avisos)
         // fica escondido; a tela é do Papeo.
-        let ids: Vec<(String, bool)> = inner
+        let ids: Vec<(String, bool, Option<Area>)> = inner
             .config
             .services
             .iter()
-            .map(|s| (s.id.clone(), inner.reader(&s.id)))
+            .map(|s| (s.id.clone(), inner.reader(&s.id), inner.pane_area(&s.id)))
             .collect();
         // Bloqueado: nenhuma conversa aparece.
-        (
-            ids,
-            inner.active.clone(),
-            inner.area,
-            inner.overlay || inner.locked,
-        )
+        (ids, inner.overlay || inner.locked)
     };
-    for (id, reader) in ids {
+    for (id, reader, pane) in ids {
         let Some(webview) = app.get_webview(&id) else {
             continue;
         };
-        if active.as_deref() == Some(id.as_str()) && !overlay && !reader {
+        if let Some(area) = pane.filter(|_| !overlay && !reader) {
             let _ = webview.set_position(LogicalPosition::new(area.x, area.y));
             let _ = webview.set_size(LogicalSize::new(area.width, area.height));
             let _ = webview.show();
@@ -444,7 +445,21 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
             None => None,
         };
         let now = Instant::now();
-        if let Some(prev) = inner.active.take() {
+        let prev = inner.active.take();
+        // Tela dividida: conta que não é uma das duas troca a metade em
+        // foco; uma das duas só muda o foco; o Início fecha a divisão.
+        match (&id, inner.split.as_mut()) {
+            (Some(new), Some(split)) if !split.has(new) => {
+                if prev.as_deref() == Some(split.left.as_str()) {
+                    split.left = new.clone();
+                } else {
+                    split.right = new.clone();
+                }
+            }
+            (None, Some(_)) => inner.split = None,
+            _ => {}
+        }
+        if let Some(prev) = prev {
             inner.last_used.insert(prev, now);
         }
         if let Some(id) = &id {
@@ -458,7 +473,11 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
         let to_create = service
             .filter(|s| app.get_webview(&s.id).is_none())
             .filter(|s| !inner.reader(&s.id));
-        (to_create, inner.area)
+        let area = id
+            .as_deref()
+            .and_then(|id| inner.pane_area(id))
+            .unwrap_or(inner.area);
+        (to_create, area)
     };
     // Sem o lock: add_child espera a thread principal, que também usa o estado.
     if let Some(service) = to_create {
@@ -481,6 +500,66 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
     Ok(publish(app))
 }
 
+/// Tela dividida (spec 30): `id` à direita da conta aberta, em foco.
+pub fn split_open(app: &AppHandle, id: &str, ratio: f64) -> Result<Snapshot, String> {
+    let state = app.state::<AppState>();
+    {
+        let mut inner = state.lock();
+        inner.service(id)?;
+        // Já é uma das duas: só o foco muda.
+        if inner.split.as_ref().is_some_and(|s| s.has(id)) {
+            drop(inner);
+            return activate(app, Some(id.to_owned()));
+        }
+        // Já dividida: a em foco fica e a outra metade vira `id`.
+        let left = inner
+            .active
+            .clone()
+            .filter(|left| left != id)
+            .ok_or(tr("Abra outra conta antes de dividir a tela."))?;
+        inner.split = Some(crate::state::Split {
+            left,
+            right: id.to_owned(),
+            ratio: crate::state::Split::clamp_ratio(ratio),
+        });
+    }
+    activate(app, Some(id.to_owned()))
+}
+
+/// Volta a uma conta só (a em foco).
+pub fn split_close(app: &AppHandle) -> Snapshot {
+    app.state::<AppState>().lock().split = None;
+    apply_layout(app);
+    publish(app)
+}
+
+/// Divisor arrastado: só reposiciona (sem publicar a cada quadro).
+pub fn split_ratio(app: &AppHandle, ratio: f64) {
+    if let Some(split) = app.state::<AppState>().lock().split.as_mut() {
+        split.ratio = crate::state::Split::clamp_ratio(ratio);
+    }
+    apply_layout(app);
+}
+
+/// A página da metade de trás ganhou foco (clique): vira a em foco.
+pub fn split_focus(app: &AppHandle, id: &str) {
+    let changed = {
+        let state = app.state::<AppState>();
+        let mut inner = state.lock();
+        let switch =
+            inner.split.as_ref().is_some_and(|s| s.has(id)) && inner.active.as_deref() != Some(id);
+        if switch {
+            if let Some(prev) = inner.active.replace(id.to_owned()) {
+                inner.last_used.insert(prev, Instant::now());
+            }
+        }
+        switch
+    };
+    if changed {
+        publish(app);
+    }
+}
+
 /// Mostra o serviço e procura uma conversa nele (busca do próprio site).
 /// Se a página ainda não está pronta, a busca espera o primeiro sinal de vida
 /// dela (`service_status`).
@@ -491,6 +570,25 @@ pub fn open_chat(app: &AppHandle, id: &str, query: &str, exact: bool) -> Result<
     let query = papeo_core::clip(&query, 100);
     let snap = activate(app, Some(id.to_owned()))?;
     if query.is_empty() {
+        return Ok(snap);
+    }
+    // Leitor do Talk (spec 29): o aviso traz o token da conversa.
+    let nextcloud = app
+        .state::<AppState>()
+        .lock()
+        .service(id)
+        .is_ok_and(|s| s.kind == papeo_core::ServiceKind::Nextcloud);
+    if let Some(token) = query
+        .strip_prefix(crate::talk::OPEN_PREFIX)
+        .filter(|_| nextcloud)
+    {
+        if app.state::<AppState>().lock().reader(id) {
+            let _ = app.emit(
+                crate::talk::REVEAL_EVENT,
+                serde_json::json!({ "id": id, "token": token }),
+            );
+        }
+        // Pelo site: só mostra a conta (o token não serve para a busca dele).
         return Ok(snap);
     }
     // Leitor de e-mail: a tela do Papeo procura (pelo assunto).
@@ -539,12 +637,19 @@ pub fn show_site(app: &AppHandle, id: &str, site: bool) -> Result<Snapshot, Stri
     {
         let state = app.state::<AppState>();
         let mut inner = state.lock();
-        inner.service(id)?;
+        let service = inner.service(id)?;
+        // Nextcloud ainda sem o Talk pela API: o leitor começa pelo
+        // "Conectar ao Talk" (spec 29).
+        let talk_setup =
+            service.kind == papeo_core::ServiceKind::Nextcloud && service.talk.is_none();
         if site {
             inner.site_view.insert(id.to_owned());
             inner.mail_setup.remove(id);
         } else {
             inner.site_view.remove(id);
+            if talk_setup {
+                inner.mail_setup.insert(id.to_owned());
+            }
         }
     }
     if !site {
@@ -599,7 +704,9 @@ pub fn close_all(app: &AppHandle) {
     for id in ids {
         hibernate(app, &id);
     }
-    state.lock().active = None;
+    let mut inner = state.lock();
+    inner.active = None;
+    inner.split = None;
 }
 
 #[cfg(test)]

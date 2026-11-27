@@ -553,6 +553,10 @@ pub struct Draft {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    /// Texto com formatação (spec 31): HTML do editor, com o marcador da
+    /// assinatura; limpo de novo no envio. Sem valor, só o texto.
+    #[serde(default)]
+    pub body_html: Option<String>,
     /// Resposta: `Message-ID` da original e a cadeia dela.
     #[serde(default)]
     pub in_reply_to: Option<String>,
@@ -611,6 +615,8 @@ pub struct OpenedDraft {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    /// HTML limpo do texto (spec 31), se o rascunho tem formatação.
+    pub body_html: Option<String>,
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub attachments: Vec<DraftAttachment>,
@@ -682,7 +688,7 @@ fn build_as(
     if to.len() + cc.len() + bcc.len() > RECIPIENTS_MAX {
         return Err(tr("Destinatários demais.").into());
     }
-    if draft.body.len() > BODY_MAX {
+    if draft.body.len() > BODY_MAX || draft.body_html.as_ref().is_some_and(|h| h.len() > BODY_MAX) {
         return Err(tr("Texto longo demais.").into());
     }
     let subject: String = draft.subject.chars().filter(|c| !c.is_control()).collect();
@@ -738,23 +744,32 @@ fn build_as(
     let text = SinglePart::plain(body.clone());
     // Assinatura formatada no corpo sem mudanças (spec 22): texto + HTML,
     // com as imagens dentro do e-mail.
-    let rich =
-        papeo_core::signature::html_message(&body, &account.signature, &account.signature_html)
-            .map(|html| {
-                let (html, images) =
-                    papeo_core::signature::inline_images(&html, &papeo_core::new_item_id());
-                let mut related = MultiPart::related().singlepart(SinglePart::html(html));
-                for image in images {
-                    let mime = ContentType::parse(&image.mime).unwrap_or_else(|_| {
-                        ContentType::parse("application/octet-stream").expect("tipo fixo")
-                    });
-                    related = related
-                        .singlepart(Attachment::new_inline(image.cid).body(image.bytes, mime));
-                }
-                MultiPart::alternative()
-                    .singlepart(text.clone())
-                    .multipart(related)
+    // Com formatação (spec 31): o HTML do editor, limpo de novo aqui.
+    let html = match draft.body_html.as_deref().filter(|h| !h.trim().is_empty()) {
+        Some(edited) => Some(papeo_core::signature::html_body(
+            &body,
+            edited,
+            &account.signature,
+            &account.signature_html,
+        )),
+        None => {
+            papeo_core::signature::html_message(&body, &account.signature, &account.signature_html)
+        }
+    };
+    let rich = html.map(|html| {
+        let (html, images) =
+            papeo_core::signature::inline_images(&html, &papeo_core::new_item_id());
+        let mut related = MultiPart::related().singlepart(SinglePart::html(html));
+        for image in images {
+            let mime = ContentType::parse(&image.mime).unwrap_or_else(|_| {
+                ContentType::parse("application/octet-stream").expect("tipo fixo")
             });
+            related = related.singlepart(Attachment::new_inline(image.cid).body(image.bytes, mime));
+        }
+        MultiPart::alternative()
+            .singlepart(text.clone())
+            .multipart(related)
+    });
     if draft.attachments.is_empty() {
         return match rich {
             Some(alternative) => builder.multipart(alternative),
@@ -995,6 +1010,7 @@ pub async fn open_draft(
             bcc: view.bcc,
             subject: view.subject,
             body: view.text.replace("\r\n", "\n"),
+            body_html: view.html,
             in_reply_to: view.in_reply_to,
             references: view.references,
             attachments: view
@@ -1096,6 +1112,7 @@ mod tests {
             bcc: vec!["oculto@z.com".into()],
             subject: "Re: Olá\r\nBcc: x@y".into(),
             body: "Oi\nTudo bem?".into(),
+            body_html: None,
             in_reply_to: Some("m1@x.com".into()),
             references: vec!["<m0@x.com>".into(), "ruim <".into()],
             reply_folder: None,
@@ -1104,6 +1121,41 @@ mod tests {
             draft_token: None,
             replaces: None,
         }
+    }
+
+    #[test]
+    fn formatted_body_goes_as_clean_html_with_the_signature() {
+        const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        let mut acc = account();
+        acc.signature = "Ana Souza".into();
+        acc.signature_html = format!(r#"<b>Ana</b><img src="data:image/png;base64,{PNG}">"#).into();
+        let mut d = draft();
+        d.body = "Olá grande\n\n-- \nAna Souza".into();
+        d.body_html = Some(format!(
+            r#"<div><b>Olá</b> <font size="5">grande</font><img src=x onerror=alert(1)></div>{}"#,
+            papeo_core::signature::SIGNATURE_TOKEN
+        ));
+        let raw = String::from_utf8(build(&acc, &d).unwrap().formatted()).unwrap();
+        assert!(
+            raw.contains("multipart/alternative") && raw.contains("multipart/related"),
+            "{raw}"
+        );
+        // Parte HTML (quoted-printable): negrito e tamanho; sem o script.
+        let flat = raw.replace("=\r\n", "").replace("=3D", "=");
+        assert!(
+            flat.contains("<b>Ol") && flat.contains(r#"<font size="5">grande</font>"#),
+            "{flat}"
+        );
+        assert!(
+            !flat.contains("onerror") && !flat.contains("src=x"),
+            "{flat}"
+        );
+        assert!(flat.contains("Content-ID: <assinatura1."), "{flat}");
+        // Parte de texto continua.
+        assert!(raw.contains("Content-Type: text/plain"), "{raw}");
+        // HTML grande demais.
+        d.body_html = Some("x".repeat(BODY_MAX + 1));
+        assert!(build(&acc, &d).is_err());
     }
 
     #[test]

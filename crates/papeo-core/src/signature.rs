@@ -300,6 +300,71 @@ pub fn html_message(body: &str, signature_text: &str, signature_html: &str) -> O
     Some(out)
 }
 
+/// Marcador do bloco da assinatura no HTML do editor (spec 31): a interface
+/// troca o bloco por ele e o envio põe a assinatura no lugar.
+pub const SIGNATURE_TOKEN: &str = "\u{E000}papeo-signature\u{E000}";
+
+/// Limpa o HTML do texto do editor (spec 31): a mesma lista fechada da
+/// assinatura, sem imagens; `div.papeo-signature` marca a assinatura num
+/// rascunho reaberto.
+pub fn sanitize_body_html(raw: &str) -> String {
+    let mut tags: HashSet<&str> = TAGS.iter().copied().collect();
+    tags.remove("img");
+    tags.insert("strike");
+    let mut builder = ammonia::Builder::default();
+    builder
+        .tags(tags)
+        .tag_attributes(
+            [("a", ["href", "title"].into_iter().collect())]
+                .into_iter()
+                .collect(),
+        )
+        .generic_attributes(ATTRIBUTES.iter().copied().collect())
+        .allowed_classes(
+            [("div", ["papeo-signature"].into_iter().collect())]
+                .into_iter()
+                .collect(),
+        )
+        .filter_style_properties(STYLES.iter().copied().collect::<HashSet<_>>())
+        .url_schemes(["http", "https", "mailto", "tel"].into_iter().collect())
+        .url_relative(ammonia::UrlRelative::Deny)
+        .link_rel(None);
+    builder.clean(raw).to_string()
+}
+
+/// Versão HTML de uma mensagem escrita com formatação (spec 31): o HTML do
+/// editor limpo, com a assinatura no lugar do marcador (a formatada se a
+/// de texto estiver intacta em `body_text`; senão, a de texto).
+pub fn html_body(
+    body_text: &str,
+    body_html: &str,
+    signature_text: &str,
+    signature_html: &str,
+) -> String {
+    let clean = sanitize_body_html(body_html);
+    let mut block = String::new();
+    if !signature_text.is_empty() {
+        block.push_str("<div class=\"papeo-signature\">--&nbsp;<br>\n");
+        if html_message(body_text, signature_text, signature_html).is_some() {
+            block.push_str(signature_html);
+        } else {
+            let text = signature_text.replace("\r\n", "\n");
+            text_html(&text.split('\n').collect::<Vec<_>>(), &mut block);
+        }
+        block.push_str("</div>");
+    }
+    let mut out =
+        String::from("<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body><div>");
+    let mut parts = clean.splitn(2, SIGNATURE_TOKEN);
+    out.push_str(parts.next().unwrap_or_default());
+    if let Some(rest) = parts.next() {
+        out.push_str(&block);
+        out.push_str(&rest.replace(SIGNATURE_TOKEN, ""));
+    }
+    out.push_str("</div></body></html>");
+    out
+}
+
 /// Imagem que vai dentro do e-mail (parte `inline` com `Content-ID`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineImage {
@@ -345,6 +410,70 @@ pub fn inline_images(html: &str, tag: &str) -> (String, Vec<InlineImage>) {
     }
     out.push_str(rest);
     (out, images)
+}
+
+#[cfg(test)]
+mod body_tests {
+    use super::*;
+
+    #[test]
+    fn body_html_keeps_formatting_and_drops_the_rest() {
+        let raw = r#"<b>oi</b><font size="5" color="red" onclick="x()">grande</font><script>alert(1)</script><img src="https://x/y.png"><a href="javascript:x()">a</a><a href="https://ok.com">b</a><div class="papeo-signature other" style="position:fixed;color:blue">s</div><span class="z">t</span><strike>r</strike>"#;
+        let clean = sanitize_body_html(raw);
+        assert!(clean.contains("<b>oi</b>"), "{clean}");
+        assert!(
+            clean.contains(r#"size="5""#) && clean.contains(r#"color="red""#),
+            "{clean}"
+        );
+        assert!(
+            !clean.contains("onclick") && !clean.contains("script") && !clean.contains("<img"),
+            "{clean}"
+        );
+        assert!(
+            !clean.contains("javascript") && clean.contains("https://ok.com"),
+            "{clean}"
+        );
+        assert!(
+            clean.contains(r#"class="papeo-signature""#) && !clean.contains("other"),
+            "{clean}"
+        );
+        assert!(
+            !clean.contains("position") && clean.contains("color:blue"),
+            "{clean}"
+        );
+        assert!(
+            !clean.contains("class=\"z\"") && clean.contains("<strike>"),
+            "{clean}"
+        );
+    }
+
+    #[test]
+    fn signature_goes_where_the_token_is() {
+        let body = "Oi\n\n-- \nAna";
+        let html =
+            format!("<div><b>Oi</b></div>{SIGNATURE_TOKEN}<div>&gt; antes</div>{SIGNATURE_TOKEN}");
+        let out = html_body(
+            body,
+            &html,
+            "Ana",
+            "<i>Ana</i><img src=\"data:image/png;base64,AA==\">",
+        );
+        assert!(
+            out.contains("<b>Oi</b></div><div class=\"papeo-signature\">--&nbsp;<br>\n<i>Ana</i>"),
+            "{out}"
+        );
+        assert!(!out.contains(SIGNATURE_TOKEN), "{out}");
+        assert_eq!(out.matches("papeo-signature").count(), 1, "{out}");
+        // Assinatura de texto mexida: vai a de texto.
+        let out = html_body("Oi\n\n-- \nAna mudou", &html, "Ana", "<i>Ana</i>");
+        assert!(
+            out.contains("--&nbsp;<br>\nAna<br>") && !out.contains("<i>Ana</i>"),
+            "{out}"
+        );
+        // Sem marcador (assinatura apagada): sem assinatura.
+        let out = html_body("Oi", "<b>Oi</b>", "Ana", "<i>Ana</i>");
+        assert!(!out.contains("papeo-signature"), "{out}");
+    }
 }
 
 #[cfg(test)]

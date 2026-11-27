@@ -12,6 +12,7 @@
     Settings,
     Sofa,
   } from "@lucide/svelte";
+  import { untrack } from "svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
   import {
     MODE_LABEL,
@@ -107,6 +108,27 @@
     dragId = null;
     overIndex = null;
   }
+
+  // Contador que acabou de subir (mensagem ou e-mail novo): destaque curto.
+  // Só compara números que o snapshot já traz; nada é consultado a mais.
+  let fresh = $state<Record<string, number>>({});
+  const lastUnread = new Map<string, number>();
+  let freshSeq = 0;
+  $effect(() => {
+    for (const s of snap.services) {
+      const before = lastUnread.get(s.id);
+      lastUnread.set(s.id, s.unread);
+      if (before === undefined || s.unread <= before) continue;
+      const seq = ++freshSeq;
+      const id = s.id;
+      untrack(() => (fresh = { ...fresh, [id]: seq }));
+      setTimeout(() => {
+        if (untrack(() => fresh[id]) !== seq) return;
+        const { [id]: _, ...rest } = untrack(() => fresh);
+        fresh = rest;
+      }, 2400);
+    }
+  });
 
   const loadedCount = $derived(snap.services.filter((s) => s.loaded).length);
 
@@ -244,6 +266,7 @@
       <button
         class="item account"
         class:active={snap.active === service.id}
+        class:beside={snap.split !== null && snap.active !== service.id && (snap.split.left === service.id || snap.split.right === service.id)}
         class:asleep={!service.loaded}
         class:dragging={dragId === service.id}
         class:drop-target={overIndex === i && dragId !== service.id}
@@ -265,7 +288,9 @@
           {:else if service.status === "loggedOut"}
             <span class="dot warn" aria-hidden="true"></span>
           {:else if collapsed && service.unread > 0}
-            <span class="dot" aria-hidden="true"></span>
+            <span class="badge" class:fresh={service.id in fresh} aria-hidden="true">
+              {service.unread > 99 ? "99+" : service.unread}
+            </span>
           {/if}
         </span>
         {#if !collapsed}
@@ -284,7 +309,7 @@
             <BellOff size={14} class="muted-icon" aria-label={t("Notificações silenciadas")} />
           {/if}
           {#if service.unread > 0}
-            <span class="count" aria-label={service.unread === 1 ? t("1 não lida") : t("{n} não lidas", { n: service.unread })}>
+            <span class="count" class:fresh={service.id in fresh} aria-label={service.unread === 1 ? t("1 não lida") : t("{n} não lidas", { n: service.unread })}>
               {service.unread > 99 ? "99+" : service.unread}
             </span>
           {:else if service.loaded && (numberOf.get(service.id) ?? 99) <= 9}
@@ -479,6 +504,26 @@
     font-weight: 550;
   }
 
+  /* Tela dividida: a conta da outra metade, mais suave que a em foco. */
+  .item.beside {
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+  }
+
+  .item.beside::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  .collapsed .item.beside::before {
+    left: -8px;
+  }
+
   /* Marca discreta do item aberto (além da cor, para quem não distingue o fundo). */
   .item.active::before {
     content: "";
@@ -587,6 +632,49 @@
     border-radius: 50%;
     background: var(--success-text);
     border: 2px solid var(--bg-sidebar);
+  }
+
+  /* Barra recolhida: o número de não lidas em cima do ícone. */
+  .badge {
+    position: absolute;
+    top: -7px;
+    right: -10px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    border-radius: 10px;
+    display: inline-grid;
+    place-items: center;
+    background: var(--success-text);
+    color: var(--bg-sidebar);
+    border: 2px solid var(--bg-sidebar);
+    box-sizing: border-box;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Chegou algo novo: o contador pulsa duas vezes (sem movimento se o
+     sistema pede menos animação, pela regra global). */
+  .fresh {
+    animation: unread-pulse 1.2s ease-out 2;
+  }
+
+  @keyframes unread-pulse {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-text) 55%, transparent);
+    }
+    25% {
+      transform: scale(1.25);
+    }
+    50% {
+      transform: scale(1);
+    }
+    100% {
+      box-shadow: 0 0 0 7px transparent;
+    }
   }
 
   .kbd {

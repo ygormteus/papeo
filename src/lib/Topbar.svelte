@@ -2,11 +2,13 @@
   import { t } from "./i18n.svelte";
   import {
     Circle,
+    Columns2,
     Globe,
     Activity,
     Lock,
     LockOpen,
     Mail,
+    MessageCircle,
     Minus,
     Monitor,
     NotebookPen,
@@ -49,6 +51,7 @@
     twin = false,
     diagnostics = false,
     ondiagnostics,
+    onunsplit,
   }: {
     active: ServiceView | null;
     appearance: Appearance;
@@ -73,6 +76,8 @@
     /** Modo de diagnóstico ligado: avisa quando o site da conta mudou. */
     diagnostics?: boolean;
     ondiagnostics?: () => void;
+    /** Tela dividida aberta: "Fechar divisão" (fica a conta em foco). */
+    onunsplit?: () => void;
   } = $props();
 
   const ZOOM_MIN = 0.5;
@@ -150,17 +155,26 @@
 
   <div class="spacer" data-tauri-drag-region></div>
 
-  {#if active?.mail}
-    <!-- E-mail por IMAP: leitor do Papeo ou o site do provedor. -->
+  {#if active?.mail || active?.kind === "nextcloud"}
+    <!-- E-mail por IMAP ou Talk pela API: leitor do Papeo ou o site. -->
     <button
       class="btn view-toggle"
       onclick={() => onsite(!!active.reader)}
-      title={active.reader ? t("Abrir o site do e-mail (carrega a página)") : t("Voltar ao leitor do Papeo (libera a memória do site)")}
+      title={active.reader
+        ? active.kind === "nextcloud"
+          ? t("Abrir o site do Nextcloud (carrega a página)")
+          : t("Abrir o site do e-mail (carrega a página)")
+        : active.kind === "nextcloud" && !active.talk
+          ? t("Usar o leitor do Papeo para o Talk (libera a memória do site)")
+          : t("Voltar ao leitor do Papeo (libera a memória do site)")}
     >
-      {#if active.reader}<Globe size={15} /> {t("Abrir no site")}{:else}<Mail size={15} /> {t("Voltar ao leitor")}{/if}
+      {#if active.reader}<Globe size={15} />
+        {t("Abrir no site")}{:else if active.kind === "nextcloud"}<MessageCircle size={15} />
+        {active.talk ? t("Voltar ao leitor") : t("Abrir no leitor")}{:else}<Mail size={15} /> {t("Voltar ao leitor")}{/if}
     </button>
   {/if}
-  {#if active && !active.reader}
+  {#if active}
+    <!-- No leitor do Papeo (e-mail, Talk), o zoom vale para a tela dele. -->
     <div class="zoom" role="group" aria-label={t("Zoom de {nome}", { nome: active.name })}>
       <button
         onclick={() => onzoom({ delta: -0.1 })}
@@ -188,6 +202,8 @@
         <Plus size={15} />
       </button>
     </div>
+  {/if}
+  {#if active && !active.reader}
     <button
       class="icon-btn"
       class:pressed={panelOpen}
@@ -210,6 +226,11 @@
     </button>
     <button class="icon-btn" onclick={onhibernate} title={t("Hibernar e liberar memória")} aria-label={t("Hibernar {nome}", { nome: active.name })}>
       <Snowflake size={17} />
+    </button>
+  {/if}
+  {#if onunsplit}
+    <button class="icon-btn" onclick={onunsplit} title={t("Fechar divisão (fica {nome})", { nome: active?.name ?? "" })} aria-label={t("Fechar divisão")}>
+      <Columns2 size={17} />
     </button>
   {/if}
   {#if lockable}

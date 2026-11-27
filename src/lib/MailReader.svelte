@@ -58,6 +58,7 @@
     onsite,
     onconfigure,
     ontoast,
+    focused = true,
   }: {
     service: ServiceView;
     /** Assunto a procurar (clique num aviso); muda a cada pedido. */
@@ -67,6 +68,8 @@
     onsite: () => void;
     onconfigure: () => void;
     ontoast: (text: string, action?: { label: string; run: () => void }) => void;
+    /** Tela dividida: só a metade em foco atende os atalhos de teclado. */
+    focused?: boolean;
   } = $props();
 
   const PAGE = 50;
@@ -286,6 +289,7 @@
       bcc: d.bcc.join(", "),
       subject: d.subject,
       body: d.body,
+      bodyHtml: d.bodyHtml ?? null,
       inReplyTo: d.inReplyTo ?? null,
       references: d.references ?? [],
       replyFolder: d.replyFolder ?? null,
@@ -480,6 +484,7 @@
         bcc: d.bcc.join(", "),
         subject: d.subject,
         body: d.body,
+        bodyHtml: d.bodyHtml,
         inReplyTo: d.inReplyTo,
         references: d.references,
         attachments: d.attachments,
@@ -1124,6 +1129,7 @@
   }
 
   function windowKey(e: KeyboardEvent) {
+    if (!focused) return;
     spaceKey(e);
     shortcut(e);
   }

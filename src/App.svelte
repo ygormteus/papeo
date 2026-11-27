@@ -7,6 +7,7 @@
     Bell,
     BellOff,
     CalendarClock,
+    Columns2,
     LogOut,
     MailCheck,
     Palette,
@@ -28,6 +29,7 @@
   import CustomizeDialog from "./lib/CustomizeDialog.svelte";
   import MailDialog from "./lib/MailDialog.svelte";
   import MailReader from "./lib/MailReader.svelte";
+  import TalkReader from "./lib/TalkReader.svelte";
   import Home from "./lib/Home.svelte";
   import LockScreen from "./lib/LockScreen.svelte";
   import Settings from "./lib/Settings.svelte";
@@ -52,6 +54,7 @@
     onCommand,
     onDownload,
     onMailReveal,
+    onTalkReveal,
     onMailSend,
     onOrganizer,
     onState,
@@ -123,6 +126,7 @@
   let mailStart = $state<{ host: string; user: string } | null>(null);
   // Clique num aviso de e-mail de conta com o leitor: assunto a procurar.
   let mailReveal = $state<{ id: string; query: string; uid?: number | null; n: number } | null>(null);
+  let talkReveal = $state<{ id: string; token: string; n: number } | null>(null);
   const mailing = $derived(snap.services.find((s) => s.id === mailingId) ?? null);
   let restoring = $state<{
     path: string;
@@ -154,6 +158,94 @@
   let content = $state<HTMLElement>();
 
   const active = $derived(snap.services.find((s) => s.id === snap.active) ?? null);
+
+  // Tela dividida (spec 30): as duas contas e a proporção (a arrastada vale
+  // até o backend confirmar). Mesmo cálculo de `Split::panes` no Rust.
+  const SPLIT_GAP = 6;
+  const RATIO_KEY = "papeo.splitRatio";
+  const savedRatio = () => {
+    try {
+      const n = Number(localStorage.getItem(RATIO_KEY));
+      return n >= 0.25 && n <= 0.75 ? n : 0.5;
+    } catch {
+      return 0.5;
+    }
+  };
+  let dragRatio = $state<number | null>(null);
+  let contentWidth = $state(0);
+  const splitPanes = $derived.by(() => {
+    const split = snap.split;
+    if (!split) return null;
+    const left = snap.services.find((s) => s.id === split.left);
+    const right = snap.services.find((s) => s.id === split.right);
+    if (!left || !right) return null;
+    const ratio = dragRatio ?? split.ratio;
+    const leftW = Math.round(Math.max(0, contentWidth - SPLIT_GAP) * ratio);
+    return [
+      { service: left, x: 0, width: leftW, single: false },
+      { service: right, x: leftW + SPLIT_GAP, width: Math.max(0, contentWidth - leftW - SPLIT_GAP), single: false },
+    ];
+  });
+  // Uma conta só com o leitor: a mesma lista (uma metade inteira), para o
+  // leitor não recomeçar ao abrir ou fechar a divisão.
+  const panes = $derived(
+    splitPanes ?? (active?.reader ? [{ service: active, x: 0, width: contentWidth, single: true }] : null),
+  );
+
+  function openBeside(service: ServiceView) {
+    run(api.splitOpen(service.id, savedRatio()));
+  }
+
+  /** Clique numa metade com leitor do Papeo: ela fica em foco. */
+  function focusPane(id: string) {
+    if (snap.active !== id) run(api.activate(id));
+  }
+
+  let ratioFrame = 0;
+  let dragSeq = 0;
+  function dragDivider(e: PointerEvent) {
+    if (!content || e.button !== 0) return;
+    const seq = ++dragSeq;
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    // Por dentro da moldura da conta (a mesma origem das metades).
+    const left = content.getBoundingClientRect().left + content.clientLeft;
+    const width = content.clientWidth;
+    const move = (ev: PointerEvent) => {
+      const ratio = Math.min(0.75, Math.max(0.25, (ev.clientX - left - SPLIT_GAP / 2) / Math.max(1, width - SPLIT_GAP)));
+      dragRatio = ratio;
+      if (ratioFrame) return;
+      ratioFrame = requestAnimationFrame(() => {
+        ratioFrame = 0;
+        if (dragRatio !== null) api.splitRatio(dragRatio).catch(() => {});
+      });
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      handle.removeEventListener("lostpointercapture", up);
+      const ratio = dragRatio;
+      if (ratio === null) return;
+      try {
+        localStorage.setItem(RATIO_KEY, String(ratio));
+      } catch {
+        /* só a proporção deste computador */
+      }
+      // Fica a arrastada até o próximo estado do backend trazer a mesma.
+      api
+        .splitRatio(ratio)
+        .then(() => api.getState())
+        .then((s) => (snap = s))
+        .catch(() => {})
+        // Outro arraste já começou: o valor é dele.
+        .finally(() => seq === dragSeq && (dragRatio = null));
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+    handle.addEventListener("lostpointercapture", up);
+  }
   // Outra conta do mesmo serviço: o risco de responder pela conta errada.
   const twin = $derived(
     !!active && snap.services.some((s) => s.id !== active.id && s.kind === active.kind),
@@ -432,8 +524,11 @@
         icon: UserPlus,
         // Outra conta do mesmo jeito que esta: pelo site ou pelo leitor.
         run: () =>
-          run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined, !!service.mail)),
+          run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined, !!service.mail || !!service.talk)),
       },
+      ...(snap.active && snap.active !== service.id && !(snap.split && [snap.split.left, snap.split.right].includes(service.id))
+        ? [{ label: t("Abrir ao lado"), icon: Columns2, run: () => openBeside(service) }]
+        : []),
       { label: t("Personalizar…"), icon: Palette, run: () => (customizing = service) },
       ...(supportsMailWatch(service.kind)
         ? [{ label: t("E-mail por IMAP…"), icon: MailCheck, run: () => (mailingId = service.id) }]
@@ -533,6 +628,7 @@
       }),
       onCommand(handleCommand),
       onMailReveal((r) => (mailReveal = { ...r, n: (mailReveal?.n ?? 0) + 1 })),
+      onTalkReveal((r) => (talkReveal = { ...r, n: (talkReveal?.n ?? 0) + 1 })),
       // Envio em espera que falhou: o e-mail fica guardado e volta ao editor
       // quando o leitor da conta estiver livre (aviso mesmo se ele já estiver
       // escrevendo outra mensagem).
@@ -645,6 +741,7 @@
       {twin}
       diagnostics={snap.settings.diagnostics}
       ondiagnostics={() => openSettings({ tab: "sistema", label: "Modo de diagnóstico" })}
+      onunsplit={snap.split ? () => run(api.splitClose()) : undefined}
     />
     {#snippet homeStats()}
       <HomeStats {snap} {run} onopen={select} />
@@ -655,19 +752,75 @@
       class:framed={!!frame}
       style:--frame={frame}
       bind:this={content}
+      bind:clientWidth={contentWidth}
       aria-live="polite"
     >
-      {#if active?.reader && !snap.locked}
-        {#key active.id}
-        <MailReader
-          service={active}
-          reveal={mailReveal?.id === active.id ? mailReveal : null}
-          undoSecs={snap.settings.mailUndoSecs}
-          onsite={() => run(api.mailShowSite(active.id, true))}
-          onconfigure={() => (mailingId = active.id)}
+      {#snippet reader(service: ServiceView, focused: boolean)}
+        {#key service.id}
+        <!-- Zoom da conta também no leitor (letras e tudo, como no site). -->
+        <div class="reader-zoom" style:zoom={service.zoom}>
+        {#if service.kind === "nextcloud"}
+        <TalkReader
+          {service}
+          reveal={talkReveal?.id === service.id ? talkReveal : null}
+          onsite={() => run(api.mailShowSite(service.id, true))}
           ontoast={(text, action) => showToast({ text, action }, action ? 8000 : 4000)}
         />
+        {:else}
+        <MailReader
+          {service}
+          {focused}
+          reveal={mailReveal?.id === service.id ? mailReveal : null}
+          undoSecs={snap.settings.mailUndoSecs}
+          onsite={() => run(api.mailShowSite(service.id, true))}
+          onconfigure={() => (mailingId = service.id)}
+          ontoast={(text, action) => showToast({ text, action }, action ? 8000 : 4000)}
+        />
+        {/if}
+        </div>
         {/key}
+      {/snippet}
+      {#if panes && !snap.locked}
+        <!-- Tela dividida: o site de cada metade fica por cima (webview);
+             a faixa do alto marca a em foco. Sem divisão, uma metade só. -->
+        {#each panes as pane (pane.service.id)}
+          {@const focused = pane.service.id === snap.active}
+          <div
+            class="pane"
+            class:single={pane.single}
+            class:focused
+            style:left="{pane.x}px"
+            style:width={pane.single ? undefined : `${pane.width}px`}
+            onpointerdown={() => !pane.single && focusPane(pane.service.id)}
+            role="group"
+            aria-label={pane.service.name}
+          >
+            <div class="pane-body">
+              {#if pane.service.reader}
+                {@render reader(pane.service, focused)}
+              {:else}
+                <div class="placeholder">
+                  {#if menuCovers || modalOpen}
+                    {t("{nome} oculto enquanto o menu está aberto.", { nome: pane.service.name })}
+                  {:else}
+                    {t("Carregando {nome}…", { nome: pane.service.name })}
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          </div>
+        {/each}
+        {#if splitPanes}
+        <div
+          class="divider"
+          style:left="{splitPanes[0].width}px"
+          style:width="{SPLIT_GAP}px"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t("Divisor da tela dividida")}
+          onpointerdown={dragDivider}
+        ></div>
+        {/if}
       {:else if active}
         <div class="placeholder">
           {#if menuCovers && !modalOpen}
@@ -1013,5 +1166,46 @@
     background: color-mix(in srgb, var(--primary-text) 16%, transparent);
     color: inherit;
     font-weight: 600;
+  }
+  .reader-zoom {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Tela dividida (spec 30). */
+  .pane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    /* A faixa tem a altura de `SPLIT_BAR` (o site começa logo abaixo). */
+    border-top: 3px solid var(--border);
+  }
+
+  .pane.focused {
+    border-top-color: var(--accent);
+  }
+
+  .pane.single {
+    border-top: 0;
+    right: 0;
+  }
+
+  .pane-body {
+    position: absolute;
+    inset: 0;
+  }
+
+  .divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    cursor: col-resize;
+    background: var(--border);
+    touch-action: none;
+  }
+
+  .divider:hover,
+  .divider:active {
+    background: var(--accent);
   }
 </style>

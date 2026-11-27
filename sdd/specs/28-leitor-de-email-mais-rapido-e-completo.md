@@ -29,6 +29,14 @@ remetentes confiáveis.
   imagens embutidas do corpo; os anexos aparecem com nome e tamanho e são
   baixados ao abrir ou salvar um deles. Pedaço de texto que não vier abre
   a mensagem inteira.
+- **R13.** O zoom da conta (botões da barra e `Cmd/Ctrl +`, `-`, `0`)
+  deve valer também no leitor do Papeo (e-mail e Talk), guardado por
+  conta como o do site.
+- **R14.** Assunto e nome em UTF-8 que o remetente rotulou como
+  ISO-8859-1/Windows-1252 ("OperaÃ§Ã£o") devem aparecer corrigidos;
+  texto latino certo não muda. A prévia da lista deve trocar códigos de
+  HTML escritos no texto (`&#8202;`, `&nbsp;`, `&zwnj;`) pelo caractere e
+  tirar os invisíveis.
 - **R12.** No editor, a assinatura formatada (logo, cores) deve aparecer
   como prévia abaixo do texto, num quadro sem scripts, enquanto estiver
   intacta.
@@ -134,3 +142,5 @@ Revisão: Sonnet (geral, achados corrigidos) e crítica independente (privacidad
 | R9 | `finds_unsubscribe` | não verificado no app | — |
 | R10, R11 | não verificado no app | — | — |
 | R12 | não verificado no app | — | — |
+| R13 | não verificado no app | — | — |
+| R14 | testes `subject_sent_as_utf8_but_labeled_latin1_is_fixed`, `preview_decodes_html_codes_and_drops_invisibles` | não verificado (e-mail real) | — |

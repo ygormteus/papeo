@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-talk-wait"
+description = "Enables the talk_wait command without any pre-configured scope."
+commands.allow = ["talk_wait"]
+
+[[permission]]
+identifier = "deny-talk-wait"
+description = "Denies the talk_wait command without any pre-configured scope."
+commands.deny = ["talk_wait"]

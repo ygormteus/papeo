@@ -105,6 +105,7 @@ export function installDevMock() {
     ? { state: "available", version: nextVersion, notes: notes020 }
     : { state: "idle" };
   let active: string | null = null;
+  let split: { left: string; right: string; ratio: number } | null = null;
   const minutesAgo = (m: number) => Math.round(Date.now() / 1000 - m * 60);
   const msg = (body: string, ago: number, mine = false) => ({ body, at: minutesAgo(ago), mine });
   const chat = (serviceId: string, title: string, messages: Snapshot["recent"][number]["messages"]) => {
@@ -261,6 +262,7 @@ export function installDevMock() {
       tasks: locked ? { overdue: 0, today: 0 } : counts(),
       services: list,
       active,
+      split,
       totalUnread: list.filter((s) => s.inMode).reduce((n, s) => n + s.unread, 0),
       settings: structuredClone(settings),
       dndActive: (settings.dndUntil ?? 0) > now(),
@@ -352,7 +354,25 @@ export function installDevMock() {
       case "plugin:opener|open_url":
         window.open(String(args.url), "_blank", "noopener");
         return null;
+      case "split_open": {
+        const id = String(args.id);
+        if (!active || active === id) throw "Abra outra conta antes de dividir a tela.";
+        const ratio = Math.min(0.75, Math.max(0.25, Number(args.ratio) || 0.5));
+        if (split?.left !== id && split?.right !== id) split = { left: active, right: id, ratio };
+        active = id;
+        return snap();
+      }
+      case "split_close":
+        split = null;
+        return snap();
+      case "split_ratio":
+        if (split) split.ratio = Math.min(0.75, Math.max(0.25, Number(args.ratio) || 0.5));
+        return null;
       case "activate_service":
+        if (split && args.id && split.left !== args.id && split.right !== args.id) {
+          if (split.left === active) split.left = String(args.id);
+          else split.right = String(args.id);
+        } else if (!args.id) split = null;
         active = (args.id as string | null) ?? null;
         if (active) {
           const s = find();
@@ -434,6 +454,44 @@ export function installDevMock() {
         return [];
       case "mail_mark_all_read":
         return undefined;
+      // Leitor do Talk (spec 29): conversas de exemplo, sem servidor.
+      case "talk_login":
+      case "talk_login_cancel":
+      case "talk_read":
+      case "talk_react":
+      case "talk_upload":
+        return undefined;
+      case "talk_logout":
+        return snap();
+      case "talk_rooms":
+        return [
+          { token: "equipe01", name: "Equipe", kind: 2, unread: 2, mention: true, favorite: true, activity: Date.now() / 1000, last: { author: "Bia", text: "Subi o relatório", own: false }, lastId: 3, readOnly: false, hasCall: false, avatarVersion: "" },
+          { token: "carlos01", name: "Carlos Lima", kind: 1, unread: 0, mention: false, favorite: false, activity: Date.now() / 1000 - 3600, last: { author: "Você", text: "Combinado", own: true }, lastId: 9, readOnly: false, hasCall: false, avatarVersion: "" },
+        ];
+      case "talk_messages":
+        return {
+          messages: [
+            { id: 1, author: "Bia", authorId: "bia", own: false, time: Date.now() / 1000 - 600, text: "Bom dia!", system: false, files: [], parent: null, reactions: [{ emoji: "👍", count: 1, mine: true }], replyable: true },
+            { id: 2, author: "Você", authorId: "eu", own: true, time: Date.now() / 1000 - 300, text: "Bom dia, @Bia", system: false, files: [], parent: null, reactions: [], replyable: true },
+            { id: 3, author: "Bia", authorId: "bia", own: false, time: Date.now() / 1000 - 60, text: "Subi o relatório", system: false, files: [{ id: "77", name: "relatorio.pdf", path: "Talk/relatorio.pdf", mime: "application/pdf", size: 120000, preview: false }], parent: { id: 2, author: "Você", text: "Bom dia, @Bia" }, reactions: [], replyable: true },
+          ],
+          last: 3,
+          first: 1,
+          more: false,
+        };
+      case "talk_wait":
+        return new Promise((r) =>
+          setTimeout(() => r({ messages: [], last: Number(args.after), first: Number(args.after), more: false }), 30000),
+        );
+      case "talk_send":
+        return { id: Date.now(), author: "Você", authorId: "eu", own: true, time: Date.now() / 1000, text: String(args.text), system: false, files: [], parent: null, reactions: [], replyable: true };
+      case "talk_mentions":
+        return [{ insert: "bia", label: "Bia" }];
+      case "talk_avatar":
+      case "talk_preview":
+        return null;
+      case "talk_file":
+        return "/Users/voce/Downloads/arquivo";
       case "mail_save_attachment":
         return "/Users/voce/Downloads/anexo.pdf";
       case "mail_contacts": {

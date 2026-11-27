@@ -21,6 +21,13 @@ microfone) e o som vinha com ruído.
   página.
 - **R5.** O nivelador só deve subir o ganho com variação de fala (≥ 1,5 dB
   em média entre quadros), para não amplificar ruído constante.
+- **R6.** Chamadas devem receber o microfone padrão do navegador: quando um
+  pedido de microfone que não é mensagem de voz chegar, o Papeo deve fechar
+  antes o que for seu (microfone aberto no toque, mensagem de voz que ficou
+  aberta, áudio preparado da limpeza); durante uma chamada, tocar no botão
+  de gravar ou no de silenciar não muda nem abre microfone. (Relato: chiado
+  "de peça solta" ao atender pelo Papeo e não pelo WhatsApp Web no
+  navegador.)
 
 ## Design
 
@@ -34,4 +41,5 @@ reaplicação em `on_page_load`), `settings.voice_capture`.
 |---|---|---|---|
 | R2–R3, R5 | `voice-enhance.test.mjs` (Web Audio simulado, ruído com semente fixa) | — | — |
 | R1 | `notification-shim.test.mjs` (microfone na mensagem de voz) | ok (uso real) | não verificado |
+| R6 | `notification-shim.test.mjs` (chamada em andamento, chamada começando, botão de silenciar) | não verificado (chamada real) | não verificado |
 | Qualidade audível | — | não verificado | não verificado |

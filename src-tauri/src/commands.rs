@@ -54,8 +54,11 @@ pub async fn add_service(
         }
         // E-mail aberto no leitor do Papeo: começa pela configuração do IMAP
         // (spec 23); pelo site, como os outros serviços.
+        // Nextcloud no leitor: começa pelo "Conectar ao Talk" (spec 29).
         if reader == Some(true)
-            && (service.kind.supports_mail_watch() || service.kind == ServiceKind::Outlook)
+            && (service.kind.supports_mail_watch()
+                || service.kind == ServiceKind::Outlook
+                || service.kind == ServiceKind::Nextcloud)
         {
             inner.mail_setup.insert(service.id.clone());
         }
@@ -69,6 +72,8 @@ pub async fn add_service(
 pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult {
     ensure_unlocked(&app)?;
     hibernate(&app, &id);
+    // Talk: revoga a senha de app no servidor (antes de esquecer a conta).
+    crate::talk::forget_remote(&app, &id);
     let removed = state.update(|inner| {
         let pos = inner
             .config
@@ -76,6 +81,7 @@ pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: Stri
             .iter()
             .position(|s| s.id == id)
             .ok_or(tr("Serviço não encontrado."))?;
+        inner.leave_split(&id);
         if inner.active.as_deref() == Some(id.as_str()) {
             inner.active = None;
         }
@@ -88,6 +94,7 @@ pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: Stri
     crate::sessions::remove_later(&app, vec![removed.session]);
     crate::mail::forget(&app, &id);
     crate::mail::sync(&app);
+    crate::talk::sync(&app);
     apply_layout(&app);
     Ok(publish(&app))
 }
@@ -201,8 +208,9 @@ pub async fn set_mail_account(
             inner.site_view.remove(&id);
             inner.mail_setup.remove(&id);
         }
-        // Sem o leitor, a conta aberta volta a ser o site.
-        if state.lock().active.as_deref() == Some(id.as_str()) {
+        // Sem o leitor, a conta aberta (ou a outra metade da tela dividida)
+        // volta a ser o site.
+        if state.lock().on_screen(&id) {
             return crate::webviews::activate(&app, Some(id));
         }
         if slept {
@@ -498,6 +506,23 @@ pub async fn activate_service(app: AppHandle, id: Option<String>) -> CmdResult {
     activate(&app, id)
 }
 
+/// Tela dividida (spec 30): `id` ao lado da conta aberta.
+#[tauri::command]
+pub async fn split_open(app: AppHandle, id: String, ratio: f64) -> CmdResult {
+    crate::webviews::split_open(&app, &id, ratio)
+}
+
+#[tauri::command]
+pub async fn split_close(app: AppHandle) -> CmdResult {
+    Ok(crate::webviews::split_close(&app))
+}
+
+#[tauri::command]
+pub async fn split_ratio(app: AppHandle, ratio: f64) -> CmdResult<()> {
+    crate::webviews::split_ratio(&app, ratio);
+    Ok(())
+}
+
 /// Resposta rápida (mini janela): envia sem trazer o app para frente.
 #[tauri::command]
 pub async fn send_reply(app: AppHandle, id: String, chat: String, text: String) -> CmdResult {
@@ -549,11 +574,19 @@ pub async fn hibernate_service(
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult {
-    let was_active = state.lock().active.as_deref() == Some(id.as_str());
+    let (was_active, other) = {
+        let mut inner = state.lock();
+        let was_active = inner.active.as_deref() == Some(id.as_str());
+        inner.leave_split(&id);
+        let other = inner.active.clone().filter(|a| *a != id);
+        (was_active, other)
+    };
     hibernate(&app, &id);
     if was_active {
-        return activate(&app, None);
+        // Tela dividida: a outra metade fica sozinha (e com o foco).
+        return activate(&app, other);
     }
+    apply_layout(&app);
     Ok(publish(&app))
 }
 
@@ -968,21 +1001,42 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         }
     }
     close_all(&app);
-    let removed = state.update(|inner| {
-        // Contas que somem com a restauração (ou voltam sem IMAP) levam a
-        // senha do IMAP junto.
-        let removed: Vec<String> = inner
-            .config
-            .services
+    // Mesma conta do Talk (servidor e usuário) na cópia restaurada.
+    let same_talk = |old: &papeo_core::Service| {
+        config.services.iter().any(|new| {
+            new.id == old.id
+                && matches!((&old.talk, &new.talk), (Some(a), Some(b))
+                    if a.server == b.server && a.user == b.user)
+        })
+    };
+    // Contas que somem com a restauração (ou voltam sem IMAP nem a mesma
+    // conta do Talk) levam a senha junto; a do Talk que some é revogada no
+    // servidor antes (lê a senha do estado atual).
+    let (removed, talk_gone) = {
+        let inner = state.lock();
+        let olds = &inner.config.services;
+        let removed: Vec<String> = olds
             .iter()
             .filter(|old| {
-                !config
-                    .services
-                    .iter()
-                    .any(|new| new.id == old.id && new.mail.is_some())
+                !same_talk(old)
+                    && !config
+                        .services
+                        .iter()
+                        .any(|new| new.id == old.id && new.mail.is_some())
             })
             .map(|old| old.id.clone())
             .collect();
+        let talk_gone: Vec<String> = olds
+            .iter()
+            .filter(|old| old.talk.is_some() && !same_talk(old))
+            .map(|old| old.id.clone())
+            .collect();
+        (removed, talk_gone)
+    };
+    for id in &talk_gone {
+        crate::talk::forget_remote(&app, id);
+    }
+    state.update(|inner| {
         // A limpeza pendente é deste computador; o backup não a traz.
         let pending = std::mem::take(&mut inner.config.pending_removal);
         // O aviso e a escolha sobre atualizações valem para este computador.
@@ -1007,12 +1061,13 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         inner.unread.clear();
         inner.page_unread.clear();
         inner.current_chat.clear();
-        Ok(removed)
+        Ok(())
     })?;
     for id in removed {
         crate::mail::forget(&app, &id);
     }
     crate::mail::sync(&app);
+    crate::talk::sync(&app);
     crate::sync::mark_dirty(&app);
     crate::organizer::publish_organizer(&app);
     activate(&app, None)
@@ -1028,22 +1083,35 @@ pub async fn clear_service_data(
 ) -> CmdResult {
     ensure_unlocked(&app)?;
     hibernate(&app, &id);
+    crate::talk::forget_remote(&app, &id);
     let (old, was_active) = state.update(|inner| {
         let was_active = inner.active.as_deref() == Some(id.as_str());
+        // Tela dividida com esta conta: fecha. Em foco, ela continua à vista
+        // (reabre no login); na outra metade, fica a em foco.
+        if inner.split.as_ref().is_some_and(|s| s.has(&id)) {
+            if was_active {
+                inner.split = None;
+            } else {
+                inner.leave_split(&id);
+            }
+        }
         inner.forget_recent(&id);
         let service = inner.service_mut(&id)?;
         let old = std::mem::replace(&mut service.session, papeo_core::new_session());
-        // Sair da conta também desliga o IMAP e apaga a senha dele.
+        // Sair da conta também desliga o IMAP e o Talk e apaga a senha.
         service.mail = None;
+        service.talk = None;
         Ok((old, was_active))
     })?;
     crate::sessions::remove_later(&app, vec![old]);
     crate::mail::forget(&app, &id);
     crate::mail::sync(&app);
+    crate::talk::sync(&app);
     if was_active {
         // Reabre já na tela de login da sessão nova.
         activate(&app, Some(id))
     } else {
+        apply_layout(&app);
         Ok(publish(&app))
     }
 }
@@ -1554,4 +1622,131 @@ pub async fn mail_reveal_file(app: AppHandle, path: String) -> CmdResult<()> {
     app.opener()
         .reveal_item_in_dir(&path)
         .map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Leitor do Nextcloud Talk (spec 29)
+
+#[tauri::command]
+pub async fn talk_login(app: AppHandle, id: String) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::talk::login(app, id).await
+}
+
+#[tauri::command]
+pub async fn talk_login_cancel(app: AppHandle, id: String) -> CmdResult<()> {
+    crate::talk::login_cancel(&app, &id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn talk_logout(app: AppHandle, id: String) -> CmdResult {
+    ensure_unlocked(&app)?;
+    crate::talk::logout(app.clone(), id).await?;
+    Ok(publish(&app))
+}
+
+#[tauri::command]
+pub async fn talk_rooms(app: AppHandle, id: String) -> CmdResult<Vec<papeo_core::talk::Room>> {
+    ensure_unlocked(&app)?;
+    crate::talk::rooms(app, id).await
+}
+
+#[tauri::command]
+pub async fn talk_messages(
+    app: AppHandle,
+    id: String,
+    token: String,
+    before: Option<i64>,
+) -> CmdResult<crate::talk::Chunk> {
+    ensure_unlocked(&app)?;
+    crate::talk::messages(app, id, token, before).await
+}
+
+#[tauri::command]
+pub async fn talk_wait(
+    app: AppHandle,
+    id: String,
+    token: String,
+    after: i64,
+) -> CmdResult<crate::talk::Chunk> {
+    ensure_unlocked(&app)?;
+    crate::talk::wait(app, id, token, after).await
+}
+
+#[tauri::command]
+pub async fn talk_send(
+    app: AppHandle,
+    id: String,
+    token: String,
+    text: String,
+    reply_to: Option<i64>,
+) -> CmdResult<Option<papeo_core::talk::Message>> {
+    ensure_unlocked(&app)?;
+    crate::talk::send_message(app, id, token, text, reply_to).await
+}
+
+#[tauri::command]
+pub async fn talk_read(app: AppHandle, id: String, token: String, last: i64) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::talk::mark_read(app, id, token, last).await
+}
+
+#[tauri::command]
+pub async fn talk_react(
+    app: AppHandle,
+    id: String,
+    token: String,
+    message: i64,
+    emoji: String,
+    on: bool,
+) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::talk::react(app, id, token, message, emoji, on).await
+}
+
+#[tauri::command]
+pub async fn talk_mentions(
+    app: AppHandle,
+    id: String,
+    token: String,
+    search: String,
+) -> CmdResult<Vec<papeo_core::talk::Mention>> {
+    ensure_unlocked(&app)?;
+    crate::talk::mentions(app, id, token, search).await
+}
+
+#[tauri::command]
+pub async fn talk_avatar(
+    app: AppHandle,
+    id: String,
+    token: String,
+    version: String,
+) -> CmdResult<Option<String>> {
+    ensure_unlocked(&app)?;
+    crate::talk::avatar(app, id, token, version).await
+}
+
+#[tauri::command]
+pub async fn talk_preview(app: AppHandle, id: String, file: String) -> CmdResult<Option<String>> {
+    ensure_unlocked(&app)?;
+    crate::talk::preview(app, id, file).await
+}
+
+#[tauri::command]
+pub async fn talk_file(
+    app: AppHandle,
+    id: String,
+    path: String,
+    name: String,
+    open: bool,
+) -> CmdResult<String> {
+    ensure_unlocked(&app)?;
+    crate::talk::file(app, id, path, name, open).await
+}
+
+#[tauri::command]
+pub async fn talk_upload(app: AppHandle, id: String, token: String, path: String) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::talk::upload(app, id, token, path).await
 }

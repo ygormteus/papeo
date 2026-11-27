@@ -183,6 +183,13 @@
     return ready;
   };
 
+  // Uma chamada vai pegar o microfone: fecha o áudio preparado e não usado.
+  window.__papeoVoiceRelease = () => {
+    const ready = pending;
+    pending = null;
+    ready?.then(({ ctx }) => ctx.close()).catch(() => {});
+  };
+
   window.__papeoVoiceWarmup = () => {
     try {
       prepare().catch(() => {});

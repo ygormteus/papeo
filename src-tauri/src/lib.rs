@@ -30,6 +30,7 @@ mod sessions;
 mod silence;
 mod state;
 mod sync;
+mod talk;
 mod tray;
 mod updater;
 #[cfg(target_os = "macos")]
@@ -210,7 +211,7 @@ fn reload_due(app: &AppHandle, window_visible: bool, away: bool) -> Vec<String> 
         .into_iter()
         .filter(|(_, bytes)| *bytes > limit)
         .map(|(id, _)| id)
-        .filter(|id| !window_visible || inner.active.as_deref() != Some(id.as_str()))
+        .filter(|id| !window_visible || !inner.on_screen(id))
         .filter(|id| {
             inner
                 .last_used
@@ -306,7 +307,7 @@ fn spawn_maintenance(app: AppHandle) {
                     .config
                     .services
                     .iter()
-                    .filter(|s| inner.active.as_deref() != Some(s.id.as_str()))
+                    .filter(|s| !inner.on_screen(&s.id))
                     .filter(|s| {
                         mail_sleeps(s)
                             || (sleep_outside && !mode.allows(s.context))
@@ -534,6 +535,7 @@ pub fn run() {
                 );
                 outbox::init(handle, &app.path().app_local_data_dir()?);
                 mail_cache::init(handle, app.path().app_local_data_dir()?.join("mail-cache"));
+                talk::init(handle);
                 notifications::init(handle);
                 tray::install(handle)?;
                 #[cfg(target_os = "macos")]
@@ -564,6 +566,20 @@ pub fn run() {
             commands::mail_move,
             commands::mail_delete,
             commands::mail_mark_all_read,
+            commands::talk_login,
+            commands::talk_login_cancel,
+            commands::talk_logout,
+            commands::talk_rooms,
+            commands::talk_messages,
+            commands::talk_wait,
+            commands::talk_send,
+            commands::talk_read,
+            commands::talk_react,
+            commands::talk_mentions,
+            commands::talk_avatar,
+            commands::talk_preview,
+            commands::talk_file,
+            commands::talk_upload,
             commands::mail_save_attachment,
             commands::mail_save_attachments,
             commands::mail_contacts,
@@ -594,6 +610,9 @@ pub fn run() {
             commands::reload_service,
             commands::set_content_area,
             commands::set_overlay,
+            commands::split_open,
+            commands::split_close,
+            commands::split_ratio,
             commands::set_dnd,
             commands::set_quiet_hours,
             commands::set_mode,

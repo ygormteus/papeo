@@ -4,6 +4,8 @@
     cc?: string;
     subject?: string;
     body?: string;
+    /** Texto com formatação (rascunho reaberto, e-mail que voltou). */
+    bodyHtml?: string | null;
     inReplyTo?: string | null;
     references?: string[];
     replyFolder?: string | null;
@@ -51,6 +53,7 @@
 
 <script lang="ts">
   import AddressInput from "./AddressInput.svelte";
+  import MailEditor from "./MailEditor.svelte";
   import { LoaderCircle, Paperclip, Send, Trash2, X } from "@lucide/svelte";
   import { locale, t, tk } from "./i18n.svelte";
   import { api, errorMessage, type MailDraft, type ServiceView } from "./api";
@@ -131,6 +134,9 @@
   let subject = $state(start.subject ?? "");
   // svelte-ignore state_referenced_locally
   let body = $state(start.body ?? "");
+  /** HTML do editor (com o marcador da assinatura) e se há formatação. */
+  let bodyHtml = $state("");
+  let rich = $state(false);
   // svelte-ignore state_referenced_locally
   let files = $state<{ name: string; mime: string; size: number; data: string }[]>(
     (start.attachments ?? []).map((a) => ({ ...a, size: base64Size(a.data) })),
@@ -141,7 +147,7 @@
   // svelte-ignore state_referenced_locally
   const notice = start.noticeError ? "" : (start.notice ?? "");
   let picker: HTMLInputElement | undefined = $state();
-  let bodyField: HTMLTextAreaElement | undefined = $state();
+  let bodyField: MailEditor | undefined = $state();
   let toField: HTMLInputElement | undefined = $state();
 
   const total = $derived(files.reduce((n, f) => n + f.size, 0));
@@ -167,7 +173,8 @@
   // svelte-ignore state_referenced_locally
   let replaces = $state(start.replaces ?? null);
   /** Estado do editor como foi salvo (ou como abriu): igual = nada a salvar. */
-  const contentKey = () => JSON.stringify([to, cc, bcc, subject, body, files.map((f) => [f.name, f.size])]);
+  const contentKey = () =>
+    JSON.stringify([to, cc, bcc, subject, body, rich ? bodyHtml : "", files.map((f) => [f.name, f.size])]);
   // svelte-ignore state_referenced_locally
   let savedKey = $state(start.unsaved ? "" : contentKey());
   let savedAt = $state<Date | null>(null);
@@ -193,6 +200,7 @@
       bcc: splitAddresses(bcc),
       subject,
       body,
+      bodyHtml: rich ? bodyHtml : null,
       inReplyTo: start.inReplyTo ?? null,
       references: start.references ?? [],
       replyFolder: start.replyFolder ?? null,
@@ -294,10 +302,8 @@
 
   $effect(() => {
     // Resposta: começa no texto; mensagem nova, no destinatário.
-    if (start.to) {
-      bodyField?.focus();
-      bodyField?.setSelectionRange(0, 0);
-    } else toField?.focus();
+    if (start.to) bodyField?.focus(true);
+    else toField?.focus();
   });
 
   function size(n: number) {
@@ -405,7 +411,16 @@
     {/if}
     <label class="row"><span>{t("Assunto")}</span><input bind:value={subject} /></label>
   </div>
-  <textarea bind:this={bodyField} bind:value={body} aria-label={t("Texto do e-mail")}></textarea>
+  <MailEditor
+    bind:this={bodyField}
+    bind:text={body}
+    bind:html={bodyHtml}
+    bind:rich
+    initialText={start.body ?? ""}
+    initialHtml={start.bodyHtml ?? null}
+    signature={service.mail?.signature ?? ""}
+    label={t("Texto do e-mail")}
+  />
   {#if service.signatureRich && service.mail?.signature}
     {#if richIntact && sigDoc}
       <iframe
@@ -524,18 +539,6 @@
     padding: 9px 0;
     font: inherit;
     outline: none;
-  }
-  textarea {
-    flex: 1;
-    min-height: 120px;
-    resize: none;
-    border: 0;
-    outline: none;
-    padding: 14px 16px;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    line-height: 1.5;
   }
   .files {
     list-style: none;

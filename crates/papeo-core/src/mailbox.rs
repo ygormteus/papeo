@@ -581,7 +581,7 @@ fn addresses(list: Option<&AddressList<'_>>) -> Vec<Addr> {
     list.mailboxes()
         .filter_map(|m| {
             let email = m.address().unwrap_or("").trim().to_owned();
-            let name = m.name().unwrap_or("").trim().to_owned();
+            let name = fix_mojibake(m.name().unwrap_or("").trim()).into_owned();
             (!email.is_empty() || !name.is_empty()).then_some(Addr { name, email })
         })
         .take(100)
@@ -628,7 +628,10 @@ fn summary(items: &HashMap<String, &Tok>) -> Option<Summary> {
             .next()
             .unwrap_or_default();
         out.to = addresses(message.to().as_ref());
-        out.subject = crate::clip(message.subject().unwrap_or("").trim(), 300);
+        out.subject = crate::clip(
+            fix_mojibake(message.subject().unwrap_or("").trim()).as_ref(),
+            300,
+        );
         out.date = message.date().map(|d| d.to_timestamp()).unwrap_or(0);
         out.preview = message
             .body_preview(PREVIEW_CHARS * 2)
@@ -652,9 +655,103 @@ fn summary(items: &HashMap<String, &Tok>) -> Option<Summary> {
 }
 
 /// Texto numa linha só, sem espaços repetidos, até `max` caracteres.
+/// Códigos de HTML escritos no texto puro (`&#8202;`, `&nbsp;`, comuns no
+/// texto de abertura dos e-mails de propaganda) viram o caractere, e os
+/// invisíveis (espaço de largura zero) somem.
 fn one_line(text: &str, max: usize) -> String {
-    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = decode_entities(text);
+    let joined = text
+        .split(|c: char| c.is_whitespace() || invisible(c))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     crate::clip(&joined, max)
+}
+
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}' | '\u{034F}' | '\u{200B}'..='\u{200F}' | '\u{2060}' | '\u{FEFF}'
+    )
+}
+
+/// `&#8202;`, `&#x200a;` e os nomes mais usados; o resto fica como está.
+fn decode_entities(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('&') {
+        return text.into();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let end = rest[1..].find(';').map(|e| e + 1).filter(|&e| e <= 10);
+        let decoded = end.and_then(|e| {
+            let name = &rest[1..e];
+            let c = if let Some(num) = name.strip_prefix('#') {
+                let n = match num.strip_prefix(['x', 'X']) {
+                    Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                    None => num.parse().ok(),
+                }?;
+                char::from_u32(n).filter(|c| !c.is_control() || c.is_whitespace())?
+            } else {
+                match name {
+                    "nbsp" | "ensp" | "emsp" | "thinsp" | "hairsp" => ' ',
+                    "zwnj" | "zwj" | "shy" => '\u{200B}',
+                    "amp" => '&',
+                    "lt" => '<',
+                    "gt" => '>',
+                    "quot" => '"',
+                    "apos" => '\'',
+                    _ => return None,
+                }
+            };
+            Some((c, e))
+        });
+        match decoded {
+            Some((c, e)) => {
+                out.push(c);
+                rest = &rest[e + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out.into()
+}
+
+/// Texto em UTF-8 que o remetente rotulou como ISO-8859-1/Windows-1252
+/// ("OperaÃ§Ã£o", "â–’"): volta para os bytes originais e, se formam UTF-8
+/// válido com algum caractere acentuado, usa esse. Texto latino correto
+/// ("Operação") não forma UTF-8 válido e fica como está.
+pub fn fix_mojibake(text: &str) -> std::borrow::Cow<'_, str> {
+    // Bytes 0x80–0x9F no Windows-1252.
+    const CP1252: [char; 32] = [
+        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž',
+        '\u{8F}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}',
+        'ž', 'Ÿ',
+    ];
+    if text.is_ascii() || !text.chars().any(|c| matches!(c, 'Â'..='ô')) {
+        return text.into();
+    }
+    let mut bytes = Vec::with_capacity(text.len());
+    for c in text.chars() {
+        let b = if (c as u32) < 0x80 || ((c as u32) >= 0xA0 && (c as u32) <= 0xFF) {
+            c as u32 as u8
+        } else if let Some(i) = CP1252.iter().position(|&x| x == c) {
+            0x80 + i as u8
+        } else {
+            return text.into();
+        };
+        bytes.push(b);
+    }
+    match String::from_utf8(bytes) {
+        Ok(fixed) if !fixed.is_ascii() => fixed.into(),
+        _ => text.into(),
+    }
 }
 
 /// `INTERNALDATE` ("17-Jul-1996 02:44:25 -0700") em segundos UTC.
@@ -745,7 +842,10 @@ pub fn message_view(uid: u32, raw: &[u8]) -> MessageView {
         view.text = String::from_utf8_lossy(raw).into_owned();
         return view;
     };
-    view.subject = crate::clip(message.subject().unwrap_or("").trim(), 1000);
+    view.subject = crate::clip(
+        fix_mojibake(message.subject().unwrap_or("").trim()).as_ref(),
+        1000,
+    );
     view.from = addresses(message.from().as_ref());
     view.to = addresses(message.to().as_ref());
     view.cc = addresses(message.cc().as_ref());
@@ -843,6 +943,8 @@ pub struct DraftView {
     pub bcc: Vec<String>,
     pub subject: String,
     pub text: String,
+    /// HTML do texto (limpo, spec 31), se o rascunho tem parte HTML.
+    pub html: Option<String>,
     pub message_id: String,
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
@@ -955,7 +1057,10 @@ pub fn draft_view(raw: &[u8]) -> Option<DraftView> {
         to: list(message.to().as_ref()),
         cc: list(message.cc().as_ref()),
         bcc: list(message.bcc().as_ref()),
-        subject: crate::clip(message.subject().unwrap_or("").trim(), 1000),
+        subject: crate::clip(
+            fix_mojibake(message.subject().unwrap_or("").trim()).as_ref(),
+            1000,
+        ),
         text: message
             .body_text(0)
             .map(Cow::into_owned)
@@ -969,6 +1074,12 @@ pub fn draft_view(raw: &[u8]) -> Option<DraftView> {
         references: ids(message
             .references()
             .map(|l| l.iter().map(|r| r.to_string()).collect())),
+        html: message
+            .html_body()
+            .next()
+            .and_then(|p| p.html_utf8())
+            .map(|h| crate::signature::sanitize_body_html(&h))
+            .filter(|h| !h.trim().is_empty()),
         attachments: Vec::new(),
     };
     view.to.extend(unparsed(raw, UNPARSED_TO));
@@ -1710,6 +1821,29 @@ fn check_path(path: &str) -> ImapResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn subject_sent_as_utf8_but_labeled_latin1_is_fixed() {
+        use mail_parser::MessageParser;
+        let raw = b"Subject: =?iso-8859-1?Q?[TIM]_Opera=C3=A7=C3=A3o?=\r\n\r\nx";
+        let m = MessageParser::default().parse(&raw[..]).unwrap();
+        assert_eq!(super::fix_mojibake(m.subject().unwrap()), "[TIM] Operação");
+        // Windows-1252 (o "–" e o "’" vêm de 0x96 e 0x92).
+        assert_eq!(super::fix_mojibake("Operaâ–’â–’o"), "Opera▒▒o");
+        // Texto certo, com ou sem acento, fica igual.
+        for ok in ["Operação", "Ãgua fria", "Olá, João", "plain", "Ação — 50%"] {
+            assert_eq!(super::fix_mojibake(ok), ok);
+        }
+    }
+
+    #[test]
+    fn preview_decodes_html_codes_and_drops_invisibles() {
+        let text = "Oferta&#8202;&#8202; para &zwnj;&nbsp;&zwnj;&nbsp; você &#x2764; &amp; mais &foo; &#9999999; fim\u{200B}\u{200C}";
+        assert_eq!(
+            super::one_line(text, 200),
+            "Oferta para você ❤ & mais &foo; &#9999999; fim"
+        );
+    }
+
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};

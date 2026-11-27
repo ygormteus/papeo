@@ -18,6 +18,7 @@ pub mod signature;
 pub mod silence;
 mod store;
 pub mod sync;
+pub mod talk;
 mod util;
 
 pub use i18n::{tr, trf, Lang, Language};

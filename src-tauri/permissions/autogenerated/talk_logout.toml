@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-talk-logout"
+description = "Enables the talk_logout command without any pre-configured scope."
+commands.allow = ["talk_logout"]
+
+[[permission]]
+identifier = "deny-talk-logout"
+description = "Denies the talk_logout command without any pre-configured scope."
+commands.deny = ["talk_logout"]

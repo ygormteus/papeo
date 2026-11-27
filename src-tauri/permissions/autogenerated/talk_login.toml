@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-talk-login"
+description = "Enables the talk_login command without any pre-configured scope."
+commands.allow = ["talk_login"]
+
+[[permission]]
+identifier = "deny-talk-login"
+description = "Denies the talk_login command without any pre-configured scope."
+commands.deny = ["talk_login"]

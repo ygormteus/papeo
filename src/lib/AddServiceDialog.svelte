@@ -56,14 +56,16 @@
   /** E-mail: abrir pelo site ou pelo leitor do Papeo (a pessoa escolhe). */
   let openAs = $state<"site" | "reader" | null>(null);
   const isMail = $derived(kind === "gmail" || kind === "outlook" || kind === "email");
+  /** Pode abrir no leitor do Papeo (e-mail por IMAP, Talk pela API). */
+  const offersReader = $derived(isMail || kind === "nextcloud");
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    if (isMail && !openAs) {
+    if (offersReader && !openAs) {
       error = t("Escolha como abrir a conta: pelo site ou pelo leitor do Papeo.");
       return;
     }
-    const reader = isMail && openAs === "reader";
+    const reader = offersReader && openAs === "reader";
     if (kind === "email") {
       if (!addressOk) {
         error = t("Informe o endereço de e-mail.");
@@ -243,7 +245,7 @@
       </p>
     {/if}
 
-    {#if isMail}
+    {#if offersReader}
       <fieldset class="account open-as">
         <legend>{t("Abrir como")}</legend>
         <label class="choice">
@@ -255,10 +257,19 @@
         <label class="choice">
           <input type="radio" name="open-as" value="reader" bind:group={openAs} />
           <span>
-            {t("Leitor do Papeo")} <span class="muted">{t("(IMAP: mais leve; pede servidor e senha, no Gmail uma senha de app)")}</span>
+            {t("Leitor do Papeo")}
+            <span class="muted">
+              {kind === "nextcloud"
+                ? t("(só o Talk, mais leve; você aprova o acesso no navegador)")
+                : t("(IMAP: mais leve; pede servidor e senha, no Gmail uma senha de app)")}
+            </span>
           </span>
         </label>
-        <p class="note">{t("Dá para trocar depois: botão direito na conta → \"E-mail por IMAP…\" ou \"Abrir no site\" no leitor.")}</p>
+        {#if kind === "nextcloud"}
+          <p class="note">{t("Dá para trocar depois pelo botão \"Abrir no site\" no leitor.")}</p>
+        {:else}
+          <p class="note">{t("Dá para trocar depois: botão direito na conta → \"E-mail por IMAP…\" ou \"Abrir no site\" no leitor.")}</p>
+        {/if}
       </fieldset>
     {/if}
 
@@ -281,7 +292,7 @@
 
     <div class="actions">
       <button type="button" class="btn" onclick={onclose}>{t("Cancelar")}</button>
-      <button type="submit" class="btn btn-primary" disabled={busy || (isMail && !openAs)}>{busy ? t("Adicionando…") : t("Adicionar")}</button>
+      <button type="submit" class="btn btn-primary" disabled={busy || (offersReader && !openAs)}>{busy ? t("Adicionando…") : t("Adicionar")}</button>
     </div>
   </form>
 </Modal>

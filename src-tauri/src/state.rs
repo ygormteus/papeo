@@ -51,6 +51,62 @@ impl Default for Area {
     }
 }
 
+/// Largura do divisor entre as metades da tela dividida (px lógicos).
+pub const SPLIT_GAP: f64 = 6.0;
+/// Faixa no alto de cada metade (marca qual está em foco), fora da webview.
+pub const SPLIT_BAR: f64 = 3.0;
+const SPLIT_MIN: f64 = 0.25;
+const SPLIT_MAX: f64 = 0.75;
+
+/// Tela dividida (spec 30): duas contas lado a lado; `active` é sempre
+/// uma das duas (a em foco).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Split {
+    pub left: String,
+    pub right: String,
+    /// Fração da largura da metade esquerda.
+    pub ratio: f64,
+}
+
+impl Split {
+    pub fn clamp_ratio(ratio: f64) -> f64 {
+        if ratio.is_finite() {
+            ratio.clamp(SPLIT_MIN, SPLIT_MAX)
+        } else {
+            0.5
+        }
+    }
+
+    pub fn has(&self, id: &str) -> bool {
+        self.left == id || self.right == id
+    }
+
+    /// Retângulos (esquerda, direita) dentro da área do conteúdo. O mesmo
+    /// cálculo está em `App.svelte` (`paneRects`).
+    pub fn panes(&self, area: Area) -> (Area, Area) {
+        let usable = (area.width - SPLIT_GAP).max(0.0);
+        let left_w = (usable * self.ratio).round();
+        let right_x = left_w + SPLIT_GAP;
+        let below = Area {
+            y: area.y + SPLIT_BAR,
+            height: (area.height - SPLIT_BAR).max(1.0),
+            ..area
+        };
+        (
+            Area {
+                width: left_w,
+                ..below
+            },
+            Area {
+                x: area.x + right_x,
+                width: (area.width - right_x).max(0.0),
+                ..below
+            },
+        )
+    }
+}
+
 /// Sinais de vida enviados pelo site (via `notification_shim.js`).
 #[derive(Debug, Clone, Copy)]
 pub struct Health {
@@ -171,6 +227,8 @@ pub struct RecentView {
 pub struct Inner {
     pub config: Config,
     pub active: Option<String>,
+    /// Tela dividida; `None` = uma conta só.
+    pub split: Option<Split>,
     pub area: Area,
     /// Um modal da interface está aberto: a webview ativa fica oculta para não cobri-lo.
     pub overlay: bool,
@@ -223,6 +281,8 @@ pub struct Inner {
     pub mode_override: Option<ModeOverride>,
     /// Avisos por IMAP de cada conta de e-mail que os usa.
     pub mail: HashMap<String, MailLive>,
+    /// Vigia do Talk pela API (spec 29): situação e não lidas, como no IMAP.
+    pub talk: HashMap<String, MailLive>,
     /// Contas de e-mail com o leitor que o usuário pediu para ver no site
     /// (até voltar ao leitor).
     pub site_view: HashSet<String>,
@@ -261,9 +321,44 @@ impl Inner {
     /// A conta abre no leitor de e-mail do Papeo (IMAP configurado), não no
     /// site. Sem senha ou com erro, o leitor mostra o problema e oferece o
     /// site.
+    /// A conta está à vista: a em foco ou a outra metade da tela dividida.
+    pub fn on_screen(&self, id: &str) -> bool {
+        self.active.as_deref() == Some(id) || self.split.as_ref().is_some_and(|s| s.has(id))
+    }
+
+    /// A conta sai da tela (removida, hibernada, dados apagados): a tela
+    /// dividida fecha e a outra metade fica em foco.
+    pub fn leave_split(&mut self, id: &str) {
+        let Some(split) = self.split.take_if(|s| s.has(id)) else {
+            return;
+        };
+        if self.active.as_deref() == Some(id) {
+            let other = if split.left == id {
+                split.right
+            } else {
+                split.left
+            };
+            self.active = Some(other);
+        }
+    }
+
+    /// Onde a webview da conta aparece (se está à vista).
+    pub fn pane_area(&self, id: &str) -> Option<Area> {
+        match &self.split {
+            Some(split) if split.has(id) => {
+                let (left, right) = split.panes(self.area);
+                Some(if split.left == id { left } else { right })
+            }
+            _ => (self.active.as_deref() == Some(id)).then_some(self.area),
+        }
+    }
+
     pub fn reader(&self, id: &str) -> bool {
         !self.site_view.contains(id)
-            && (self.mail_setup.contains(id) || self.service(id).is_ok_and(|s| s.mail.is_some()))
+            && (self.mail_setup.contains(id)
+                || self
+                    .service(id)
+                    .is_ok_and(|s| s.mail.is_some() || s.talk.is_some()))
     }
 
     pub fn new(config: Config) -> Self {
@@ -278,6 +373,7 @@ impl Inner {
         Self {
             config,
             active: None,
+            split: None,
             area: Area::default(),
             overlay: false,
             window_focused: true,
@@ -310,6 +406,7 @@ impl Inner {
             organizer_error: None,
             mode_override: None,
             mail: HashMap::new(),
+            talk: HashMap::new(),
             site_view: HashSet::new(),
             mail_setup: HashSet::new(),
         }
@@ -423,11 +520,16 @@ impl Inner {
         if !self.window_focused || self.locked || self.overlay {
             return;
         }
-        let Some(active) = self.active.clone() else {
-            return;
-        };
-        if let Some(chat) = self.current_chat.get(&active).cloned() {
-            self.mark_read(&active, &chat);
+        let mut shown: Vec<String> = self.active.iter().cloned().collect();
+        if let Some(split) = &self.split {
+            shown.extend([split.left.clone(), split.right.clone()]);
+        }
+        shown.sort();
+        shown.dedup();
+        for id in shown {
+            if let Some(chat) = self.current_chat.get(&id).cloned() {
+                self.mark_read(&id, &chat);
+            }
         }
     }
 
@@ -743,6 +845,7 @@ pub enum LockMethod {
 pub struct Snapshot {
     pub services: Vec<ServiceView>,
     pub active: Option<String>,
+    pub split: Option<Split>,
     pub total_unread: u32,
     pub settings: Settings,
     pub dnd_active: bool,
@@ -790,10 +893,7 @@ pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
     }
     // Só o serviço visível, com a janela em foco, é julgado: os ocultos têm
     // timers desacelerados pelo sistema e dariam falso alarme.
-    let visible = inner.active.as_deref() == Some(id)
-        && inner.window_focused
-        && !inner.overlay
-        && !inner.locked;
+    let visible = inner.on_screen(id) && inner.window_focused && !inner.overlay && !inner.locked;
     let since = health.last_beat.unwrap_or(health.created);
     if visible
         && health.created.elapsed() > UNRESPONSIVE_AFTER
@@ -828,7 +928,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                 loaded,
                 // Com o IMAP conectado, vale o número do servidor (o site
                 // pode estar hibernado).
-                unread: match inner.mail.get(&s.id) {
+                unread: match inner.mail.get(&s.id).or_else(|| inner.talk.get(&s.id)) {
                     Some(m) if m.status == MailStatus::Ok => m.unread,
                     // Site hibernado e IMAP reconectando: o último número dele.
                     Some(m)
@@ -840,7 +940,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                     _ => inner.unread.get(&s.id).copied().unwrap_or(0),
                 },
                 status: status_of(&inner, &s.id, loaded),
-                idle_minutes: if inner.active.as_deref() == Some(s.id.as_str()) {
+                idle_minutes: if inner.on_screen(&s.id) {
                     Some(0)
                 } else {
                     inner
@@ -854,11 +954,23 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                     inner.current_chat.get(&s.id).cloned()
                 },
                 in_mode: mode.allows(s.context),
-                mail_status: s
-                    .mail
-                    .as_ref()
-                    .map(|_| inner.mail.get(&s.id).map(|m| m.status.clone()))
-                    .map(|status| status.unwrap_or(MailStatus::Connecting)),
+                mail_status: if s.mail.is_some() {
+                    Some(
+                        inner
+                            .mail
+                            .get(&s.id)
+                            .map_or(MailStatus::Connecting, |m| m.status.clone()),
+                    )
+                } else if s.talk.is_some() {
+                    Some(
+                        inner
+                            .talk
+                            .get(&s.id)
+                            .map_or(MailStatus::Connecting, |m| m.status.clone()),
+                    )
+                } else {
+                    None
+                },
                 reader: inner.reader(&s.id),
                 mail_smtp: s.mail.as_ref().map(|m| {
                     let smtp = m.smtp();
@@ -889,6 +1001,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     Snapshot {
         services,
         active: inner.active.clone(),
+        split: inner.split.clone(),
         total_unread,
         dnd_active: inner
             .config
@@ -981,6 +1094,27 @@ pub fn publish(app: &AppHandle) -> Snapshot {
 mod tests {
     use super::*;
     use papeo_core::{Service, ServiceKind};
+
+    #[test]
+    fn split_panes_divide_the_area() {
+        let area = Area {
+            x: 100.0,
+            y: 50.0,
+            width: 1006.0,
+            height: 700.0,
+        };
+        let split = Split {
+            left: "a".into(),
+            right: "b".into(),
+            ratio: 0.5,
+        };
+        let (l, r) = split.panes(area);
+        assert_eq!((l.x, l.width, l.y, l.height), (100.0, 500.0, 53.0, 697.0));
+        assert_eq!((r.x, r.width), (606.0, 500.0));
+        assert_eq!(l.width + SPLIT_GAP + r.width, area.width);
+        assert_eq!(Split::clamp_ratio(0.9), 0.75);
+        assert_eq!(Split::clamp_ratio(f64::NAN), 0.5);
+    }
 
     fn inner_with_service() -> (Inner, String) {
         let service = Service::new(ServiceKind::Whatsapp, None, None).unwrap();

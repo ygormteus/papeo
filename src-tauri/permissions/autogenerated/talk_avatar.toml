@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-talk-avatar"
+description = "Enables the talk_avatar command without any pre-configured scope."
+commands.allow = ["talk_avatar"]
+
+[[permission]]
+identifier = "deny-talk-avatar"
+description = "Denies the talk_avatar command without any pre-configured scope."
+commands.deny = ["talk_avatar"]

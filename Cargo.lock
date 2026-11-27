@@ -3105,6 +3105,7 @@ version = "0.16.0"
 dependencies = [
  "base64 0.21.7",
  "block2",
+ "bytes",
  "chrono",
  "getrandom 0.3.4",
  "lettre",

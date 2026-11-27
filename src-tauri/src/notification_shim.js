@@ -240,7 +240,7 @@
     if (!button?.closest?.("footer")) return false;
     const label = button.getAttribute?.("aria-label") || "";
     const icon = button.querySelector?.("[data-icon]")?.getAttribute?.("data-icon") || "";
-    if (/chamada|call|llamada/i.test(label)) return false;
+    if (/chamada|call|llamada|silenciar|mute|desativar|ativar som|unmute/i.test(label)) return false;
     return /ptt|mic/i.test(icon) || /voz|voice|áudio|audio/i.test(label);
   };
   const withAudio = (constraints, extra) => {
@@ -274,7 +274,8 @@
     document.addEventListener(
       "pointerdown",
       (e) => {
-        if (!isVoiceButton(e.target)) {
+        // Em chamada, nada muda (nem o microfone aberto no toque).
+        if (!isVoiceButton(e.target) || inCall()) {
           // Tocou em outra coisa: o toque anterior no botão de gravar não vale mais.
           voicePress = 0;
           dropWarm();
@@ -296,12 +297,36 @@
       true,
     );
   }
-  // Pedido de mensagem de voz (só áudio, logo após o toque): consome o toque.
+  // Microfones entregues para mensagens de voz (já tratados pelo Papeo).
+  const voiceStreams = new Set();
+  const live = (stream) => stream.getTracks().some((t) => t.readyState === "live");
+  // Microfone aberto que não é de mensagem de voz: uma chamada em andamento.
+  const inCall = () => {
+    for (const stream of captures) {
+      if (!voiceStreams.has(stream) && live(stream)) return true;
+    }
+    return false;
+  };
+  // Antes de uma chamada pegar o microfone, nada do Papeo fica aberto: o
+  // microfone sem cancelamento de eco e o áudio a 48 kHz da limpeza dividem o
+  // mesmo aparelho com a chamada no WebKit e a deixam com chiado e eco.
+  const releaseVoice = () => {
+    voicePress = 0;
+    dropWarm();
+    for (const stream of voiceStreams) {
+      stopAll(stream);
+      voiceStreams.delete(stream);
+      captures.delete(stream);
+    }
+    window.__papeoVoiceRelease?.();
+  };
+  // Pedido de mensagem de voz (só áudio, logo após o toque, sem chamada em
+  // andamento): consome o toque.
   const isVoiceNote = (constraints) => {
     if (!voicePress || Date.now() - voicePress > 3000) return false;
     if (!constraints || constraints.video || !constraints.audio) return false;
     voicePress = 0;
-    return true;
+    return !inCall();
   };
   // O microfone aberto no toque serve se é o mesmo modo, está vivo e é o
   // aparelho pedido (`deviceId` exato).
@@ -325,6 +350,7 @@
     const original = media[name].bind(media);
     media[name] = async (...args) => {
       if (name !== "getUserMedia" || !isVoiceNote(args[0])) {
+        if (name === "getUserMedia" && args[0]?.audio) releaseVoice();
         const stream = await original(...args);
         captures.add(stream);
         return stream;
@@ -342,6 +368,7 @@
           stream = await original(plain, ...args.slice(1));
         }
       }
+      voiceStreams.add(stream);
       captures.add(stream);
       return stream;
     };
@@ -453,6 +480,8 @@
   };
   // Sempre completo: também desfaz não lidas que a página já mostra lidas.
   const heartbeat = () => report(pageState());
+  // Clique na página: na tela dividida do Papeo, esta metade fica em foco.
+  window.addEventListener("focus", () => invoke("service_status", { loggedOut: loggedOut(), focus: true }));
   setInterval(heartbeat, 20000);
   // A lista mudou (conversa lida, mensagem nova, e-mail aberto): avisa logo.
   // Vale também oculta: é o que mantém o contador da bandeja em dia.

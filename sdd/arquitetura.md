@@ -157,7 +157,7 @@ voz do WhatsApp).
 | `privacy.rs` | Texto das notificações conforme a prévia, `same_site`, ids de sessão |
 | `i18n/` | Idioma das mensagens do Rust (spec 20): `Language`, `Lang`, `tr`/`trf`/`tk`; catálogo inglês em `en_app.rs` e `en_core.rs` (frase em português como chave) |
 | `address_book.rs` | Endereços conhecidos por conta (spec 25): filtro de robôs e da própria conta, busca por começo de nome/endereço, teto de 3.000 |
-| `signature.rs` | Assinatura formatada do leitor (spec 22): limpeza do HTML (ammonia), versão HTML da mensagem, imagens `cid:` |
+| `signature.rs` | Assinatura formatada do leitor (spec 22) e texto com formatação (spec 31): limpeza do HTML (ammonia), versão HTML da mensagem, imagens `cid:` |
 | `util.rs` | `parse_unread`, `safe_file_name`, `unique_path`, `attachment_view`, `clip` |
 
 O núcleo não tem TLS: recebe um transporte `Read + Write` e o app entra
@@ -213,6 +213,12 @@ caracteres, e a `signature_html` formatada, até 600 KB com as imagens,
 spec 22; a formatada não vai no `Snapshot`: `ServiceView.signature_rich`
 e o comando `mail_signature`).
 
+O e-mail escrito no leitor (`Draft`, comandos `mail_send`,
+`mail_save_draft`, `mail_send_later`) ganhou `body_html` opcional (spec 31):
+o HTML do editor com o marcador da assinatura (U+E000), limpo de novo no
+backend (`signature::html_body`). `mail_open_draft` devolve `body_html`
+limpo quando o rascunho tem parte HTML.
+
 Capacidades por tipo: resposta rápida e conversas recentes só em WhatsApp e
 Telegram (`supports_chat`). Vigia IMAP em Gmail, "Outro e-mail" e Outlook,
 este só com o login da Microsoft.
@@ -245,7 +251,7 @@ Todos ficam na pasta de dados do app (`app_config_dir`/`app_data_dir`).
 | `services.json` | `store.rs` | `version` 2. Versão mais nova: recusa e preserva como `.json.corrompido`. Serviço inválido: descartado sozinho, com cópia do original. Ilegível: vai para `.corrompido` e entram os padrões. Sem permissão de gravação: a sessão grava em `services.sessao.json`. Campos só locais: `pending_removal`, `open`, `lock_pin` |
 | `organizer.json` | `organizer.rs` | `version` 1. Versão mais nova bloqueia a gravação. Inválido: renomeado para `.corrompido-<s>` e começa vazio |
 | `sessions/<session>/` | `sessions.rs` | Dados do site (Windows). No macOS, `WKWebsiteDataStore` pelo identificador da sessão |
-| `mail-secrets.json` | `secrets.rs` | Só macOS. Senha presa a host, porta e usuário, modo 0600. No Windows, Gerenciador de Credenciais |
+| `mail-secrets.json` | `secrets.rs` | Só macOS. Senha presa a host, porta e usuário, modo 0600. No Windows, Gerenciador de Credenciais. Também guarda a senha de app do Talk (spec 29): `host` = servidor, `port` 0, `user` = login |
 | `sync.json` | `sync.rs` | Token do Google, chave derivada e base da junção, modo 0600 |
 | `webcrypto-master.key` | `webcrypto.rs` | macOS 15+, 16 bytes, 0600 |
 | Backup (`*.json` exportado) | `store.rs` | `kind: "papeo-backup"`, validação estrita, inclui o organizador visível, nunca o PIN nem as atualizações |
@@ -264,7 +270,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 99 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 116 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
@@ -293,6 +299,9 @@ certa, em `api.ts` e em `devMock.ts`.
 | `papeo://sync` | estado da sincronização |
 | `papeo://mail-reveal` | abrir um e-mail no leitor a partir de um aviso |
 | `papeo://mail-send` | fim de um envio em espera: enviado, ou o erro com o e-mail de volta |
+| `papeo://talk-login` | fim do Login Flow v2 do Talk (`{id, ok, error}`) |
+| `papeo://talk-reveal` | abrir uma conversa do Talk no leitor a partir de um aviso (`{id, token}`) |
+| `papeo://talk-rooms` | lista de conversas de cada consulta do vigia do Talk (`{id, rooms}`); a tela não consulta por conta própria |
 | `papeo://preview`, `papeo://attachment` | estado das janelas de prévia e anexo |
 
 ### 7.3 Protocolo com os sites (`notification_shim.js`)
@@ -302,11 +311,13 @@ O shim substitui `window.Notification`, `permissions.query`,
 `getUserMedia`. Ele envia:
 
 - `service_notify {title, body, silent}`, um por notificação do site;
-- `service_status {loggedOut, media, chat, list, unread, probes}`: sinal de
+- `service_status {loggedOut, media, chat, list, unread, probes, focus}`: sinal de
   vida a cada 20 s, mudança conferida a cada 5 s, troca de conversa com
   espera de 400 ms, e também ao carregar e ao ficar visível. `probes` é o
   diagnóstico dos sites (spec 14): presença (`true`/`false`/`null`) de cada
   ponto de apoio, a partir de 30 s depois da carga e fora da tela de login.
+  `focus: true` (só com `loggedOut`) vai quando a página ganha foco: na
+  tela dividida, essa metade fica em foco (spec 30).
 
 E expõe ao backend (`eval`): `__papeoOpenChat`, `__papeoReply`,
 `__papeoReplyStatus` e `__papeoReplyCancel`.
@@ -330,6 +341,7 @@ mostra um aviso na barra do topo.
 | `login.microsoftonline.com` | `microsoft.rs` | OAuth com PKCE S256 + `state`, volta em `localhost` |
 | `accounts.google.com`, `googleapis.com` | `drive.rs` | OAuth com PKCE + `state`, escopo `drive.appdata` |
 | GitHub Releases (`latest.json`) | `updater.rs` | pacote assinado (minisign, chave pública no `tauri.conf.json`) |
+| Nextcloud da pessoa (`https:` só) | `talk.rs` | Login Flow v2 no navegador → senha de app (Basic, `OCS-APIRequest`); revogada ao desconectar ou remover |
 
 ## 8. Fluxos principais
 
@@ -352,6 +364,15 @@ para fora da tela (sem fechar). Qualquer modal chama `set_overlay(true)`,
 que esconde a webview ativa para o HTML aparecer; popovers da barra lateral
 precisam caber nela. Bloqueio e leitor de e-mail também escondem as
 webviews (`apply_layout`).
+
+**Tela dividida** (spec 30): `Inner.split {left, right, ratio}` (só na
+memória; vai no `Snapshot.split`). `apply_layout` põe cada uma das duas no
+retângulo de `Split::panes` (área dividida pela proporção, divisor de 6 px,
+faixa de 3 px no alto); `App.svelte` repete o cálculo para o divisor e os
+leitores. `active` é a metade em foco; `Inner::on_screen` responde "está à
+vista" (avisos, hibernação, "não responde", não lidas vistas). Comandos
+`split_open`, `split_close`, `split_ratio`; a proporção fica no
+`localStorage` da interface.
 
 ### 8.3 Notificação de mensagem
 
@@ -423,6 +444,29 @@ repetido e confere o nome no cabeçalho antes de enviar.
   Rascunhos leva ao editor (rascunho de outro programa é substituído pelo
   UID).
 
+### 8.5.2 Leitor do Talk (spec 29)
+
+- **Conectar:** `talk_login` pede `POST /index.php/login/v2`, confere que a
+  página de aprovação e o `endpoint` são do mesmo endereço e abre a
+  aprovação no navegador; uma tarefa consulta o `endpoint` a cada 2 s (até
+  20 min, cancelável). Com a senha de app, lê o id do usuário
+  (`/ocs/v2.php/cloud/user`), grava `Service.talk` e depois o cofre.
+- **Vigia** (`talk.rs`, um thread por conta, `Inner.talk` com geração como
+  o IMAP): lista de conversas a cada 30 s com a conta na tela, 60 s fora;
+  soma das não lidas vira o contador; última mensagem nova de outra pessoa
+  vira aviso com `open = "talk:<token>"`, que `open_chat` transforma em
+  `papeo://talk-reveal` (só em conta Nextcloud). Cada consulta sai também
+  em `papeo://talk-rooms` para a tela. 401 marca `auth` e para.
+- **Leitor:** a conversa aberta espera mensagens novas por
+  `lookIntoFuture=1` (30 s); anteriores com `lastKnownMessageId`. Fotos e
+  miniaturas vêm pelo backend como `data:` (cache curto na memória, até
+  200 itens e 20 MB). Cliente HTTP só `https:` (redirecionamento para
+  `http:` é recusado); downloads lidos aos pedaços com teto (2 MB imagem,
+  200 MB arquivo), mesmo sem `Content-Length`.
+  Anexo: WebDAV `GET`; envio grava na pasta de anexos do Talk com
+  `If-None-Match: *` e compartilha na conversa (`shareType` 10).
+  Chamadas abrem no navegador.
+
 ### 8.5.1 Resumo do silêncio (spec 17)
 
 Com o não perturbe ou o horário silencioso valendo, `notify::deliver`
@@ -476,6 +520,7 @@ oculta).
 | Arquivo baixado malicioso | `safe_file_name` (separadores, bidi, nomes reservados do Windows), nunca sobrescreve, marca de arquivo baixado (quarentena no macOS, `Zone.Identifier` no Windows); visualização sem HTML/SVG |
 | E-mail com HTML hostil | ammonia com lista curta de tags, `cid:` vira `data:`, quadro sem scripts e com CSP, imagens de fora só com clique |
 | Credenciais de e-mail | Arquivo 0600 (macOS) ou Gerenciador de Credenciais (Windows); `Debug` sem o segredo. Escolha consciente: as Chaves do macOS pediriam senha a cada versão (sem ID de equipe da Apple) |
+| Acesso ao Talk | Senha de app do Login Flow v2 (nunca a senha da pessoa), só para o servidor `https:` informado, conferido no login; no mesmo cofre; revogada ao desconectar ou remover a conta. Token de conversa e caminho de arquivo validados antes de virar URL; mensagens mostradas como texto |
 | Sincronização | Cifra de ponta a ponta (Argon2id + XChaCha20-Poly1305) com frase-senha; o Google só vê blobs cifrados |
 | Atualização adulterada | Pacotes assinados e conferidos pelo plugin; instalação só com clique; Actions fixadas por SHA; atestação de origem |
 | Login OAuth interceptado | PKCE S256 + `state`, retorno só em `localhost` |

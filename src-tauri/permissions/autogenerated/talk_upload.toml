@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-talk-upload"
+description = "Enables the talk_upload command without any pre-configured scope."
+commands.allow = ["talk_upload"]
+
+[[permission]]
+identifier = "deny-talk-upload"
+description = "Denies the talk_upload command without any pre-configured scope."
+commands.deny = ["talk_upload"]

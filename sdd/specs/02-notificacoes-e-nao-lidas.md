@@ -40,6 +40,12 @@ dizem quantas mensagens faltam ler.
   lateral, no ícone do app e na bandeja.
 - **R11.** Enquanto uma conta estiver hibernada, o Papeo não deve atualizar
   o contador dela, exceto pelo vigia IMAP (spec 09).
+- **R12.** Com a barra lateral recolhida, o número de não lidas de cada
+  conta deve aparecer em cima do ícone (até "99+"), sem precisar passar o
+  mouse. Quando o número de uma conta subir (mensagem ou e-mail novo), o
+  contador deve pulsar duas vezes (~2,4 s), nas duas larguras da barra; sem
+  movimento se o sistema pedir menos animação. Só usa o número que o
+  Papeo já recebe (nenhuma consulta a mais).
 
 ## Design
 
@@ -60,3 +66,4 @@ dizem quantas mensagens faltam ler.
 | R6 | testes de `privacy.rs` | ok | — |
 | R8 | uso real | ok | não verificado |
 | R10 | `parse_unread`; shim do WhatsApp e do e-mail | ok | — |
+| R12 | `pnpm check`; `Sidebar.svelte` (`badge`, `fresh`) | não verificado (app) | não verificado |

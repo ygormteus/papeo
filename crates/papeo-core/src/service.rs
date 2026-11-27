@@ -150,6 +150,10 @@ pub struct Service {
     /// Avisos por IMAP (só caixas de e-mail). A senha fica fora daqui.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mail: Option<crate::mail::MailAccount>,
+    /// Leitor do Talk pela API (spec 29; só Nextcloud). A senha de app fica
+    /// fora daqui.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub talk: Option<crate::talk::TalkAccount>,
 }
 
 fn enabled() -> bool {
@@ -198,6 +202,7 @@ impl Service {
             user_agent: None,
             context: None,
             mail: None,
+            talk: None,
         })
     }
 
@@ -273,6 +278,11 @@ impl Service {
             .mail
             .filter(|m| self.kind.accepts_mail(m.auth))
             .and_then(|m| m.sanitized().ok());
+        // Talk pela API só no Nextcloud, com servidor `https:`.
+        self.talk = self
+            .talk
+            .filter(|_| self.kind == ServiceKind::Nextcloud)
+            .and_then(|t| t.sanitized());
         Ok(self)
     }
 }
@@ -413,6 +423,32 @@ pub(crate) fn random_hex() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn talk_account_only_on_nextcloud() {
+        let mut nc =
+            Service::new(ServiceKind::Nextcloud, None, Some("nuvem.x.com".into())).unwrap();
+        // Arquivo antigo (sem `talk`) lê igual.
+        let old = serde_json::to_value(&nc).unwrap();
+        assert!(old.get("talk").is_none());
+        let back: Service = serde_json::from_value(old).unwrap();
+        assert!(back.talk.is_none());
+        nc.talk = Some(crate::talk::TalkAccount {
+            server: "https://nuvem.x.com".into(),
+            user: "ana".into(),
+            uid: "ana".into(),
+        });
+        let json = serde_json::to_value(&nc).unwrap();
+        let read: Service = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(read.sanitized().unwrap().talk, nc.talk);
+        // Em outro tipo, ou com servidor sem https, o Talk é descartado.
+        let mut other = Service::new(ServiceKind::Slack, None, None).unwrap();
+        other.talk = nc.talk.clone();
+        assert!(other.sanitized().unwrap().talk.is_none());
+        let mut plain = nc.clone();
+        plain.talk.as_mut().unwrap().server = "http://nuvem.x.com".into();
+        assert!(plain.sanitized().unwrap().talk.is_none());
+    }
 
     #[test]
     fn nextcloud_talk_url() {

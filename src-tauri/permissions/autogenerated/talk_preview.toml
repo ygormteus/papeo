@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-talk-preview"
+description = "Enables the talk_preview command without any pre-configured scope."
+commands.allow = ["talk_preview"]
+
+[[permission]]
+identifier = "deny-talk-preview"
+description = "Denies the talk_preview command without any pre-configured scope."
+commands.deny = ["talk_preview"]

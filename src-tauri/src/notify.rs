@@ -93,7 +93,7 @@ pub fn deliver(
                 && in_mode
                 && !service.muted_until.is_some_and(|until| now_unix < until)
                 && settings.dnd_active(now_unix, minute);
-            let watching = focused && !inner.locked && inner.active.as_deref() == Some(id.as_str());
+            let watching = focused && !inner.locked && inner.on_screen(&id);
             if only_silence && !watching {
                 let chat = papeo_core::clip(title, 80);
                 // O silêncio começou depois da última conferência (até 15 s):
@@ -131,7 +131,7 @@ pub fn deliver(
         } else {
             inner.config.settings.notification_preview
         };
-        if focused && !inner.locked && inner.active.as_deref() == Some(id.as_str()) {
+        if focused && !inner.locked && inner.on_screen(&id) {
             // Você já está olhando para este serviço.
             return Ok(());
         }
@@ -193,8 +193,16 @@ pub async fn service_status(
     unread: Option<u32>,
     // Pontos de apoio do site encontrados na página (spec 14): só presença.
     probes: Option<HashMap<String, Option<bool>>>,
+    // A página ganhou foco (clique): na tela dividida, vira a em foco.
+    focus: Option<bool>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
+    // Só o aviso de foco: nada de sinal de vida (a página pode estar
+    // carregando) nem conversa pendente.
+    if focus == Some(true) {
+        crate::webviews::split_focus(&app, &id);
+        return Ok(());
+    }
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
     let (changed, chat) = {
         let mut inner = state.lock();
@@ -298,7 +306,7 @@ pub fn on_window_focus(app: &AppHandle, focused: bool) {
                 .take()
                 .filter(|(_, at)| at.elapsed() < FOCUS_AFTER_NOTIFICATION)
                 .map(|(id, _)| id)
-                .filter(|id| inner.active.as_deref() != Some(id.as_str()))
+                .filter(|id| !inner.on_screen(id))
         }
     };
     let app = app.clone();
