@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "papeo"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "base64 0.21.7",
  "block2",
@@ -3137,7 +3137,7 @@ dependencies = [
 
 [[package]]
 name = "papeo-core"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "ammonia",
  "argon2",

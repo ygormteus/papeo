@@ -1,7 +1,7 @@
 # 32 — Conta em janela separada
 
 - **Estado:** implementada
-- **Versão:** —
+- **Versão:** 0.18.0
 - **Relacionadas:** 30 (tela dividida), 05 (bloqueio), 09/29 (leitores),
   12 (hibernação)
 
