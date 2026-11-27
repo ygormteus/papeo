@@ -1,7 +1,7 @@
 # 18 — Rascunhos do leitor no servidor
 
-- **Estado:** entregue (sem versão)
-- **Versão:** —
+- **Estado:** entregue
+- **Versão:** 0.15.0
 - **Relacionadas:** 09, 16
 
 ## Problema

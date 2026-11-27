@@ -1,7 +1,7 @@
 # 16 — Desfazer envio e assinatura
 
-- **Estado:** entregue (sem versão)
-- **Versão:** —
+- **Estado:** entregue
+- **Versão:** 0.15.0
 - **Relacionadas:** 09
 
 ## Problema

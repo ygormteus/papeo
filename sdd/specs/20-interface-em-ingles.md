@@ -1,7 +1,7 @@
 # 20 — Interface em inglês
 
-- **Estado:** entregue (sem versão)
-- **Versão:** —
+- **Estado:** entregue
+- **Versão:** 0.15.0
 - **Relacionadas:** 02, 05, 07, 09, 17
 
 ## Problema

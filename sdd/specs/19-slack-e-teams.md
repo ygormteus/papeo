@@ -1,7 +1,7 @@
 # 19 — Slack e Microsoft Teams
 
-- **Estado:** entregue (sem versão)
-- **Versão:** —
+- **Estado:** entregue
+- **Versão:** 0.15.0
 - **Relacionadas:** 01, 02, 14
 
 ## Problema

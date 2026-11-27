@@ -1,7 +1,7 @@
 # 17 — Resumo do silêncio
 
-- **Estado:** entregue (sem versão)
-- **Versão:** —
+- **Estado:** entregue
+- **Versão:** 0.15.0
 - **Relacionadas:** 02, 04
 
 ## Problema
