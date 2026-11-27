@@ -548,7 +548,8 @@ Resumo; os detalhes e o histórico ficam nas especificações.
 Uma versão é uma tag `v*`: cria o rascunho, roda o Autoteste e gera os
 builds (macOS arm64 e x64 assinados, Windows NSIS). Depois confere o
 `latest.json` com as 3 plataformas, junta as notas de
-`release-notes/<versão>.md` e faz a atestação.
+`release-notes/<versão>.md` (`notes`) e `release-notes/en/<versão>.md`
+(`notesEn`, spec 20) e faz a atestação.
 
 ## 16. Glossário
 

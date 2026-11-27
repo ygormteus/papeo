@@ -72,6 +72,11 @@ pub async fn check(app: &AppHandle) -> Result<(), String> {
             UpdateStatus::Available {
                 version: update.version.clone(),
                 notes: update.body.clone(),
+                notes_en: update
+                    .raw_json
+                    .get("notesEn")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned),
             },
         ),
         Ok(None) => set(app, UpdateStatus::UpToDate),

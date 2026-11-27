@@ -15,7 +15,8 @@
 - **R4.** O Papeo deve recusar pacotes sem a assinatura da chave pública do
   `tauri.conf.json`.
 - **R5.** Quando a versão mudar, o Papeo deve mostrar "o que mudou" a partir
-  de `release-notes/<versão>.md`.
+  de `release-notes/<versão>.md` (ou `release-notes/en/<versão>.md` com a
+  interface em inglês, spec 20 R8).
 - **R6.** Restaurar um backup não deve mudar a preferência de atualização
   deste computador.
 - **R7.** No macOS, o Papeo deve tirar a marca de quarentena do app

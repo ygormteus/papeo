@@ -13,9 +13,9 @@ export interface NoteSection {
 
 function kindOf(title: string): NoteKind {
   const t = title.toLowerCase();
-  if (/novidade|novo|nova/.test(t)) return "new";
-  if (/melhori|aprimora/.test(t)) return "improved";
-  if (/corre|conserto|bug/.test(t)) return "fixed";
+  if (/novidade|novo|nova|\bnew\b/.test(t)) return "new";
+  if (/melhori|aprimora|improve/.test(t)) return "improved";
+  if (/corre|conserto|bug|\bfix/.test(t)) return "fixed";
   return "other";
 }
 
@@ -37,7 +37,8 @@ export function spans(text: string): Span[] {
 /** Notas maiores que isto são cortadas (o `latest.json` não é assinado). */
 const MAX_NOTES = 20_000;
 
-export function parseNotes(markdown: string | null | undefined): NoteSection[] {
+/** `fallback`: título das linhas antes de qualquer seção (no idioma da tela). */
+export function parseNotes(markdown: string | null | undefined, fallback = "O que mudou"): NoteSection[] {
   const sections: NoteSection[] = [];
   let current: NoteSection | null = null;
   for (const raw of (markdown ?? "").slice(0, MAX_NOTES).split(/\r?\n/)) {
@@ -52,7 +53,7 @@ export function parseNotes(markdown: string | null | undefined): NoteSection[] {
     const item = /^[-*•]\s+(.+)$/.exec(line);
     const text = item ? item[1] : line;
     if (!current) {
-      current = { title: "O que mudou", kind: "other", items: [] };
+      current = { title: fallback, kind: "other", items: [] };
       sections.push(current);
     }
     current.items.push(spans(text));

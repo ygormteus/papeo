@@ -380,7 +380,7 @@ export type VoiceCapture = "instant" | "enhanced" | "clean";
 
 export type UpdateStatus =
   | { state: "idle" | "checking" | "upToDate" }
-  | { state: "available"; version: string; notes?: string | null }
+  | { state: "available"; version: string; notes?: string | null; notesEn?: string | null }
   | { state: "installing"; percent?: number | null }
   | { state: "failed"; message: string };
 

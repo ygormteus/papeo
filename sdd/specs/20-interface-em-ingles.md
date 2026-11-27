@@ -17,7 +17,7 @@ português: telas, bandeja, menu do macOS, notificações e erros.
   de datas continua entendendo só português (spec 07).
 - Texto que vem dos sites e dos servidores (páginas, mensagens de erro do
   IMAP/SMTP, nomes de pastas do servidor).
-- Notas da versão ("Novidades") e textos de diagnóstico do autoteste.
+- Textos de diagnóstico do autoteste.
 - Nomes padrão de contas já criadas (a pessoa pode ter renomeado).
 - Textos já guardados (marca de conflito da sincronização nas anotações).
 
@@ -42,6 +42,11 @@ português: telas, bandeja, menu do macOS, notificações e erros.
 - **R6.** O idioma do documento (`<html lang>`) deve acompanhar a escolha.
 - **R7.** Todo texto da interface marcado para tradução deve ter versão
   em inglês; um teste deve falhar se faltar alguma.
+- **R8.** "O que mudou" deve mostrar as notas da versão no idioma da
+  tela: as embutidas (`release-notes/en/<versão>.md`) e as da versão
+  disponível (`notesEn` do `latest.json`); sem a versão em inglês, as em
+  português. Toda versão publicada deve ter as notas nos dois idiomas
+  (decisão do usuário, 2026-11-27).
 
 ## Design
 
@@ -72,6 +77,12 @@ português: telas, bandeja, menu do macOS, notificações e erros.
 - **Módulos puros testados no Node** (`tasks.ts`, `settingsIndex.ts`)
   não importam o `$state`: recebem o tradutor (`setTranslator`, terceiro
   argumento de `searchSettings`).
+- **Notas da versão (R8):** `bundledNotes(versão, idioma)` e
+  `notesHistory(até, idioma)` leem `release-notes/en/`; o `release.yml`
+  exige as duas notas e grava `notesEn` no `latest.json` (o atualizador só
+  lê `notes`; o app lê `notesEn` de `raw_json`; versões antigas ignoram o
+  campo) e as duas no texto do release. `UpdateStatus::Available` ganha
+  `notesEn`.
 - **Teste (R7):** script em `tests/` que extrai os `t("…")`/`tr("…")` do
   código e confere que todos estão no catálogo inglês (e que o catálogo
   não tem chaves órfãs).
@@ -99,3 +110,4 @@ barras de prévia/anexo abertas ficavam no idioma antigo), corrigidos.
 | R4 | `tr`/`trf` nas mensagens do Rust; `fills_named_values` | não verificado | não verificado (clippy Windows só no CI) |
 | R5, R6 | `locale()` nas datas; `stamp` em `i18n.svelte.ts` | não verificado | — |
 | R7 | `tests/i18n.test.mjs` (896 frases na interface, 256 no Rust) | — | — |
+| R8 | `tests/notes.test.mjs` (toda versão nas duas línguas, mesmas seções e itens); `WhatsNew.svelte` | não verificado (atualização real) | não verificado |

@@ -37,6 +37,8 @@ jobs:
         run: |
           notes="release-notes/${TAG#v}.md"
           test -s "$notes" || { echo "::error::falta $notes com as notas desta versão (o que mudou, para quem usa)"; exit 1; }
+          # Inglês também (spec 20): o app mostra no idioma escolhido.
+          test -s "release-notes/en/${TAG#v}.md" || { echo "::error::falta release-notes/en/${TAG#v}.md com as notas em inglês"; exit 1; }
       - id: create
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -238,8 +240,12 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::versão inválida: $version"; exit 1; }
           test "v$version" = "$TAG" || { echo "::error::latest.json é da versão $version, a tag é $TAG"; exit 1; }
           notes="release-notes/$version.md"
+          notes_en="release-notes/en/$version.md"
           test -s "$notes" || { echo "::error::falta $notes com as notas desta versão"; exit 1; }
-          jq --rawfile notes "$notes" '.notes = $notes' latest.json > latest.new.json
+          test -s "$notes_en" || { echo "::error::falta $notes_en com as notas em inglês"; exit 1; }
+          # `notes` (português) é o que o atualizador lê; `notesEn` o app lê
+          # do JSON bruto (spec 20). Versões antigas ignoram o campo novo.
+          jq --rawfile notes "$notes" --rawfile en "$notes_en" '.notes = $notes | .notesEn = $en' latest.json > latest.new.json
           # Troca sem nunca ficar sem `latest.json`: envia o novo com outro
           # nome, renomeia o antigo, dá o nome certo ao novo e só então apaga
           # o antigo. Se a troca falhar, o antigo volta.
@@ -253,7 +259,7 @@ jobs:
             echo "::error::não consegui gravar as notas no latest.json"
             exit 1
           fi
-          { cat "$notes"; sed "s/{{VERSION}}/$version/g" .github/release-template.md; } > body.md
+          { cat "$notes"; printf '\n---\n\n**English**\n\n'; cat "$notes_en"; sed "s/{{VERSION}}/$version/g" .github/release-template.md; } > body.md
           gh api -X PATCH "repos/$REPO/releases/$RELEASE_ID" -F body=@body.md --jq .html_url
 
   # Prova de que os arquivos saíram deste repositório e deste workflow

@@ -133,15 +133,20 @@
   let menu = $state<{ service: ServiceView; x: number; y: number } | null>(null);
   let toast = $state<Toast | null>(null);
   // "O que mudou": da versão disponível ou da que acabou de ser instalada.
-  let whatsNew = $state<{ version: string; notes: string | null; mode: "available" | "installed" } | null>(
-    null,
-  );
+  // `notesEn`: as mesmas notas em inglês (spec 20), quando existem.
+  let whatsNew = $state<{
+    version: string;
+    notes: string | null;
+    notesEn: string | null;
+    mode: "available" | "installed";
+  } | null>(null);
 
   function showNotes(mode: "available" | "installed") {
     if (mode === "available" && snap.update.state === "available") {
-      whatsNew = { version: snap.update.version, notes: snap.update.notes ?? null, mode };
+      whatsNew = { version: snap.update.version, notes: snap.update.notes ?? null, notesEn: snap.update.notesEn ?? null, mode };
     } else if (mode === "installed") {
-      whatsNew = { version: snap.appVersion, notes: bundledNotes(snap.appVersion), mode };
+      const v = snap.appVersion;
+      whatsNew = { version: v, notes: bundledNotes(v), notesEn: bundledNotes(v, "en"), mode };
     }
   }
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -572,7 +577,7 @@
         if (s.appVersion && store.get("papeo.notesSeen") !== s.appVersion) {
           const notes = bundledNotes(s.appVersion);
           if (notes && s.settings.updates.noticeSeen) {
-            whatsNew = { version: s.appVersion, notes, mode: "installed" };
+            whatsNew = { version: s.appVersion, notes, notesEn: bundledNotes(s.appVersion, "en"), mode: "installed" };
           }
           store.set("papeo.notesSeen", s.appVersion);
         }
@@ -860,6 +865,7 @@
   <WhatsNew
     version={whatsNew.version}
     notes={whatsNew.notes}
+    notesEn={whatsNew.notesEn}
     mode={whatsNew.mode}
     current={snap.appVersion}
     onclose={() => (whatsNew = null)}

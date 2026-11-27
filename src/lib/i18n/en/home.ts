@@ -1,6 +1,7 @@
 // Catálogo inglês da interface (home) — ver `index.ts`.
 
 const en: Record<string, string> = {
+  "O que mudou": "What's new",
   "Tarefa criada sem conversa: está em Tarefas.": "Task created without a chat: you'll find it in Tasks.",
   "Recarregar": "Reload",
   "Hibernar agora": "Hibernate now",

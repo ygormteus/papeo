@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ExternalLink, ListChecks, Sparkles, TrendingUp, Wrench, X } from "@lucide/svelte";
-  import { t, tk } from "./i18n.svelte";
+  import { i18n, t, tk } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { parseNotes, type NoteKind } from "./notes";
   import { notesHistory } from "./bundledNotes";
@@ -11,6 +11,7 @@
   let {
     version,
     notes,
+    notesEn,
     mode,
     current,
     onclose,
@@ -18,6 +19,8 @@
   }: {
     version: string;
     notes: string | null | undefined;
+    /** As mesmas notas em inglês (spec 20); sem elas, valem as em português. */
+    notesEn?: string | null;
     mode: "available" | "installed";
     /** Versão instalada: o histórico vai até ela. */
     current: string;
@@ -28,8 +31,10 @@
   type Entry = { version: string; notes: string | null | undefined; badge?: string };
 
   const entries = $derived.by<Entry[]>(() => {
-    const out: Entry[] = [{ version, notes, badge: mode === "available" ? tk("Nova") : tk("Atual") }];
-    for (const n of notesHistory(current)) {
+    const lang = i18n.lang;
+    const first = lang === "en" ? (notesEn ?? notes) : notes;
+    const out: Entry[] = [{ version, notes: first, badge: mode === "available" ? tk("Nova") : tk("Atual") }];
+    for (const n of notesHistory(current, lang)) {
       if (n.version === version) continue;
       out.push({ version: n.version, notes: n.notes, badge: n.version === current ? tk("Atual") : undefined });
     }
@@ -39,7 +44,7 @@
   // svelte-ignore state_referenced_locally
   let selected = $state(version);
   const entry = $derived(entries.find((e) => e.version === selected) ?? entries[0]);
-  const sections = $derived(parseNotes(entry.notes));
+  const sections = $derived(parseNotes(entry.notes, t("O que mudou")));
   const count = (e: Entry) => parseNotes(e.notes).reduce((n, s) => n + s.items.length, 0);
 
   const META: Record<NoteKind, { icon: typeof Sparkles; label: string }> = {

@@ -670,6 +670,9 @@ pub enum UpdateStatus {
     Available {
         version: String,
         notes: Option<String>,
+        /// As mesmas notas em inglês (`notesEn` do `latest.json`, spec 20).
+        #[serde(rename = "notesEn")]
+        notes_en: Option<String>,
     },
     /// Baixando e instalando; `percent` sem valor se o tamanho é desconhecido.
     Installing {
