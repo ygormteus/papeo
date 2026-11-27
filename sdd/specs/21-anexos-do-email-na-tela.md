@@ -1,7 +1,7 @@
 # 21 — Anexos do e-mail na tela
 
 - **Estado:** entregue
-- **Versão:** —
+- **Versão:** 0.15.1
 - **Relacionadas:** 06, 09
 
 ## Problema
