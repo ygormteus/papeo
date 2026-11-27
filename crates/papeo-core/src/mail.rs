@@ -47,7 +47,31 @@ pub struct MailAccount {
     /// (para quem não usa as abas).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub whole_inbox: bool,
+    /// Como entrar: senha (padrão) ou login da Microsoft (Outlook).
+    #[serde(default, skip_serializing_if = "MailAuth::is_password")]
+    pub auth: MailAuth,
 }
+
+/// Forma de entrar no servidor IMAP.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MailAuth {
+    /// Usuário e senha (ou senha de app).
+    #[default]
+    Password,
+    /// Login da Microsoft (OAuth, XOAUTH2): o "segredo" guardado é o token de
+    /// renovação.
+    Microsoft,
+}
+
+impl MailAuth {
+    fn is_password(&self) -> bool {
+        *self == MailAuth::Password
+    }
+}
+
+/// Servidor IMAP do Outlook (pessoal e Microsoft 365).
+pub const OUTLOOK_HOST: &str = "outlook.office365.com";
 
 fn imaps_port() -> u16 {
     IMAPS_PORT
@@ -76,6 +100,12 @@ impl MailAccount {
             return Err("Usuário inválido.".into());
         }
         self.user = user.to_owned();
+        // Login da Microsoft: o token só vai para o servidor da Microsoft.
+        if self.auth == MailAuth::Microsoft
+            && (self.host != OUTLOOK_HOST || self.port != IMAPS_PORT || self.starttls)
+        {
+            return Err("O login da Microsoft só vale para o servidor do Outlook.".into());
+        }
         // A opção do contador só existe no Gmail.
         if !self.is_gmail() {
             self.whole_inbox = false;
@@ -608,6 +638,44 @@ impl<S: Transport> Imap<S> {
         }
     }
 
+    /// Entra com um token OAuth (SASL XOAUTH2, com a resposta inicial no
+    /// próprio comando). Recusa vira "login recusado" (`Auth`), menos
+    /// servidor indisponível (`[UNAVAILABLE]`), que é passageiro.
+    pub fn authenticate_xoauth2(&mut self, user: &str, token: &str) -> ImapResult<()> {
+        if self.preauth {
+            return Ok(());
+        }
+        let bad = |s: &str| s.is_empty() || s.chars().any(|c| c.is_control() || c.is_whitespace());
+        if bad(user) || bad(token) {
+            return Err(ImapError::Auth("usuário ou token inválido".into()));
+        }
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD
+            .encode(format!("user={user}\x01auth=Bearer {token}\x01\x01"));
+        let tag = self.next_tag();
+        self.send(format!("{tag} AUTHENTICATE XOAUTH2 {encoded}\r\n").as_bytes())?;
+        loop {
+            let response = self.read_response()?;
+            // Recusa: o servidor manda os detalhes como desafio e espera uma
+            // linha vazia antes do NO.
+            if response.line.starts_with('+') {
+                self.send(b"\r\n")?;
+                continue;
+            }
+            match tagged(&tag, &response) {
+                Tagged::Other => {}
+                Tagged::Done(Ok(())) => return Ok(()),
+                Tagged::Done(Err(ImapError::Rejected(text)))
+                    if text.to_ascii_uppercase().contains("[UNAVAILABLE]") =>
+                {
+                    return Err(ImapError::Protocol(text))
+                }
+                Tagged::Done(Err(ImapError::Rejected(text))) => return Err(ImapError::Auth(text)),
+                Tagged::Done(Err(err)) => return Err(err),
+            }
+        }
+    }
+
     pub fn capabilities(&mut self) -> ImapResult<Vec<String>> {
         let responses = self.command(vec![Part::Text("CAPABILITY".into())])?;
         Ok(responses
@@ -1067,6 +1135,7 @@ mod tests {
             sleep_site: true,
             starttls: false,
             whole_inbox: false,
+            auth: MailAuth::Password,
         }
         .sanitized()
         .unwrap();
@@ -1219,6 +1288,58 @@ mod tests {
             Err(ImapError::Protocol(text)) => assert!(text.contains("STARTTLS")),
             other => panic!("{other:?}"),
         }
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn microsoft_login_only_for_outlook_server() {
+        let mut a: MailAccount = serde_json::from_str(
+            r#"{"host":"outlook.office365.com","user":"ana@outlook.com","auth":"microsoft"}"#,
+        )
+        .unwrap();
+        assert_eq!(a.auth, MailAuth::Microsoft);
+        assert!(a.clone().sanitized().is_ok());
+        a.host = "imap.outro.com".into();
+        assert!(a.sanitized().is_err(), "token não vai para outro servidor");
+        // Senha (padrão) não aparece no arquivo.
+        let p: MailAccount = serde_json::from_str(r#"{"host":"x.com","user":"u"}"#).unwrap();
+        assert_eq!(p.auth, MailAuth::Password);
+        assert!(!serde_json::to_string(&p).unwrap().contains("auth"));
+    }
+
+    #[test]
+    fn xoauth2_login_and_refusal() {
+        let (stream, server) = fake_server(|r, w| {
+            let tag = expect(r, "AUTHENTICATE XOAUTH2 ");
+            w.write_all(format!("{tag} OK autenticado\r\n").as_bytes())
+                .unwrap();
+            // Recusa: desafio com detalhes, linha vazia do cliente, NO.
+            let tag = expect(r, "AUTHENTICATE XOAUTH2 ");
+            w.write_all(b"+ eyJzdGF0dXMiOiI0MDEifQ==\r\n").unwrap();
+            let mut line = String::new();
+            r.read_line(&mut line).unwrap();
+            assert_eq!(line, "\r\n");
+            w.write_all(format!("{tag} NO AUTHENTICATE failed.\r\n").as_bytes())
+                .unwrap();
+            let tag = expect(r, "AUTHENTICATE XOAUTH2 ");
+            w.write_all(format!("{tag} NO [UNAVAILABLE] tente depois\r\n").as_bytes())
+                .unwrap();
+        });
+        let mut imap = Imap::connect(stream).unwrap();
+        imap.authenticate_xoauth2("ana@outlook.com", "tok.en-1")
+            .unwrap();
+        assert!(matches!(
+            imap.authenticate_xoauth2("ana@outlook.com", "velho"),
+            Err(ImapError::Auth(_))
+        ));
+        assert!(matches!(
+            imap.authenticate_xoauth2("ana@outlook.com", "tok"),
+            Err(ImapError::Protocol(_))
+        ));
+        assert!(matches!(
+            imap.authenticate_xoauth2("ana@outlook.com", "com espaço"),
+            Err(ImapError::Auth(_))
+        ));
         server.join().unwrap();
     }
 

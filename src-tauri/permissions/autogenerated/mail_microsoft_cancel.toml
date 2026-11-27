@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-microsoft-cancel"
+description = "Enables the mail_microsoft_cancel command without any pre-configured scope."
+commands.allow = ["mail_microsoft_cancel"]
+
+[[permission]]
+identifier = "deny-mail-microsoft-cancel"
+description = "Denies the mail_microsoft_cancel command without any pre-configured scope."
+commands.deny = ["mail_microsoft_cancel"]

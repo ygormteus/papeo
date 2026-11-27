@@ -192,6 +192,23 @@ pub async fn set_mail_account(
         }
         return Ok(publish(&app));
     };
+    // Login da Microsoft: por aqui só muda o site hibernado (servidor e
+    // usuário vêm do login, em `mail_microsoft_login`).
+    if let Some(mut account) = previous
+        .clone()
+        .filter(|m| m.auth == papeo_core::mail::MailAuth::Microsoft)
+    {
+        account.sleep_site = input.sleep_site;
+        state.update(|inner| {
+            inner.service_mut(&id)?.mail = Some(account.clone());
+            Ok(())
+        })?;
+        crate::mail::sync(&app);
+        if slept && !account.sleep_site {
+            crate::mail::site_fallback(&app, &id, false);
+        }
+        return Ok(publish(&app));
+    }
     if !kind.supports_mail_watch() {
         return Err("Esta conta ainda não aceita avisos por IMAP.".into());
     }
@@ -206,6 +223,7 @@ pub async fn set_mail_account(
         sleep_site: input.sleep_site,
         starttls: input.starttls,
         whole_inbox: input.whole_inbox,
+        auth: papeo_core::mail::MailAuth::Password,
     }
     .sanitized()?;
     let secret = input.password.filter(|p| !p.is_empty());
@@ -251,6 +269,123 @@ pub async fn set_mail_account(
         crate::mail::site_fallback(&app, &id, false);
     }
     Ok(publish(&app))
+}
+
+/// Um login da Microsoft por vez (cada um espera o navegador até 5 min).
+static MICROSOFT_LOGIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+struct LoginBusy;
+
+impl LoginBusy {
+    fn take() -> Result<Self, String> {
+        use std::sync::atomic::Ordering;
+        MICROSOFT_LOGIN
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map(|_| LoginBusy)
+            .map_err(|_| "Já há um login da Microsoft aberto no navegador.".to_owned())
+    }
+}
+
+impl Drop for LoginBusy {
+    fn drop(&mut self) {
+        MICROSOFT_LOGIN.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Avisos do Outlook por IMAP com o login da Microsoft: abre o navegador,
+/// guarda o token de renovação (nunca a senha) e liga o vigia.
+#[tauri::command]
+pub async fn mail_microsoft_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    sleep_site: bool,
+) -> CmdResult {
+    use papeo_core::mail::{MailAccount, MailAuth, IMAPS_PORT, OUTLOOK_HOST};
+    ensure_unlocked(&app)?;
+    let kind = state.lock().service(&id)?.kind;
+    if !kind.accepts_mail(MailAuth::Microsoft) {
+        return Err("O login da Microsoft vale só para contas do Outlook.".into());
+    }
+    let _busy = LoginBusy::take()?;
+    let opener = app.clone();
+    let code = tauri::async_runtime::spawn_blocking(move || {
+        crate::microsoft::login(|url| {
+            use tauri_plugin_opener::OpenerExt;
+            opener
+                .opener()
+                .open_url(url, None::<&str>)
+                .map_err(|e| e.to_string())
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let tokens = crate::microsoft::exchange(code).await?;
+    let refresh = tokens
+        .refresh_token
+        .filter(|t| !t.is_empty())
+        .ok_or("A Microsoft não liberou o acesso contínuo. Tente de novo.")?;
+    let user = tokens
+        .id_token
+        .as_deref()
+        .and_then(crate::microsoft::account_email)
+        .ok_or("A Microsoft não informou o e-mail da conta. Tente de novo.")?;
+    // O login levou minutos: confere de novo o bloqueio e a conta.
+    ensure_unlocked(&app)?;
+    let previous = state.lock().service(&id)?.mail.clone();
+    let slept = previous.as_ref().is_some_and(|m| m.sleep_site);
+    let account = MailAccount {
+        host: OUTLOOK_HOST.to_owned(),
+        port: IMAPS_PORT,
+        user,
+        sleep_site,
+        starttls: false,
+        whole_inbox: false,
+        auth: MailAuth::Microsoft,
+    }
+    .sanitized()?;
+    // Conta primeiro, token depois (como em `set_mail_account`).
+    state.update(|inner| {
+        inner.service_mut(&id)?.mail = Some(account.clone());
+        Ok(())
+    })?;
+    let saved = crate::secrets::Saved {
+        host: account.host.clone(),
+        port: account.port,
+        user: account.user.clone(),
+        secret: refresh,
+    };
+    if let Err(err) = crate::secrets::write(&app, &id, &saved) {
+        let _ = state.update(|inner| {
+            inner.service_mut(&id)?.mail = previous;
+            Ok(())
+        });
+        crate::mail::sync(&app);
+        return Err(err);
+    }
+    // Conta removida ou com os dados apagados enquanto gravava: o `forget`
+    // dela pode ter vindo antes desta gravação.
+    let still = state.lock().service(&id).is_ok_and(|s| {
+        s.mail
+            .as_ref()
+            .is_some_and(|m| m.auth == MailAuth::Microsoft && m.user == saved.user)
+    });
+    if !still {
+        crate::secrets::delete(&app, &id);
+        crate::mail::sync(&app);
+        return Err("A conta mudou durante o login. Tente de novo.".into());
+    }
+    crate::mail::restart(&app, &id);
+    if slept && !sleep_site {
+        crate::mail::site_fallback(&app, &id, false);
+    }
+    Ok(publish(&app))
+}
+
+/// Desiste do login da Microsoft aberto no navegador (diálogo fechado).
+#[tauri::command]
+pub fn mail_microsoft_cancel() {
+    crate::microsoft::cancel_login();
 }
 
 #[tauri::command]

@@ -16,6 +16,8 @@
     "allow-move-service",
     "allow-set-hibernation",
     "allow-set-mail-account",
+    "allow-mail-microsoft-login",
+    "allow-mail-microsoft-cancel",
     "allow-set-notifications",
     "allow-mute-service",
     "allow-set-media-policy",

@@ -42,8 +42,7 @@ impl Saved {
 pub struct SecretStore {
     #[cfg_attr(windows, allow(dead_code))]
     path: PathBuf,
-    /// Uma gravação por vez no arquivo.
-    #[cfg_attr(windows, allow(dead_code))]
+    /// Uma leitura ou gravação por vez (arquivo ou cofre do sistema).
     file: Mutex<()>,
 }
 
@@ -58,19 +57,36 @@ pub fn init(app: &AppHandle, dir: &Path) {
 
 pub fn read(app: &AppHandle, id: &str) -> Option<Saved> {
     let store = app.try_state::<SecretStore>()?;
-    imp::read(&store, id)
+    let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+    imp::load_one(&store, id)
 }
 
 pub fn write(app: &AppHandle, id: &str, saved: &Saved) -> Result<(), String> {
     let store = app
         .try_state::<SecretStore>()
         .ok_or("Cofre de senhas indisponível.")?;
-    imp::write(&store, id, saved)
+    let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+    imp::store_one(&store, id, saved)
+}
+
+/// Troca o segredo só se o guardado ainda é `previous` (token de renovação
+/// que a Microsoft trocou): um vigia antigo não apaga um login mais novo.
+/// `false` se o guardado já era outro.
+pub fn replace(app: &AppHandle, id: &str, previous: &str, saved: &Saved) -> Result<bool, String> {
+    let store = app
+        .try_state::<SecretStore>()
+        .ok_or("Cofre de senhas indisponível.")?;
+    let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+    if imp::load_one(&store, id).is_none_or(|s| s.secret != previous) {
+        return Ok(false);
+    }
+    imp::store_one(&store, id, saved).map(|()| true)
 }
 
 pub fn delete(app: &AppHandle, id: &str) {
     if let Some(store) = app.try_state::<SecretStore>() {
-        imp::delete(&store, id);
+        let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+        imp::remove_one(&store, id);
     }
 }
 
@@ -105,6 +121,28 @@ pub fn write_private(path: &Path, body: &[u8]) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
+/// Resumo (SHA-256, 16 dígitos hex) para conferir as partes no Windows.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Lê o cabeçalho `<resumo>:<tamanho>\n` da parte principal.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn header(bytes: &[u8]) -> Option<(String, usize)> {
+    let end = bytes.iter().position(|&b| b == b'\n')?;
+    let text = std::str::from_utf8(&bytes[..end]).ok()?;
+    let (sum, len) = text.split_once(':')?;
+    (sum.len() == 16 && sum.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| Some((sum.to_owned(), len.parse().ok()?)))?
+}
+
+// Cada `imp` supõe o `SecretStore::file` seguro por quem chama.
+
 #[cfg(not(windows))]
 mod imp {
     use super::{write_private, Saved, SecretStore};
@@ -128,20 +166,17 @@ mod imp {
         write_private(&store.path, &body)
     }
 
-    pub fn read(store: &SecretStore, id: &str) -> Option<Saved> {
-        let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn load_one(store: &SecretStore, id: &str) -> Option<Saved> {
         load(store).remove(id)
     }
 
-    pub fn write(store: &SecretStore, id: &str, saved: &Saved) -> Result<(), String> {
-        let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn store_one(store: &SecretStore, id: &str, saved: &Saved) -> Result<(), String> {
         let mut all = load(store);
         all.insert(id.to_owned(), saved.clone());
         save(store, &all)
     }
 
-    pub fn delete(store: &SecretStore, id: &str) {
-        let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn remove_one(store: &SecretStore, id: &str) {
         let mut all = load(store);
         if all.remove(id).is_some() {
             let _ = save(store, &all);
@@ -149,6 +184,9 @@ mod imp {
     }
 }
 
+/// Windows: Gerenciador de Credenciais. Cada credencial guarda até 2560
+/// bytes; o token de renovação da Microsoft pode passar disso, então o
+/// conteúdo vai em partes: `Papeo/mail/<id>`, `Papeo/mail/<id>#1`, `#2`…
 #[cfg(windows)]
 mod imp {
     use super::{Saved, SecretStore};
@@ -158,15 +196,25 @@ mod imp {
         CRED_TYPE_GENERIC,
     };
 
-    fn target(id: &str) -> HSTRING {
-        HSTRING::from(format!("Papeo/mail/{id}"))
+    /// Bytes por parte (abaixo do limite de 2560 do sistema).
+    const PART: usize = 2048;
+    /// Partes no máximo (16 KB).
+    const PARTS_MAX: usize = 8;
+
+    fn name(id: &str, part: usize) -> String {
+        if part == 0 {
+            format!("Papeo/mail/{id}")
+        } else {
+            format!("Papeo/mail/{id}#{part}")
+        }
     }
 
-    pub fn read(_store: &SecretStore, id: &str) -> Option<Saved> {
+    fn read_part(target: &str) -> Option<Vec<u8>> {
         let mut cred: *mut CREDENTIALW = std::ptr::null_mut();
-        // SAFETY: `cred` recebe memória do sistema, liberada com CredFree.
+        // SAFETY: `cred` recebe memória do sistema, liberada com CredFree
+        // depois de copiar o conteúdo.
         unsafe {
-            CredReadW(&target(id), CRED_TYPE_GENERIC, None, &mut cred).ok()?;
+            CredReadW(&HSTRING::from(target), CRED_TYPE_GENERIC, None, &mut cred).ok()?;
             let (ptr, size) = ((*cred).CredentialBlob, (*cred).CredentialBlobSize);
             let blob = if ptr.is_null() || size == 0 {
                 Vec::new()
@@ -174,20 +222,17 @@ mod imp {
                 std::slice::from_raw_parts(ptr, size as usize).to_vec()
             };
             CredFree(cred as *const _);
-            serde_json::from_slice(&blob).ok()
+            Some(blob)
         }
     }
 
-    pub fn write(_store: &SecretStore, id: &str, saved: &Saved) -> Result<(), String> {
-        let mut blob = serde_json::to_vec(saved).map_err(|e| e.to_string())?;
-        let mut name: Vec<u16> = format!("Papeo/mail/{id}")
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        let mut user: Vec<u16> = saved.user.encode_utf16().chain(Some(0)).collect();
+    fn write_part(target: &str, user: &str, bytes: &[u8]) -> Result<(), String> {
+        let mut blob = bytes.to_vec();
+        let mut target: Vec<u16> = target.encode_utf16().chain(Some(0)).collect();
+        let mut user: Vec<u16> = user.encode_utf16().chain(Some(0)).collect();
         let cred = CREDENTIALW {
             Type: CRED_TYPE_GENERIC,
-            TargetName: PWSTR(name.as_mut_ptr()),
+            TargetName: PWSTR(target.as_mut_ptr()),
             UserName: PWSTR(user.as_mut_ptr()),
             CredentialBlobSize: u32::try_from(blob.len()).map_err(|e| e.to_string())?,
             CredentialBlob: blob.as_mut_ptr(),
@@ -198,8 +243,78 @@ mod imp {
         unsafe { CredWriteW(&cred, 0) }.map_err(|e| format!("Não deu para guardar a senha: {e}"))
     }
 
-    pub fn delete(_store: &SecretStore, id: &str) {
+    fn delete_part(target: &str) -> bool {
         // SAFETY: só lê o nome passado.
-        let _ = unsafe { CredDeleteW(&target(id), CRED_TYPE_GENERIC, None) };
+        unsafe { CredDeleteW(&HSTRING::from(target), CRED_TYPE_GENERIC, None) }.is_ok()
+    }
+
+    pub fn load_one(_store: &SecretStore, id: &str) -> Option<Saved> {
+        let mut bytes = read_part(&name(id, 0))?;
+        // Formato antigo (uma parte só, JSON puro).
+        if bytes.first() == Some(&b'{') {
+            return serde_json::from_slice(&bytes).ok();
+        }
+        let (want, len) = super::header(&bytes)?;
+        let start = bytes.iter().position(|&b| b == b'\n')? + 1;
+        bytes.drain(..start);
+        // Só as partes que o cabeçalho pede: sobras antigas não entram.
+        for part in 1..PARTS_MAX {
+            if bytes.len() >= len {
+                break;
+            }
+            bytes.extend(read_part(&name(id, part))?);
+        }
+        // Partes de gravações diferentes (gravação interrompida): descarta.
+        if bytes.len() != len || super::digest(&bytes) != want {
+            return None;
+        }
+        serde_json::from_slice(&bytes).ok()
+    }
+
+    pub fn store_one(_store: &SecretStore, id: &str, saved: &Saved) -> Result<(), String> {
+        let body = serde_json::to_vec(saved).map_err(|e| e.to_string())?;
+        // Cabeçalho na parte principal: resumo e tamanho do conteúdo.
+        let mut bytes = format!("{}:{}\n", super::digest(&body), body.len()).into_bytes();
+        bytes.extend_from_slice(&body);
+        let parts: Vec<&[u8]> = bytes.chunks(PART).collect();
+        if parts.len() > PARTS_MAX {
+            return Err("Senha ou token grande demais para guardar.".into());
+        }
+        // Partes extras primeiro, a principal por último: até ela ser
+        // trocada, o resumo antigo recusa a mistura (e pede login de novo).
+        for (part, chunk) in parts.iter().enumerate().skip(1) {
+            write_part(&name(id, part), &saved.user, chunk)?;
+        }
+        write_part(
+            &name(id, 0),
+            &saved.user,
+            parts.first().copied().unwrap_or(&[]),
+        )?;
+        // Sobras de um conteúdo maior gravado antes (ignoradas na leitura).
+        for part in parts.len()..PARTS_MAX {
+            delete_part(&name(id, part));
+        }
+        Ok(())
+    }
+
+    pub fn remove_one(_store: &SecretStore, id: &str) {
+        for part in 0..PARTS_MAX {
+            delete_part(&name(id, part));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn part_header() {
+        let body = br#"{"host":"h"}"#;
+        let head = format!("{}:{}\nresto", digest(body), body.len());
+        assert_eq!(header(head.as_bytes()), Some((digest(body), body.len())));
+        assert_eq!(header(b"zz:3\n"), None);
+        assert_eq!(header(b"semfim"), None);
+        assert_ne!(digest(b"a"), digest(b"b"));
     }
 }

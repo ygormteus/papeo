@@ -351,6 +351,21 @@ export function installDevMock() {
       case "set_hibernation":
         find().hibernateAfterMinutes = Number(args.minutes);
         return snap();
+      case "mail_microsoft_cancel":
+        return undefined;
+      case "mail_microsoft_login": {
+        // Simula o navegador: entra como a conta de exemplo.
+        const s = find();
+        s.mail = {
+          host: "outlook.office365.com",
+          port: 993,
+          user: "voce@outlook.com",
+          sleepSite: Boolean(args.sleepSite),
+          auth: "microsoft",
+        };
+        s.mailStatus = { state: "ok" };
+        return snap();
+      }
       case "set_mail_account": {
         // Simula: senha "errada" é recusada; o resto conecta na hora.
         const s = find();
@@ -358,6 +373,10 @@ export function installDevMock() {
         if (!input) {
           delete s.mail;
           delete s.mailStatus;
+          return snap();
+        }
+        if (s.mail?.auth === "microsoft") {
+          s.mail = { ...s.mail, sleepSite: input.sleepSite };
           return snap();
         }
         if (!input.password && !s.mail) throw "Digite a senha: ela vale só para o servidor e o usuário em que foi informada.";

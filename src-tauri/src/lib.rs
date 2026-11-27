@@ -11,6 +11,7 @@ mod mail;
 mod memory;
 #[cfg(target_os = "macos")]
 mod menu;
+mod microsoft;
 mod notifications;
 mod notify;
 mod organizer;
@@ -531,6 +532,8 @@ pub fn run() {
             commands::move_service,
             commands::set_hibernation,
             commands::set_mail_account,
+            commands::mail_microsoft_login,
+            commands::mail_microsoft_cancel,
             commands::set_notifications,
             commands::mute_service,
             commands::set_media_policy,

@@ -760,6 +760,9 @@
       // Erros sobem para o diálogo, que os mostra no formulário.
       snap = fresher(await api.setMailAccount(target.id, account), snap);
     }}
+    onmicrosoft={async (sleepSite) => {
+      snap = fresher(await api.mailMicrosoftLogin(target.id, sleepSite), snap);
+    }}
   />
 {/if}
 

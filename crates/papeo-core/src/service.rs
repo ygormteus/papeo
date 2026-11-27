@@ -39,9 +39,17 @@ impl ServiceKind {
     }
 
     /// Caixas que aceitam avisos por IMAP com usuário e senha. O Outlook
-    /// só aceita o login da Microsoft (OAuth), que ainda não existe aqui.
+    /// só aceita o login da Microsoft (`accepts_mail`).
     pub fn supports_mail_watch(self) -> bool {
         matches!(self, ServiceKind::Gmail | ServiceKind::Email)
+    }
+
+    /// A conta aceita avisos por IMAP com esta forma de entrar.
+    pub fn accepts_mail(self, auth: crate::mail::MailAuth) -> bool {
+        match auth {
+            crate::mail::MailAuth::Password => self.supports_mail_watch(),
+            crate::mail::MailAuth::Microsoft => self == ServiceKind::Outlook,
+        }
     }
 
     fn default_name(self) -> Option<&'static str> {
@@ -241,7 +249,7 @@ impl Service {
         // IMAP inválido (arquivo editado à mão) só desliga os avisos por IMAP.
         self.mail = self
             .mail
-            .filter(|_| self.kind.supports_mail_watch())
+            .filter(|m| self.kind.accepts_mail(m.auth))
             .and_then(|m| m.sanitized().ok());
         Ok(self)
     }
@@ -436,6 +444,7 @@ mod tests {
             sleep_site: true,
             starttls: false,
             whole_inbox: false,
+            auth: crate::mail::MailAuth::Password,
         };
         let mut gmail = Service::new(ServiceKind::Gmail, None, None).unwrap();
         gmail.mail = Some(account.clone());

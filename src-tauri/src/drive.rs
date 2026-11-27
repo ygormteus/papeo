@@ -35,7 +35,7 @@ pub fn client() -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn http() -> Result<reqwest::Client, String> {
+pub(crate) fn http() -> Result<reqwest::Client, String> {
     // Um cliente só (pool de conexões reaproveitado); clonar é barato (Arc).
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     if let Some(client) = CLIENT.get() {
@@ -49,13 +49,13 @@ fn http() -> Result<reqwest::Client, String> {
     Ok(CLIENT.get_or_init(|| client).clone())
 }
 
-fn random_text(bytes: usize) -> String {
+pub(crate) fn random_text(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
     getrandom::fill(&mut buf).expect("gerador aleatório do sistema");
     B64URL.encode(buf)
 }
 
-fn form(pairs: &[(&str, &str)]) -> String {
+pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
     let mut s = url::form_urlencoded::Serializer::new(String::new());
     for (k, v) in pairs {
         s.append_pair(k, v);
@@ -118,7 +118,26 @@ pub fn login(open_browser: impl FnOnce(&str) -> Result<(), String>) -> Result<Lo
         ])
     );
     open_browser(&url)?;
-    let code = wait_for_code(&listener, &state)?;
+    let params = wait_for_redirect(
+        &[listener],
+        &state,
+        &Texts {
+            done: "Papeo conectado ao Google Drive. Pode fechar esta aba.",
+            timeout: "O login no Google não foi concluído a tempo.",
+        },
+        None,
+    )?;
+    if let Some(err) = params.get("error") {
+        return Err(if err == "access_denied" {
+            "Acesso ao Google Drive não autorizado.".into()
+        } else {
+            format!("O Google recusou o login ({err}).")
+        });
+    }
+    let code = params
+        .get("code")
+        .cloned()
+        .ok_or("Resposta de login inválida.")?;
     Ok(LoginCode {
         code,
         verifier,
@@ -140,21 +159,50 @@ pub async fn exchange(login: LoginCode) -> Result<TokenResponse, String> {
     .await
 }
 
-/// Espera a volta do navegador com `code` e o `state` certo.
-fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String, String> {
-    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+/// Login desistido (diálogo fechado): quem chamou não mostra erro.
+pub(crate) const LOGIN_CANCELLED: &str = "Login cancelado.";
+
+/// Textos da página que o navegador mostra ao voltar do login.
+pub(crate) struct Texts {
+    pub done: &'static str,
+    pub timeout: &'static str,
+}
+
+/// Espera a volta do navegador (login OAuth) com o `state` certo e devolve
+/// os parâmetros dela (`code` ou `error`…). Escuta em todos os `listeners`
+/// (IPv4 e IPv6 de `localhost`).
+/// `cancel`: ligado por outro lado, desiste da espera.
+pub(crate) fn wait_for_redirect(
+    listeners: &[TcpListener],
+    state: &str,
+    texts: &Texts,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    for listener in listeners {
+        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    }
     let started = Instant::now();
     loop {
         if started.elapsed() > LOGIN_TIMEOUT {
-            return Err("O login no Google não foi concluído a tempo.".into());
+            return Err(texts.timeout.into());
         }
-        let (mut stream, _) = match listener.accept() {
-            Ok(conn) => conn,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(200));
-                continue;
+        if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst)) {
+            return Err(LOGIN_CANCELLED.into());
+        }
+        let mut conn = None;
+        for listener in listeners {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    conn = Some(stream);
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e.to_string()),
             }
-            Err(e) => return Err(e.to_string()),
+        }
+        let Some(mut stream) = conn else {
+            std::thread::sleep(Duration::from_millis(200));
+            continue;
         };
         let _ = stream.set_nonblocking(false);
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -166,25 +214,20 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String, String> 
             .next()
             .and_then(|l| l.split_whitespace().nth(1))
             .unwrap_or("/");
-        let query = url::Url::parse(&format!("http://127.0.0.1{path}")).ok();
-        let get = |name: &str| {
-            query.as_ref().and_then(|u| {
-                u.query_pairs()
-                    .find(|(k, _)| k == name)
-                    .map(|(_, v)| v.into_owned())
-            })
-        };
+        let params: std::collections::HashMap<String, String> =
+            url::Url::parse(&format!("http://localhost{path}"))
+                .map(|u| u.query_pairs().into_owned().collect())
+                .unwrap_or_default();
         // Pedidos que não são a volta deste login (ícone da aba, outro
         // programa com `state` errado): ignora e continua esperando.
-        if get("state").as_deref() != Some(state) {
+        if params.get("state").map(String::as_str) != Some(state) {
             let _ = stream.write_all(
                 b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
             );
             continue;
         }
-        let ok = get("code").is_some();
-        let page = if ok {
-            "Papeo conectado ao Google Drive. Pode fechar esta aba."
+        let page = if params.contains_key("code") {
+            texts.done
         } else {
             "O login não foi concluído. Volte ao Papeo e tente de novo."
         };
@@ -198,17 +241,7 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String, String> 
             )
             .as_bytes(),
         );
-        if let Some(err) = get("error") {
-            return Err(if err == "access_denied" {
-                "Acesso ao Google Drive não autorizado.".into()
-            } else {
-                format!("O Google recusou o login ({err}).")
-            });
-        }
-        return match (ok, get("code")) {
-            (true, Some(code)) => Ok(code),
-            _ => Err("Resposta de login inválida.".into()),
-        };
+        return Ok(params);
     }
 }
 

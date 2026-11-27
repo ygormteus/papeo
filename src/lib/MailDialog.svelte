@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CircleAlert, CircleCheck, KeyRound, LoaderCircle, WifiOff } from "@lucide/svelte";
+  import { CircleAlert, CircleCheck, KeyRound, LoaderCircle, LogIn, WifiOff } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import Switch from "./Switch.svelte";
   import {
@@ -16,15 +16,20 @@
     service,
     onclose,
     onsave,
+    onmicrosoft,
   }: {
     /** Conta ao vivo (a situação do IMAP muda enquanto o diálogo está aberto). */
     service: ServiceView;
     onclose: () => void;
     /** Grava (ou desliga, com `null`); erros sobem para o diálogo. */
     onsave: (account: MailInput | null) => Promise<void>;
+    /** Outlook: login da Microsoft no navegador (liga ou troca a conta). */
+    onmicrosoft: (sleepSite: boolean) => Promise<void>;
   } = $props();
 
   const gmail = $derived(service.kind === "gmail");
+  // Outlook: só com o login da Microsoft (servidor e usuário vêm dele).
+  const microsoft = $derived(service.kind === "outlook");
   // Cópia local editável; a conta só muda ao salvar.
   // svelte-ignore state_referenced_locally
   const start = service.mail;
@@ -68,6 +73,13 @@
   }
   let error = $state("");
   let busy = $state(false);
+  // Esperando o login no navegador.
+  let signingIn = $state(false);
+
+  // Fechar o diálogo (de qualquer jeito) desiste do login no navegador.
+  $effect(() => () => {
+    if (signingIn) void api.mailMicrosoftCancel().catch(() => {});
+  });
   // Salvo nesta abertura: o diálogo fica aberto mostrando a conexão.
   let saved = $state(false);
 
@@ -91,11 +103,43 @@
       wholeInbox !== (service.mail?.wholeInbox ?? false),
   );
   const canSave = $derived(
-    !busy && dirty && !!host.trim() && !!user.trim() && (!needsPassword || password !== ""),
+    microsoft
+      ? !busy && configured && sleepSite !== service.mail?.sleepSite
+      : !busy && dirty && !!host.trim() && !!user.trim() && (!needsPassword || password !== ""),
   );
+
+  async function signIn() {
+    busy = true;
+    signingIn = true;
+    error = "";
+    try {
+      await onmicrosoft(sleepSite);
+      saved = true;
+    } catch (err) {
+      error = errorMessage(err);
+    } finally {
+      busy = false;
+      signingIn = false;
+    }
+  }
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (microsoft) {
+      if (!configured) return signIn();
+      busy = true;
+      error = "";
+      try {
+        // Só o site hibernado muda; o resto vem do login.
+        await onsave({ host: service.mail!.host, port: service.mail!.port, user: service.mail!.user, sleepSite });
+        saved = true;
+      } catch (err) {
+        error = errorMessage(err);
+      } finally {
+        busy = false;
+      }
+      return;
+    }
     const portNumber = Number(port);
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
       error = "Porta inválida.";
@@ -173,12 +217,20 @@
         {:else if status.state === "auth"}
           <CircleAlert size={16} />
           <span>
-            Usuário ou senha recusados. {gmail ? "Use uma senha de app (veja abaixo), não a senha do Google." : ""}
+            {#if microsoft}
+              O login da Microsoft expirou ou foi revogado. Entre de novo abaixo.
+            {:else}
+              Usuário ou senha recusados. {gmail ? "Use uma senha de app (veja abaixo), não a senha do Google." : ""}
+            {/if}
             Enquanto isso, os avisos vêm pelo site.
           </span>
         {:else}
           <KeyRound size={16} />
-          <span>Falta a senha neste computador (ela não vai no backup).</span>
+          <span>
+            {microsoft
+              ? "Falta entrar com a Microsoft neste computador (o login não vai no backup)."
+              : "Falta a senha neste computador (ela não vai no backup)."}
+          </span>
         {/if}
       </div>
     {/if}
@@ -195,6 +247,34 @@
       </div>
     {/if}
 
+    {#if microsoft}
+      <section aria-label="Conta">
+        <div class="signin">
+          {#if configured}
+            <p>Conta: <strong>{service.mail?.user}</strong></p>
+          {:else}
+            <p>
+              Entre com a sua conta da Microsoft (Outlook.com, Hotmail ou Microsoft 365). A senha é digitada só no site
+              da Microsoft, no navegador.
+            </p>
+          {/if}
+          <button type="button" class="btn" disabled={busy} onclick={signIn}>
+            {#if signingIn}
+              <LoaderCircle size={15} class="spin" /> Esperando o navegador…
+            {:else}
+              <LogIn size={15} />
+              {configured ? "Entrar de novo ou trocar de conta" : "Entrar com a Microsoft"}
+            {/if}
+          </button>
+          {#if signingIn}
+            <p class="note">Termine o login na janela do navegador que abriu.</p>
+          {/if}
+          <p class="note">
+            Contas de empresa podem precisar que o administrador do Microsoft 365 libere o Papeo e o IMAP.
+          </p>
+        </div>
+      </section>
+    {:else}
     <section aria-label="Conta">
       {#if !gmail}
         <div class="field">
@@ -279,6 +359,7 @@
         </fieldset>
       {/if}
     </section>
+    {/if}
 
     {#if gmail}
       <section aria-label="Contador">
@@ -314,8 +395,8 @@
     </section>
 
     <p class="privacy">
-      A senha fica só neste computador, fora do backup e da sincronização. O Papeo lê só o remetente e o assunto dos
-      e-mails novos e não marca nada como lido.
+      {microsoft ? "O acesso" : "A senha"} fica só neste computador, fora do backup e da sincronização. O Papeo lê só o
+      remetente e o assunto dos e-mails novos e não marca nada como lido.
     </p>
 
     <div class="footer">
@@ -326,9 +407,11 @@
         {/if}
         <span class="spacer"></span>
         <button type="button" class="btn" onclick={onclose}>{saved && !dirty ? "Fechar" : "Cancelar"}</button>
-        <button type="submit" class="btn btn-primary" disabled={!canSave}>
-          {busy ? "Salvando…" : configured ? "Salvar" : "Ligar"}
-        </button>
+        {#if !microsoft || configured}
+          <button type="submit" class="btn btn-primary" disabled={!canSave}>
+            {busy && !signingIn ? "Salvando…" : configured ? "Salvar" : "Ligar"}
+          </button>
+        {/if}
       </div>
     </div>
   </form>
@@ -393,7 +476,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .status :global(.spin) {
+    .status :global(.spin),
+    .signin :global(.spin) {
       animation: none;
     }
   }
@@ -418,6 +502,28 @@
   .help strong {
     color: var(--text);
     font-weight: 600;
+  }
+
+  .signin {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .signin p {
+    margin: 0;
+  }
+
+  .signin .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .signin :global(.spin) {
+    animation: spin 1s linear infinite;
   }
 
   .link {

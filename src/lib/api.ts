@@ -65,6 +65,8 @@ export interface MailAccount {
   starttls?: boolean;
   /** Gmail: conta a Caixa de Entrada inteira, não só a aba Principal. */
   wholeInbox?: boolean;
+  /** Outlook: login da Microsoft em vez de senha (ausente = senha). */
+  auth?: "microsoft";
 }
 
 /** Para ligar ou alterar; senha vazia mantém a guardada. */
@@ -79,10 +81,10 @@ export type MailStatus =
   | { state: "auth" }
   | { state: "noPassword" };
 
-/** Contas que aceitam avisos por IMAP com usuário e senha (o Outlook só
- *  aceita o login da Microsoft). */
+/** Contas que aceitam avisos por IMAP: Gmail e outros com usuário e senha;
+ *  o Outlook só com o login da Microsoft. */
 export function supportsMailWatch(kind: ServiceKind): boolean {
-  return kind === "gmail" || kind === "email";
+  return kind === "gmail" || kind === "email" || kind === "outlook";
 }
 
 export const GMAIL_IMAP = { host: "imap.gmail.com", port: 993 };
@@ -420,6 +422,11 @@ export const api = {
     invoke<Snapshot>("set_hibernation", { id, minutes }),
   setMailAccount: (id: string, account: MailInput | null) =>
     invoke<Snapshot>("set_mail_account", { id, account }),
+  /** Abre o login da Microsoft no navegador e liga os avisos do Outlook. */
+  mailMicrosoftLogin: (id: string, sleepSite: boolean) =>
+    invoke<Snapshot>("mail_microsoft_login", { id, sleepSite }),
+  /** Desiste do login da Microsoft aberto no navegador. */
+  mailMicrosoftCancel: () => invoke<void>("mail_microsoft_cancel"),
   setNotifications: (id: string, enabled: boolean) =>
     invoke<Snapshot>("set_notifications", { id, enabled }),
   muteService: (id: string, minutes: number) => invoke<Snapshot>("mute_service", { id, minutes }),

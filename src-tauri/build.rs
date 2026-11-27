@@ -11,6 +11,8 @@ const COMMANDS: &[&str] = &[
     "move_service",
     "set_hibernation",
     "set_mail_account",
+    "mail_microsoft_login",
+    "mail_microsoft_cancel",
     "set_notifications",
     "mute_service",
     "set_media_policy",
