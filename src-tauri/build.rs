@@ -65,6 +65,8 @@ const COMMANDS: &[&str] = &[
     "reload_service",
     "set_content_area",
     "set_overlay",
+    "detach_service",
+    "attach_service",
     "split_open",
     "split_close",
     "split_ratio",

@@ -18,9 +18,15 @@ WhatsApp e e-mail) precisa alternar na barra lateral a cada mensagem.
 
 ## Requisitos
 
-- **R1.** No menu da conta (barra lateral), "Abrir ao lado" deve mostrar a
-  conta à direita da que está aberta; a escolhida fica em foco. Só aparece
-  com outra conta aberta.
+- **R1.** Há três jeitos de dividir a tela, todos com WhatsApp, e-mail ou
+  qualquer outra conta:
+  - arrastar uma conta da barra lateral para o conteúdo: aparecem as áreas
+    "Abrir à esquerda" e "Abrir à direita" (sem conta aberta, "Abrir
+    aqui"); soltar numa metade já dividida troca a conta dela;
+  - botão "Dividir a tela" na barra de cima, com a lista das outras contas;
+  - menu da conta: "Abrir em tela dividida" (outra conta) ou "Dividir a
+    tela com…" (a aberta, ou sem nenhuma aberta).
+  A conta escolhida fica em foco.
 - **R2.** As duas contas ficam visíveis lado a lado, cada uma com o site ou
   com o leitor do Papeo (e-mail, Talk). Um divisor arrastável muda a
   proporção (entre 25% e 75%); a proporção fica guardada neste computador.
@@ -45,7 +51,7 @@ WhatsApp e e-mail) precisa alternar na barra lateral a cada mensagem.
   `active` que significam "visível"; `Inner::pane_area(id)` dá o retângulo
   de cada metade (área do conteúdo dividida pela proporção, com divisor de
   `SPLIT_GAP` px). O `Snapshot` ganha `split: {left, right, ratio} | null`.
-- **Comandos:** `split_open(id, ratio)`, `split_close()`,
+- **Comandos:** `split_open(id, ratio, left?)`, `split_close()`,
   `split_ratio(ratio)` (capability `default`; `api.ts`, `devMock.ts`).
   `activate` troca a metade em foco quando a conta não é uma das duas.
 - **Foco por clique no site:** o shim avisa `service_status` com
@@ -70,5 +76,5 @@ WhatsApp e e-mail) precisa alternar na barra lateral a cada mensagem.
 | Req. | Evidência | macOS | Windows |
 |---|---|---|---|
 | R2 | teste `split_panes_divide_the_area` | não verificado (app) | — |
-| R1, R3–R6 | não verificado no app | — | — |
+| R1, R3–R6 | não verificado no app (0.17.0: o menu só aparecia em conta diferente da aberta; 0.17.1 acrescenta arrastar e o botão da barra) | — | — |
 | Concorrência, R7 | revisão crítica independente: sem deadlock nem estado inconsistente; corrigidos o aviso de foco tratado como sinal de vida (agora só muda o foco), a metade de trás em branco ao tirar o IMAP, o leitor recarregando ao dividir/fechar, "apagar dados" na metade em foco e o arraste com moldura | — | — |

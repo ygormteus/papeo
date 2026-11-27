@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from "./i18n.svelte";
   import {
+    AppWindow,
     Circle,
     Columns2,
     Globe,
@@ -52,6 +53,8 @@
     diagnostics = false,
     ondiagnostics,
     onunsplit,
+    onsplit,
+    ondetach,
   }: {
     active: ServiceView | null;
     appearance: Appearance;
@@ -78,6 +81,10 @@
     ondiagnostics?: () => void;
     /** Tela dividida aberta: "Fechar divisão" (fica a conta em foco). */
     onunsplit?: () => void;
+    /** Conta aberta sem divisão: "Dividir tela" (escolher a outra conta). */
+    onsplit?: (x: number, y: number) => void;
+    /** Abrir a conta aberta numa janela separada (spec 32). */
+    ondetach?: () => void;
   } = $props();
 
   const ZOOM_MIN = 0.5;
@@ -228,8 +235,26 @@
       <Snowflake size={17} />
     </button>
   {/if}
+  {#if onsplit}
+    <button
+      class="icon-btn"
+      onclick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        onsplit(r.left, r.bottom + 4);
+      }}
+      title={t("Dividir a tela (ou arraste uma conta da barra lateral para cá)")}
+      aria-label={t("Dividir a tela")}
+    >
+      <Columns2 size={17} />
+    </button>
+  {/if}
+  {#if ondetach}
+    <button class="icon-btn" onclick={ondetach} title={t("Abrir em janela separada")} aria-label={t("Abrir em janela separada")}>
+      <AppWindow size={17} />
+    </button>
+  {/if}
   {#if onunsplit}
-    <button class="icon-btn" onclick={onunsplit} title={t("Fechar divisão (fica {nome})", { nome: active?.name ?? "" })} aria-label={t("Fechar divisão")}>
+    <button class="icon-btn on" onclick={onunsplit} title={t("Fechar divisão (fica {nome})", { nome: active?.name ?? "" })} aria-label={t("Fechar divisão")}>
       <Columns2 size={17} />
     </button>
   {/if}
@@ -357,6 +382,12 @@
     color: var(--danger);
     background: var(--danger-bg);
     border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  }
+
+  /* Tela dividida aberta: o botão fica aceso (clicar fecha a divisão). */
+  .on {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
 
   .urgent {

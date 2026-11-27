@@ -212,7 +212,13 @@ pub fn create_service_webview(
         Ok(webview) => webview,
         // Outra thread criou a mesma conta ao mesmo tempo (ex.: clique
         // durante a abertura escalonada): usa a dela.
-        Err(err) => return app.get_webview(&service.id).ok_or_else(|| err.to_string()),
+        Err(err) => {
+            let webview = app
+                .get_webview(&service.id)
+                .ok_or_else(|| err.to_string())?;
+            crate::detach::adopt(app, &webview);
+            return Ok(webview);
+        }
     };
     #[cfg(target_os = "macos")]
     crate::webcrypto::attach(&webview);
@@ -227,6 +233,8 @@ pub fn create_service_webview(
         }
         Ok(())
     });
+    // Conta em janela separada (spec 32): a webview nova vai para lá.
+    crate::detach::adopt(app, &webview);
     Ok(webview)
 }
 
@@ -363,7 +371,8 @@ pub fn restart(app: &AppHandle, id: &str) -> Result<bool, String> {
             return reload(app, id);
         }
         let service = inner.service(id)?.clone();
-        let shown = inner.on_screen(id) && !inner.overlay && !inner.locked;
+        // Na janela principal (a separada recebe a webview pelo `adopt`).
+        let shown = inner.in_main(id) && !inner.overlay && !inner.locked;
         // A página nova volta a informar o contador (ou o título).
         inner.page_unread.remove(id);
         inner.last_reload.insert(id.to_owned(), Instant::now());
@@ -412,10 +421,13 @@ pub fn apply_layout(app: &AppHandle) {
         let inner = state.lock();
         // Contas no leitor de e-mail: o site (se carregado para os avisos)
         // fica escondido; a tela é do Papeo.
+        // Contas em janela separada ficam com a janela delas (spec 32).
         let ids: Vec<(String, bool, Option<Area>)> = inner
             .config
             .services
             .iter()
+            // (no leitor, o site carregado para os avisos continua aqui, escondido).
+            .filter(|s| !inner.detached.contains(&s.id) || inner.reader(&s.id))
             .map(|s| (s.id.clone(), inner.reader(&s.id), inner.pane_area(&s.id)))
             .collect();
         // Bloqueado: nenhuma conversa aparece.
@@ -433,10 +445,18 @@ pub fn apply_layout(app: &AppHandle) {
             let _ = webview.hide();
         }
     }
+    crate::detach::sync_lock(app);
 }
 
 /// Mostra um serviço (criando a webview se estiver hibernado) ou o Início.
 pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String> {
+    // Conta em janela separada: a janela dela vem para a frente (spec 32).
+    if let Some(id) = id.as_deref() {
+        if app.state::<AppState>().lock().detached.contains(id) {
+            crate::detach::focus(app, id);
+            return Ok(publish(app));
+        }
+    }
     let state = app.state::<AppState>();
     let (to_create, area) = {
         let mut inner = state.lock();
@@ -501,27 +521,50 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
 }
 
 /// Tela dividida (spec 30): `id` à direita da conta aberta, em foco.
-pub fn split_open(app: &AppHandle, id: &str, ratio: f64) -> Result<Snapshot, String> {
+pub fn split_open(
+    app: &AppHandle,
+    id: &str,
+    ratio: f64,
+    left_side: bool,
+) -> Result<Snapshot, String> {
+    // Separada: volta para a janela principal antes de dividir.
+    crate::detach::attach_quiet(app, id);
     let state = app.state::<AppState>();
     {
         let mut inner = state.lock();
         inner.service(id)?;
-        // Já é uma das duas: só o foco muda.
-        if inner.split.as_ref().is_some_and(|s| s.has(id)) {
-            drop(inner);
-            return activate(app, Some(id.to_owned()));
+        let active = inner.active.clone();
+        match inner.split.as_mut() {
+            // Já dividida: `id` vai para o lado pedido (trocando de lado se
+            // já estava no outro); a proporção continua.
+            Some(split) => {
+                let (side, other) = if left_side {
+                    (&mut split.left, &split.right)
+                } else {
+                    (&mut split.right, &split.left)
+                };
+                if other == id {
+                    std::mem::swap(&mut split.left, &mut split.right);
+                } else {
+                    *side = id.to_owned();
+                }
+            }
+            None => {
+                let other = active
+                    .filter(|a| a != id)
+                    .ok_or(tr("Abra outra conta antes de dividir a tela."))?;
+                let (left, right) = if left_side {
+                    (id.to_owned(), other)
+                } else {
+                    (other, id.to_owned())
+                };
+                inner.split = Some(crate::state::Split {
+                    left,
+                    right,
+                    ratio: crate::state::Split::clamp_ratio(ratio),
+                });
+            }
         }
-        // Já dividida: a em foco fica e a outra metade vira `id`.
-        let left = inner
-            .active
-            .clone()
-            .filter(|left| left != id)
-            .ok_or(tr("Abra outra conta antes de dividir a tela."))?;
-        inner.split = Some(crate::state::Split {
-            left,
-            right: id.to_owned(),
-            ratio: crate::state::Split::clamp_ratio(ratio),
-        });
     }
     activate(app, Some(id.to_owned()))
 }
@@ -634,6 +677,8 @@ pub fn run_open_chat(webview: &Webview, query: &str, exact: bool) {
 /// Conta com o leitor de e-mail: mostra o site (`true`, carregando-o) ou
 /// volta ao leitor (`false`, descarregando o site).
 pub fn show_site(app: &AppHandle, id: &str, site: bool) -> Result<Snapshot, String> {
+    // Trocar entre site e leitor numa janela separada: volta à principal.
+    crate::detach::attach_quiet(app, id);
     {
         let state = app.state::<AppState>();
         let mut inner = state.lock();
@@ -693,6 +738,7 @@ pub fn hibernate(app: &AppHandle, id: &str) {
 
 /// Hiberna tudo e volta ao Início (usado ao restaurar um backup).
 pub fn close_all(app: &AppHandle) {
+    crate::detach::attach_all(app);
     let state = app.state::<AppState>();
     let ids: Vec<String> = state
         .lock()

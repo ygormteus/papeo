@@ -419,6 +419,11 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                 });
             }
         }
+        // Janela principal fechada de vez: as separadas não ficam órfãs.
+        WindowEvent::Destroyed if window.label() == MAIN_WINDOW => {
+            let app = window.app_handle().clone();
+            tauri::async_runtime::spawn(async move { crate::detach::close_windows(&app) });
+        }
         // Alt+F4/Cmd+W na mini janela só esconde (ela fecha sozinha depois).
         WindowEvent::CloseRequested { api, .. } if window.label() == crate::popover::POPOVER => {
             api.prevent_close();

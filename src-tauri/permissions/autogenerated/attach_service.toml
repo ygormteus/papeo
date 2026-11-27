@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-attach-service"
+description = "Enables the attach_service command without any pre-configured scope."
+commands.allow = ["attach_service"]
+
+[[permission]]
+identifier = "deny-attach-service"
+description = "Denies the attach_service command without any pre-configured scope."
+commands.deny = ["attach_service"]

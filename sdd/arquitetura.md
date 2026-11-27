@@ -123,6 +123,7 @@ voz do WhatsApp).
 | `notifications.rs` | Notificação nativa: `UNUserNotificationCenter` no macOS e toast WinRT no Windows, com Responder, Lembrar em 1 h, Adiar, Concluir |
 | `reply.rs` | Resposta rápida: carrega a conta, confere o site e pede ao shim para enviar |
 | `popover.rs` | Mini janela da barra de menus ou da bandeja |
+| `detach.rs` | Conta em janela separada (spec 32): janela `win-<id>-<n>`, a webview do site passa para ela (`reparent`) e volta ao fechar; o leitor ganha a webview local `rd-<id>` (`DetachedReader.svelte`), que também recebe `papeo://state` |
 | `tray.rs`, `menu.rs` | Ícone e menu da bandeja; menu nativo (só macOS) |
 | `downloads.rs`, `attachment.rs`, `preview.rs` | Downloads, visualização de anexos dos sites e do leitor de e-mail (Quick Look ou webview; spec 21), prévia de links |
 | `lock.rs` | Bloqueio com Touch ID/Windows Hello ou PIN do Papeo |
@@ -270,13 +271,13 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 116 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 118 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
 | Capability | Webviews | Comandos |
 |---|---|---|
-| `default` | `ui` | quase todos os da interface |
+| `default` | `ui`, `rd-*` (leitor em janela separada, spec 32) | quase todos os da interface |
 | `popover` | `popover` | `get_state`, `send_reply`, `show_app`, `hide_popover`, `set_dnd`, `lock_now`, `get_organizer`, `set_task_done`, `show_task`, `reply_later` |
 | `services` | `svc-*` (remoto `http(s)://*`) | **só** `service_notify` e `service_status` |
 | `preview` | `preview-bar` | `preview_state`, `preview_open_browser`, `preview_close` |
@@ -371,8 +372,18 @@ retângulo de `Split::panes` (área dividida pela proporção, divisor de 6 px,
 faixa de 3 px no alto); `App.svelte` repete o cálculo para o divisor e os
 leitores. `active` é a metade em foco; `Inner::on_screen` responde "está à
 vista" (avisos, hibernação, "não responde", não lidas vistas). Comandos
-`split_open`, `split_close`, `split_ratio`; a proporção fica no
+`split_open` (com `left` para o lado), `split_close`, `split_ratio`; a proporção fica no
 `localStorage` da interface.
+
+**Janela separada** (spec 32): `Inner.detached` (só na memória),
+`detached_focus` e `detached_hidden` (bloqueio). `apply_layout` não mexe
+nas contas separadas e esconde ou mostra as janelas delas no bloqueio;
+`activate` de uma conta separada traz a janela dela para a frente;
+`create_service_webview` entrega a webview nova à janela (`adopt`).
+`on_screen` inclui as separadas; `in_main` é só a janela principal; o aviso
+da conversa aberta some com a janela principal em foco (`in_main`) ou a
+janela separada da conta em foco. Comandos `detach_service`,
+`attach_service`.
 
 ### 8.3 Notificação de mensagem
 

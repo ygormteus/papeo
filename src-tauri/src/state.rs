@@ -229,6 +229,11 @@ pub struct Inner {
     pub active: Option<String>,
     /// Tela dividida; `None` = uma conta só.
     pub split: Option<Split>,
+    /// Contas em janela separada (spec 32) e a que tem a janela em foco.
+    pub detached: HashSet<String>,
+    pub detached_focus: Option<String>,
+    /// Janelas separadas escondidas pelo bloqueio.
+    pub detached_hidden: bool,
     pub area: Area,
     /// Um modal da interface está aberto: a webview ativa fica oculta para não cobri-lo.
     pub overlay: bool,
@@ -321,9 +326,14 @@ impl Inner {
     /// A conta abre no leitor de e-mail do Papeo (IMAP configurado), não no
     /// site. Sem senha ou com erro, o leitor mostra o problema e oferece o
     /// site.
-    /// A conta está à vista: a em foco ou a outra metade da tela dividida.
-    pub fn on_screen(&self, id: &str) -> bool {
+    /// Na janela principal: a em foco ou a outra metade da tela dividida.
+    pub fn in_main(&self, id: &str) -> bool {
         self.active.as_deref() == Some(id) || self.split.as_ref().is_some_and(|s| s.has(id))
+    }
+
+    /// A conta está à vista: na janela principal ou numa janela separada.
+    pub fn on_screen(&self, id: &str) -> bool {
+        self.in_main(id) || self.detached.contains(id)
     }
 
     /// A conta sai da tela (removida, hibernada, dados apagados): a tela
@@ -374,6 +384,9 @@ impl Inner {
             config,
             active: None,
             split: None,
+            detached: HashSet::new(),
+            detached_focus: None,
+            detached_hidden: false,
             area: Area::default(),
             overlay: false,
             window_focused: true,
@@ -517,13 +530,17 @@ impl Inner {
     /// A conversa aberta na conta à vista, com a janela em foco, conta como
     /// vista. Chamado a cada estado publicado.
     pub fn mark_seen(&mut self) {
-        if !self.window_focused || self.locked || self.overlay {
+        if self.locked {
             return;
         }
-        let mut shown: Vec<String> = self.active.iter().cloned().collect();
-        if let Some(split) = &self.split {
-            shown.extend([split.left.clone(), split.right.clone()]);
+        let mut shown: Vec<String> = Vec::new();
+        if self.window_focused && !self.overlay {
+            shown.extend(self.active.iter().cloned());
+            if let Some(split) = &self.split {
+                shown.extend([split.left.clone(), split.right.clone()]);
+            }
         }
+        shown.extend(self.detached_focus.iter().cloned());
         shown.sort();
         shown.dedup();
         for id in shown {
@@ -823,6 +840,9 @@ pub struct ServiceView {
     pub signature_rich: bool,
     /// Abre no leitor de e-mail do Papeo (o site só quando pedido).
     pub reader: bool,
+    /// Aberta numa janela separada (spec 32).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub detached: bool,
     /// Servidor de envio (SMTP) da conta, `host:porta`, para mostrar.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mail_smtp: Option<String>,
@@ -893,7 +913,9 @@ pub fn status_of(inner: &Inner, id: &str, loaded: bool) -> ServiceStatus {
     }
     // Só o serviço visível, com a janela em foco, é julgado: os ocultos têm
     // timers desacelerados pelo sistema e dariam falso alarme.
-    let visible = inner.on_screen(id) && inner.window_focused && !inner.overlay && !inner.locked;
+    let visible = !inner.locked
+        && ((inner.in_main(id) && inner.window_focused && !inner.overlay)
+            || inner.detached_focus.as_deref() == Some(id));
     let since = health.last_beat.unwrap_or(health.created);
     if visible
         && health.created.elapsed() > UNRESPONSIVE_AFTER
@@ -972,6 +994,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                     None
                 },
                 reader: inner.reader(&s.id),
+                detached: inner.detached.contains(&s.id),
                 mail_smtp: s.mail.as_ref().map(|m| {
                     let smtp = m.smtp();
                     format!("{}:{}", smtp.host, smtp.port)
@@ -1072,6 +1095,11 @@ pub fn publish(app: &AppHandle) -> Snapshot {
         *last = serde_json::to_string(&snap).unwrap_or_default();
         if let Ok(raw) = serde_json::value::RawValue::from_string(last.clone()) {
             let _ = app.emit_to(UI_WEBVIEW, STATE_EVENT, &raw);
+            // Leitores em janela separada (spec 32).
+            for s in snap.services.iter().filter(|s| s.detached && s.reader) {
+                let label = format!("{}{}", crate::detach::READER_PREFIX, s.service.id);
+                let _ = app.emit_to(label.as_str(), STATE_EVENT, &raw);
+            }
             // Fechada, a mini janela recebe o estado atual ao abrir.
             if crate::popover::is_shown() {
                 let _ = app.emit_to(crate::popover::POPOVER, STATE_EVENT, &raw);

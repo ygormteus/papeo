@@ -78,6 +78,8 @@ export interface ServiceView {
   probes?: ProbeView[];
   /** Tem assinatura formatada (spec 22); o HTML vem por `mailSignature`. */
   signatureRich?: boolean;
+  /** Aberta numa janela separada (spec 32). */
+  detached?: boolean;
 }
 
 /** Ponto de apoio procurado na página do site (spec 14). */
@@ -661,7 +663,11 @@ export const api = {
   setContentArea: (area: Area) => invoke<void>("set_content_area", { area }),
   setOverlay: (open: boolean) => invoke<void>("set_overlay", { open }),
   /** Tela dividida: `id` à direita da conta aberta (spec 30). */
-  splitOpen: (id: string, ratio: number) => invoke<Snapshot>("split_open", { id, ratio }),
+  /** Conta em janela separada (spec 32). */
+  detachService: (id: string) => invoke<Snapshot>("detach_service", { id }),
+  attachService: (id: string) => invoke<Snapshot>("attach_service", { id }),
+  /** `left`: `id` fica à esquerda (sem valor: à direita). */
+  splitOpen: (id: string, ratio: number, left = false) => invoke<Snapshot>("split_open", { id, ratio, left }),
   splitClose: () => invoke<Snapshot>("split_close"),
   splitRatio: (ratio: number) => invoke<void>("split_ratio", { ratio }),
   /** `null` desliga; 0 = até reativar; n = por n minutos. */

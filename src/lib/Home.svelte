@@ -209,8 +209,17 @@
   const mailUnread = $derived(mailboxes.reduce((a, s) => a + s.unread, 0));
 
   function mailState(s: ServiceView): string {
-    if (s.status === "loggedOut") return t("Desconectado: abra para entrar");
-    if (!s.loaded) return t("Hibernado: abra para atualizar");
+    // Pelo IMAP (leitor do Papeo ou avisos com o site hibernado): o número
+    // vem do servidor, sem depender da página do site estar carregada.
+    const imap = s.mailStatus?.state;
+    if (imap === "auth" || imap === "noPassword") return t("Senha recusada: abra para entrar de novo");
+    if (s.reader && imap === "connecting") return t("Conectando…");
+    if (s.reader && imap === "offline") return t("Sem conexão; tentando de novo");
+    // Só pelo site, sem IMAP: vale o estado da página.
+    if (!s.reader && imap !== "ok") {
+      if (s.status === "loggedOut") return t("Desconectado: abra para entrar");
+      if (!s.loaded) return t("Hibernado: abra para atualizar");
+    }
     if (s.chat) return t("Aberto: {nome}", { nome: s.chat });
     if (!s.unread) return t("Nenhuma não lida");
     return s.unread === 1 ? t("{n} não lida", { n: s.unread }) : t("{n} não lidas", { n: s.unread });

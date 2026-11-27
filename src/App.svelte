@@ -6,6 +6,7 @@
     ArrowUp,
     Bell,
     BellOff,
+    AppWindow,
     CalendarClock,
     Columns2,
     LogOut,
@@ -192,8 +193,43 @@
     splitPanes ?? (active?.reader ? [{ service: active, x: 0, width: contentWidth, single: true }] : null),
   );
 
-  function openBeside(service: ServiceView) {
-    run(api.splitOpen(service.id, savedRatio()));
+  function openBeside(service: ServiceView, left = false) {
+    run(api.splitOpen(service.id, savedRatio(), left));
+  }
+
+  // Escolher a conta da outra metade (botão da barra, menu da conta).
+  let splitPicker = $state<{ x: number; y: number } | null>(null);
+  function pickerItems(): MenuItem[] {
+    const split = snap.split;
+    const others = snap.services.filter(
+      (s) => s.inMode && s.id !== snap.active && !(split && (split.left === s.id || split.right === s.id)),
+    );
+    if (!others.length) return [{ label: t("Adicione outra conta para dividir a tela"), icon: UserPlus, run: openAdd }];
+    return others.map((s) => ({ label: s.name, icon: Columns2, run: () => openBeside(s) }));
+  }
+  async function splitWith(service: ServiceView, x: number, y: number) {
+    if (snap.active !== service.id && !(await run(api.activate(service.id)))) return;
+    splitPicker = { x, y };
+  }
+
+  // Conta arrastada da barra lateral: as metades viram áreas de soltar
+  // (as webviews somem durante o arraste para a interface receber o soltar).
+  let draggingId = $state<string | null>(null);
+  let dropSide = $state<"left" | "right" | "here" | null>(null);
+  const dropZones = $derived.by((): ("left" | "right" | "here")[] => {
+    if (!draggingId) return [];
+    if (snap.active && (snap.split || draggingId !== snap.active)) return ["left", "right"];
+    return ["here"];
+  });
+  function dropAccount(e: DragEvent, side: "left" | "right" | "here") {
+    e.preventDefault();
+    const id = draggingId ?? e.dataTransfer?.getData("text/plain") ?? "";
+    draggingId = null;
+    dropSide = null;
+    const service = snap.services.find((s) => s.id === id);
+    if (!service) return;
+    if (side === "here") run(api.activate(id));
+    else openBeside(service, side === "left");
   }
 
   /** Clique numa metade com leitor do Papeo: ela fica em foco. */
@@ -299,7 +335,7 @@
   // Com a barra recolhida, o menu de contexto não cabe à esquerda da
   // webview do serviço, que é nativa e ficaria por cima dele.
   const menuCovers = $derived(!!menu && collapsed);
-  const overlay = $derived(modalOpen || menuCovers);
+  const overlay = $derived(modalOpen || menuCovers || !!splitPicker || !!draggingId);
 
   $effect(() => {
     // A webview do serviço fica por cima da interface; some enquanto há um modal aberto.
@@ -482,6 +518,8 @@
   }
 
   function menuItems(service: ServiceView): MenuItem[] {
+    // Onde o menu abriu (a escolha da outra metade abre no mesmo lugar).
+    const at = menu;
     const index = snap.services.findIndex((s) => s.id === service.id);
     // Vizinhos visíveis na barra (contas fora do modo ficam ocultas).
     const shown = (s: ServiceView) => s.inMode || s.id === snap.active;
@@ -526,9 +564,20 @@
         run: () =>
           run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined, !!service.mail || !!service.talk)),
       },
-      ...(snap.active && snap.active !== service.id && !(snap.split && [snap.split.left, snap.split.right].includes(service.id))
-        ? [{ label: t("Abrir ao lado"), icon: Columns2, run: () => openBeside(service) }]
-        : []),
+      ...(snap.split && [snap.split.left, snap.split.right].includes(service.id)
+        ? []
+        : snap.active && snap.active !== service.id
+          ? [{ label: t("Abrir em tela dividida"), icon: Columns2, run: () => openBeside(service) }]
+          : [
+              {
+                label: t("Dividir a tela com…"),
+                icon: Columns2,
+                run: () => void splitWith(service, at?.x ?? 120, at?.y ?? 120),
+              },
+            ]),
+      service.detached
+        ? { label: t("Voltar para a janela principal"), icon: AppWindow, run: () => run(api.attachService(service.id)) }
+        : { label: t("Abrir em janela separada"), icon: AppWindow, run: () => run(api.detachService(service.id)) },
       { label: t("Personalizar…"), icon: Palette, run: () => (customizing = service) },
       ...(supportsMailWatch(service.kind)
         ? [{ label: t("E-mail por IMAP…"), icon: MailCheck, run: () => (mailingId = service.id) }]
@@ -627,8 +676,13 @@
         if (!snap.locked) org = o;
       }),
       onCommand(handleCommand),
-      onMailReveal((r) => (mailReveal = { ...r, n: (mailReveal?.n ?? 0) + 1 })),
-      onTalkReveal((r) => (talkReveal = { ...r, n: (talkReveal?.n ?? 0) + 1 })),
+      // Conta em janela separada: o leitor de lá cuida (aqui ficaria velho).
+      onMailReveal((r) => {
+        if (!snap.services.find((s) => s.id === r.id)?.detached) mailReveal = { ...r, n: (mailReveal?.n ?? 0) + 1 };
+      }),
+      onTalkReveal((r) => {
+        if (!snap.services.find((s) => s.id === r.id)?.detached) talkReveal = { ...r, n: (talkReveal?.n ?? 0) + 1 };
+      }),
       // Envio em espera que falhou: o e-mail fica guardado e volta ao editor
       // quando o leitor da conta estiver livre (aviso mesmo se ele já estiver
       // escrevendo outra mensagem).
@@ -715,6 +769,10 @@
     onsettings={() => openSettings()}
     onmenu={(service, x, y) => (menu = { service, x, y })}
     onmove={(id, to) => run(api.moveService(id, to))}
+    ondragaccount={(id) => {
+      draggingId = id;
+      if (!id) dropSide = null;
+    }}
     onupdate={() => run(api.installUpdate())}
     onnotes={() => showNotes("available")}
     ontasks={openTasks}
@@ -742,6 +800,8 @@
       diagnostics={snap.settings.diagnostics}
       ondiagnostics={() => openSettings({ tab: "sistema", label: "Modo de diagnóstico" })}
       onunsplit={snap.split ? () => run(api.splitClose()) : undefined}
+      onsplit={active && !snap.split ? (x, y) => (splitPicker = { x, y }) : undefined}
+      ondetach={active ? () => active && run(api.detachService(active.id)) : undefined}
     />
     {#snippet homeStats()}
       <HomeStats {snap} {run} onopen={select} />
@@ -755,6 +815,34 @@
       bind:clientWidth={contentWidth}
       aria-live="polite"
     >
+      {#if dropZones.length}
+        <div class="dropzones">
+          {#each dropZones as side (side)}
+            <div
+              class="dropzone"
+              class:over={dropSide === side}
+              role="region"
+              aria-label={side === "left" ? t("Abrir à esquerda") : side === "right" ? t("Abrir à direita") : t("Abrir aqui")}
+              ondragenter={(e) => {
+                e.preventDefault();
+                dropSide = side;
+              }}
+              ondragover={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                dropSide = side;
+              }}
+              ondragleave={() => dropSide === side && (dropSide = null)}
+              ondrop={(e) => dropAccount(e, side)}
+            >
+              <span>
+                <Columns2 size={20} />
+                {side === "left" ? t("Abrir à esquerda") : side === "right" ? t("Abrir à direita") : t("Abrir aqui")}
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
       {#snippet reader(service: ServiceView, focused: boolean)}
         {#key service.id}
         <!-- Zoom da conta também no leitor (letras e tudo, como no site). -->
@@ -887,6 +975,16 @@
     {/snippet}
   </main>
 </div>
+
+{#if splitPicker}
+  <ContextMenu
+    x={splitPicker.x}
+    y={splitPicker.y}
+    maxX={window.innerWidth}
+    items={pickerItems()}
+    onclose={() => (splitPicker = null)}
+  />
+{/if}
 
 {#if menu}
   <ContextMenu
@@ -1193,6 +1291,40 @@
   .pane-body {
     position: absolute;
     inset: 0;
+  }
+
+  .dropzones {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+  }
+
+  .dropzone {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+    transition: background 0.12s, border-color 0.12s;
+  }
+
+  .dropzone span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .dropzone.over {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--text);
   }
 
   .divider {

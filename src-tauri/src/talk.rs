@@ -355,6 +355,8 @@ async fn wait_login(
         revoke(&creds).await;
         return Ok(());
     }
+    // Site numa janela separada vira leitor: volta à principal (spec 32).
+    crate::detach::attach_quiet(app, id);
     // Conta antes da senha (como no e-mail): uma sincronização no meio não
     // apaga nada; sem a senha, só pede conectar de novo.
     let state = app.state::<AppState>();
@@ -377,6 +379,8 @@ async fn wait_login(
 
 /// Desconecta: revoga a senha de app (melhor esforço) e esquece a conta.
 pub async fn logout(app: AppHandle, id: String) -> Result<(), String> {
+    // Leitor numa janela separada: volta à principal (spec 32).
+    crate::detach::attach_quiet(&app, &id);
     if let Ok(c) = creds(&app, &id) {
         revoke(&c).await;
     }

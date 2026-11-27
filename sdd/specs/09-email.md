@@ -55,6 +55,11 @@ Gmail e Outlook não oferecem API de leitura sem auditoria paga.
   XOAUTH2), guardar cópia em Enviados quando o provedor não faz isso e
   marcar a original como respondida.
 - **R13.** O rascunho deve pertencer à conta em que foi começado.
+- **R14.** Conta no leitor do Papeo não aparece como "hibernada" nem
+  apagada na barra lateral e no Início (não há página a carregar): o
+  estado vem do IMAP (conectando, sem conexão, senha recusada ou o número
+  de não lidas). Conta pelo site com avisos por IMAP mostra o número do
+  servidor mesmo com o site hibernado.
 
 ## Design
 

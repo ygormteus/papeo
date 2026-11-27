@@ -4,6 +4,7 @@ import App from "./App.svelte";
 import Popover from "./lib/Popover.svelte";
 import PreviewBar from "./lib/PreviewBar.svelte";
 import AttachmentBar from "./lib/AttachmentBar.svelte";
+import DetachedReader from "./lib/DetachedReader.svelte";
 import { setLang } from "./lib/i18n.svelte";
 
 if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
@@ -23,7 +24,10 @@ const attachment = view === "attachment" || location.hash === "#attachment";
 // delas por aqui (`lang::set_script`, spec 20).
 (window as { __papeoSetLang?: typeof setLang }).__papeoSetLang = setLang;
 
-const app = mount(popover ? Popover : preview ? PreviewBar : attachment ? AttachmentBar : App, {
+// E o leitor de uma conta em janela separada (`src-tauri/src/detach.rs`, spec 32).
+const reader = view === "reader";
+
+const app = mount(popover ? Popover : preview ? PreviewBar : attachment ? AttachmentBar : reader ? DetachedReader : App, {
   target: document.getElementById("app")!,
 });
 

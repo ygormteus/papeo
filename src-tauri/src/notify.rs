@@ -93,7 +93,9 @@ pub fn deliver(
                 && in_mode
                 && !service.muted_until.is_some_and(|until| now_unix < until)
                 && settings.dnd_active(now_unix, minute);
-            let watching = focused && !inner.locked && inner.on_screen(&id);
+            let watching = !inner.locked
+                && ((focused && inner.in_main(&id))
+                    || inner.detached_focus.as_deref() == Some(id.as_str()));
             if only_silence && !watching {
                 let chat = papeo_core::clip(title, 80);
                 // O silêncio começou depois da última conferência (até 15 s):
@@ -131,7 +133,10 @@ pub fn deliver(
         } else {
             inner.config.settings.notification_preview
         };
-        if focused && !inner.locked && inner.on_screen(&id) {
+        let watching = !inner.locked
+            && ((focused && inner.in_main(&id))
+                || inner.detached_focus.as_deref() == Some(id.as_str()));
+        if watching {
             // Você já está olhando para este serviço.
             return Ok(());
         }

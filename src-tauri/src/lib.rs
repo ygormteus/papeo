@@ -4,6 +4,7 @@
 mod address_book;
 mod attachment;
 mod commands;
+mod detach;
 mod downloads;
 mod drive;
 mod idle;
@@ -211,6 +212,8 @@ fn reload_due(app: &AppHandle, window_visible: bool, away: bool) -> Vec<String> 
         .into_iter()
         .filter(|(_, bytes)| *bytes > limit)
         .map(|(id, _)| id)
+        // Janela separada: em uso mesmo com a principal escondida.
+        .filter(|id| !inner.detached.contains(id))
         .filter(|id| !window_visible || !inner.on_screen(id))
         .filter(|id| {
             inner
@@ -610,6 +613,8 @@ pub fn run() {
             commands::reload_service,
             commands::set_content_area,
             commands::set_overlay,
+            commands::detach_service,
+            commands::attach_service,
             commands::split_open,
             commands::split_close,
             commands::split_ratio,

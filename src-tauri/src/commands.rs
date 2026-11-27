@@ -71,6 +71,7 @@ pub async fn add_service(
 #[tauri::command]
 pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult {
     ensure_unlocked(&app)?;
+    crate::detach::attach_quiet(&app, &id);
     hibernate(&app, &id);
     // Talk: revoga a senha de app no servidor (antes de esquecer a conta).
     crate::talk::forget_remote(&app, &id);
@@ -189,6 +190,8 @@ pub async fn set_mail_account(
     account: Option<MailInput>,
 ) -> CmdResult {
     ensure_unlocked(&app)?;
+    // Site ↔ leitor numa janela separada: volta à principal antes (spec 32).
+    crate::detach::attach_quiet(&app, &id);
     let (kind, previous) = {
         let inner = state.lock();
         let service = inner.service(&id)?;
@@ -506,10 +509,29 @@ pub async fn activate_service(app: AppHandle, id: Option<String>) -> CmdResult {
     activate(&app, id)
 }
 
+/// Conta em janela separada (spec 32).
+#[tauri::command]
+pub async fn detach_service(app: AppHandle, id: String) -> CmdResult {
+    ensure_unlocked(&app)?;
+    crate::detach::detach(&app, &id)
+}
+
+/// Fecha a janela separada e mostra a conta na janela principal.
+#[tauri::command]
+pub async fn attach_service(app: AppHandle, id: String) -> CmdResult {
+    crate::detach::attach(&app, &id)
+}
+
 /// Tela dividida (spec 30): `id` ao lado da conta aberta.
 #[tauri::command]
-pub async fn split_open(app: AppHandle, id: String, ratio: f64) -> CmdResult {
-    crate::webviews::split_open(&app, &id, ratio)
+pub async fn split_open(
+    app: AppHandle,
+    id: String,
+    ratio: f64,
+    // Lado em que `id` fica (sem valor: à direita).
+    left: Option<bool>,
+) -> CmdResult {
+    crate::webviews::split_open(&app, &id, ratio, left == Some(true))
 }
 
 #[tauri::command]
@@ -574,6 +596,7 @@ pub async fn hibernate_service(
     state: State<'_, AppState>,
     id: String,
 ) -> CmdResult {
+    crate::detach::attach_quiet(&app, &id);
     let (was_active, other) = {
         let mut inner = state.lock();
         let was_active = inner.active.as_deref() == Some(id.as_str());
@@ -796,6 +819,9 @@ pub async fn set_preferences(
             if let Some(window) = app.get_window(label) {
                 let _ = window.set_content_protected(v);
             }
+        }
+        for window in crate::detach::windows(&app) {
+            let _ = window.set_content_protected(v);
         }
     }
     if prefs.open_links == Some(papeo_core::LinkTarget::Browser) {
@@ -1082,6 +1108,7 @@ pub async fn clear_service_data(
     id: String,
 ) -> CmdResult {
     ensure_unlocked(&app)?;
+    crate::detach::attach_quiet(&app, &id);
     hibernate(&app, &id);
     crate::talk::forget_remote(&app, &id);
     let (old, was_active) = state.update(|inner| {
@@ -1284,6 +1311,9 @@ pub async fn set_appearance(
         if let Some(window) = app.get_window(label) {
             let _ = window.set_theme(crate::window_theme(appearance));
         }
+    }
+    for window in crate::detach::windows(&app) {
+        let _ = window.set_theme(crate::window_theme(appearance));
     }
     Ok(publish(&app))
 }

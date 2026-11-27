@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-detach-service"
+description = "Enables the detach_service command without any pre-configured scope."
+commands.allow = ["detach_service"]
+
+[[permission]]
+identifier = "deny-detach-service"
+description = "Denies the detach_service command without any pre-configured scope."
+commands.deny = ["detach_service"]

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Interface do Papeo (webview local `ui`). As webviews dos serviços não entram aqui.",
-  "webviews": ["ui"],
+  "webviews": ["ui", "rd-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -68,6 +68,8 @@
     "allow-reload-service",
     "allow-set-content-area",
     "allow-set-overlay",
+    "allow-detach-service",
+    "allow-attach-service",
     "allow-split-open",
     "allow-split-close",
     "allow-split-ratio",

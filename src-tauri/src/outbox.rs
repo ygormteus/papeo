@@ -314,7 +314,13 @@ async fn fire(app: AppHandle, hold_id: String) {
         .unwrap_or_else(|e| e.into_inner())
         .sending
         .remove(&hold_id);
-    let _ = app.emit_to(UI_WEBVIEW, EVENT, outcome);
+    let _ = app.emit_to(UI_WEBVIEW, EVENT, &outcome);
+    // Leitor da conta em janela separada (spec 32).
+    let _ = app.emit_to(
+        format!("{}{}", crate::detach::READER_PREFIX, outcome.id).as_str(),
+        EVENT,
+        &outcome,
+    );
 }
 
 /// Desfaz: devolve o e-mail se ele ainda estava na espera. O arquivo fica

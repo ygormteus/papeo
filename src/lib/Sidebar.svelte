@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from "./i18n.svelte";
   import {
+    AppWindow,
     BellOff,
     Briefcase,
     CirclePlus,
@@ -37,6 +38,7 @@
     onsettings,
     onmenu,
     onmove,
+    ondragaccount,
     onupdate,
     onnotes,
     ontasks,
@@ -51,6 +53,9 @@
     onsettings: () => void;
     onmenu: (service: ServiceView, x: number, y: number) => void;
     onmove: (id: string, to: number) => void;
+    /** Arraste de uma conta começou (`id`) ou terminou (`null`): a tela
+     * mostra onde soltar para abrir em tela dividida. */
+    ondragaccount?: (id: string | null) => void;
     onupdate: () => void;
     onnotes: () => void;
     ontasks: () => void;
@@ -85,6 +90,7 @@
     dragId = service.id;
     e.dataTransfer?.setData("text/plain", service.id);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    ondragaccount?.(service.id);
   }
 
   function dragOver(e: DragEvent, index: number) {
@@ -107,6 +113,7 @@
   function dragEnd() {
     dragId = null;
     overIndex = null;
+    ondragaccount?.(null);
   }
 
   // Contador que acabou de subir (mensagem ou e-mail novo): destaque curto.
@@ -132,11 +139,15 @@
 
   const loadedCount = $derived(snap.services.filter((s) => s.loaded).length);
 
+  /** Dormindo de verdade: site hibernado. No leitor do Papeo (IMAP, Talk)
+   *  não há página para carregar; a conta está sempre em dia. */
+  const asleep = (s: ServiceView) => !s.loaded && !s.reader;
+
   /** Estado da conta no title: na barra recolhida é o único texto que sobra. */
   function stateNote(service: ServiceView): string {
     if (service.status === "unresponsive") return ` — ${t("não responde")}`;
     if (service.status === "loggedOut") return ` — ${t("desconectado")}`;
-    if (!service.loaded && service.mailStatus?.state === "ok") {
+    if (asleep(service) && service.mailStatus?.state === "ok") {
       const n = service.unread;
       const note =
         n === 1
@@ -146,7 +157,7 @@
             : t("hibernado, avisos por IMAP");
       return ` — ${note}`;
     }
-    if (!service.loaded) return ` — ${t("hibernado")}`;
+    if (asleep(service)) return ` — ${t("hibernado")}`;
     if (service.unread > 0) return ` — ${service.unread === 1 ? t("1 não lida") : t("{n} não lidas", { n: service.unread })}`;
     return "";
   }
@@ -267,7 +278,7 @@
         class="item account"
         class:active={snap.active === service.id}
         class:beside={snap.split !== null && snap.active !== service.id && (snap.split.left === service.id || snap.split.right === service.id)}
-        class:asleep={!service.loaded}
+        class:asleep={asleep(service)}
         class:dragging={dragId === service.id}
         class:drop-target={overIndex === i && dragId !== service.id}
         draggable="true"
@@ -282,7 +293,7 @@
         title={`${service.name}${(numberOf.get(service.id) ?? 99) <= 9 ? ` (${modKey}${numberOf.get(service.id)})` : ""}${stateNote(service)}`}
       >
         <span class="avatar-wrap">
-          <ServiceAvatar {service} size={24} dimmed={!service.loaded} />
+          <ServiceAvatar {service} size={24} dimmed={asleep(service)} />
           {#if service.status === "unresponsive"}
             <span class="dot danger" aria-hidden="true"></span>
           {:else if service.status === "loggedOut"}
@@ -300,11 +311,14 @@
               <span class="sub sub-danger">{t("Não responde")}</span>
             {:else if service.status === "loggedOut"}
               <span class="sub sub-warn">{t("Desconectado")}</span>
-            {:else if !service.loaded}
+            {:else if asleep(service)}
               <!-- Site hibernado, mas o IMAP continua avisando. -->
               <span class="sub">{service.mailStatus?.state === "ok" ? t("Avisos por IMAP") : t("Dormindo")}</span>
             {/if}
           </span>
+          {#if service.detached}
+            <AppWindow size={14} class="muted-icon" aria-label={t("Em janela separada")} />
+          {/if}
           {#if isMuted(service)}
             <BellOff size={14} class="muted-icon" aria-label={t("Notificações silenciadas")} />
           {/if}
@@ -312,7 +326,7 @@
             <span class="count" class:fresh={service.id in fresh} aria-label={service.unread === 1 ? t("1 não lida") : t("{n} não lidas", { n: service.unread })}>
               {service.unread > 99 ? "99+" : service.unread}
             </span>
-          {:else if service.loaded && (numberOf.get(service.id) ?? 99) <= 9}
+          {:else if !asleep(service) && (numberOf.get(service.id) ?? 99) <= 9}
             <kbd class="kbd">{modKey}{numberOf.get(service.id)}</kbd>
           {/if}
         {/if}

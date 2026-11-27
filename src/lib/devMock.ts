@@ -356,12 +356,22 @@ export function installDevMock() {
         return null;
       case "split_open": {
         const id = String(args.id);
-        if (!active || active === id) throw "Abra outra conta antes de dividir a tela.";
+        const left = args.left === true;
         const ratio = Math.min(0.75, Math.max(0.25, Number(args.ratio) || 0.5));
-        if (split?.left !== id && split?.right !== id) split = { left: active, right: id, ratio };
+        if (split) {
+          const other = left ? split.right : split.left;
+          if (other === id) split = { ...split, left: split.right, right: split.left };
+          else split = left ? { ...split, left: id } : { ...split, right: id };
+        } else {
+          if (!active || active === id) throw "Abra outra conta antes de dividir a tela.";
+          split = left ? { left: id, right: active, ratio } : { left: active, right: id, ratio };
+        }
         active = id;
         return snap();
       }
+      case "detach_service":
+      case "attach_service":
+        return snap();
       case "split_close":
         split = null;
         return snap();

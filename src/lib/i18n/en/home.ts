@@ -175,6 +175,8 @@ const en: Record<string, string> = {
   "Depois": "Later",
   "Atualizar e reiniciar": "Update and restart",
   "Entendi": "Got it",
+  "Senha recusada: abra para entrar de novo": "Password rejected: open to sign in again",
+  "Sem conexão; tentando de novo": "Offline; trying again",
 };
 
 export default en;
