@@ -221,7 +221,8 @@ por memória, links, anexos, captura de voz, respostas prontas, modo e
 expediente, hibernar fora do modo, moldura da conta, modo de diagnóstico e
 espera para desfazer o envio de e-mail (`mail_undo_secs`: 0, 5, 10 ou 20)
 resumo ao sair do silêncio (`silence_summary`) e idioma (`language`:
-`system`, `pt` ou `en`; arquivo antigo lê `system`).
+`system`, `pt` ou `en`; instalação nova começa em `system`, arquivo
+antigo sem o campo lê `pt`).
 
 ### 5.3 Organizador
 

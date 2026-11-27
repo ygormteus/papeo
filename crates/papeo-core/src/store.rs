@@ -39,7 +39,7 @@ struct StoreFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
     services: Vec<Service>,
-    #[serde(default)]
+    #[serde(default = "Settings::legacy")]
     settings: Settings,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pending_removal: Vec<String>,

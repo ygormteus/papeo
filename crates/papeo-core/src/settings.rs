@@ -60,7 +60,26 @@ pub struct Settings {
     /// (spec 17).
     pub silence_summary: bool,
     /// Idioma da interface (spec 20): o do sistema, português ou inglês.
+    /// Instalação nova segue o sistema; arquivo de antes da spec 20 (sem o
+    /// campo) fica em português, para quem já usa não mudar de idioma.
+    #[serde(default = "legacy_language")]
     pub language: crate::i18n::Language,
+}
+
+/// Idioma de um arquivo de antes da escolha de idioma: o app só falava
+/// português.
+fn legacy_language() -> crate::i18n::Language {
+    crate::i18n::Language::Pt
+}
+
+impl Settings {
+    /// Configurações de um arquivo antigo sem a seção inteira.
+    pub(crate) fn legacy() -> Self {
+        Self {
+            language: legacy_language(),
+            ..Self::default()
+        }
+    }
 }
 
 /// Esperas aceitas para desfazer o envio de e-mail, em segundos.
@@ -559,7 +578,14 @@ mod tests {
         assert!(!old.diagnostics);
         assert_eq!(old.mail_undo_secs, MAIL_UNDO_DEFAULT);
         assert!(old.silence_summary);
-        assert_eq!(old.language, crate::i18n::Language::System);
+        // Quem já usa continua em português; instalação nova segue o sistema.
+        assert_eq!(old.language, crate::i18n::Language::Pt);
+        assert_eq!(Settings::default().language, crate::i18n::Language::System);
+        let chosen: Settings = serde_json::from_str(r#"{"language":"system"}"#).unwrap();
+        assert_eq!(chosen.language, crate::i18n::Language::System);
+        let back: Settings =
+            serde_json::from_str(&serde_json::to_string(&Settings::default()).unwrap()).unwrap();
+        assert_eq!(back.language, crate::i18n::Language::System);
         let odd: Settings = serde_json::from_str(r#"{"mailUndoSecs":7}"#).unwrap();
         assert_eq!(odd.sanitized().mail_undo_secs, MAIL_UNDO_DEFAULT);
         let off: Settings = serde_json::from_str(r#"{"mailUndoSecs":0}"#).unwrap();

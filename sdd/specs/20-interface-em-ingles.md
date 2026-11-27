@@ -23,8 +23,12 @@ português: telas, bandeja, menu do macOS, notificações e erros.
 
 ## Requisitos
 
-- **R1.** O Papeo deve usar inglês quando o idioma do sistema não for
-  português, e português quando for (`pt`, `pt-BR`, `pt-PT`…).
+- **R1.** Numa instalação nova, o Papeo deve usar inglês quando o idioma
+  do sistema não for português, e português quando for (`pt`, `pt-BR`,
+  `pt-PT`…).
+- **R1a.** Quem já usava o Papeo antes desta versão deve continuar em
+  português depois de atualizar, até escolher outro idioma (decisão do
+  usuário, 2026-11-27).
 - **R2.** O Papeo deve oferecer em Configurações → Geral a opção
   "Idioma": Sistema (padrão), Português, English.
 - **R3.** Quando a pessoa trocar o idioma, a interface, a bandeja, a mini
@@ -58,9 +62,10 @@ português: telas, bandeja, menu do macOS, notificações e erros.
   reconstrói o menu do macOS na thread principal (fora do lock do estado)
   e publica o snapshot (a bandeja entra o idioma na assinatura do menu e
   na dica).
-- **Dados persistidos:** `Settings.language` (`"system" | "pt" | "en"`,
-  padrão `"system"`; arquivo antigo lê `"system"`; versão antiga ignora
-  o campo).
+- **Dados persistidos:** `Settings.language` (`"system" | "pt" | "en"`).
+  Instalação nova (sem `services.json`) começa em `"system"`; arquivo ou
+  backup de antes desta versão, sem o campo (ou sem a seção `settings`),
+  lê `"pt"` (R1a). Versão antiga ignora o campo.
 - **Comandos:** nenhum novo; `Snapshot` ganha `lang` (`"pt" | "en"`).
 - **Comparações:** o erro "sem pasta Rascunhos" continua em português no
   backend (o editor compara) e é traduzido na tela.
@@ -88,6 +93,7 @@ barras de prévia/anexo abertas ficavam no idioma antigo), corrigidos.
 | Req. | Evidência | macOS | Windows |
 |---|---|---|---|
 | R1 | teste `resolves_locale` (`i18n/mod.rs`) | não verificado (idioma real do sistema) | não verificado |
+| R1a | teste de arquivo antigo em `settings.rs` (sem o campo → `pt`; padrão → `system`) | não verificado (atualização real) | — |
 | R2 | `Settings.svelte` (linha Idioma); teste de arquivo antigo em `settings.rs`; `tests/settings-index.test.mjs` | não verificado | — |
 | R3 | `$effect(setLang)` em `App`/`Popover`; `menu::rebuild`; assinatura da bandeja; `lang::set_script` | não verificado | não verificado |
 | R4 | `tr`/`trf` nas mensagens do Rust; `fills_named_values` | não verificado | não verificado (clippy Windows só no CI) |
