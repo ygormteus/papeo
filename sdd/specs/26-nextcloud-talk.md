@@ -1,7 +1,7 @@
 # 26 — Nextcloud Talk
 
 - **Estado:** entregue
-- **Versão:** —
+- **Versão:** 0.16.0
 - **Relacionadas:** 01, 02, 19
 
 ## Problema

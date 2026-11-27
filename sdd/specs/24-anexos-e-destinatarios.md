@@ -1,7 +1,7 @@
 # 24 — Baixar todos os anexos e ver os destinatários
 
 - **Estado:** entregue
-- **Versão:** —
+- **Versão:** 0.16.0
 - **Relacionadas:** 09, 21
 
 ## Problema

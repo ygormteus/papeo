@@ -1,7 +1,7 @@
 # 25 — Endereços conhecidos e pastas em português
 
 - **Estado:** entregue
-- **Versão:** —
+- **Versão:** 0.16.0
 - **Relacionadas:** 09, 18, 20
 
 ## Problema

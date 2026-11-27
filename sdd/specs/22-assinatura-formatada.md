@@ -1,7 +1,7 @@
 # 22 — Assinatura formatada (HTML)
 
 - **Estado:** entregue
-- **Versão:** —
+- **Versão:** 0.16.0
 - **Relacionadas:** 09, 16, 18
 
 ## Problema

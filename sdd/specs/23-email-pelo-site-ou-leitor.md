@@ -1,7 +1,7 @@
 # 23 — E-mail pelo site ou pelo leitor
 
 - **Estado:** entregue
-- **Versão:** —
+- **Versão:** 0.16.0
 - **Relacionadas:** 01, 09
 
 ## Problema
