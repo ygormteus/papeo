@@ -1,4 +1,9 @@
 const en: Record<string, string> = {
+  "Assinaturas": "Signatures",
+  "Entra sozinha nas mensagens novas, respostas e encaminhamentos de cada conta, no leitor de e-mail do Papeo.": "Added automatically to new messages, replies and forwards from each account in Papeo's email reader.",
+  "Para usar assinatura, configure o e-mail numa conta de e-mail: clique com o botão direito nela e escolha \"E-mail por IMAP…\".": "To use a signature, set up email on an email account: right-click it and choose \"Email over IMAP…\".",
+  "Criar": "Create",
+  "Editar": "Edit",
   "Respostas prontas": "Quick replies",
   "Ao responder pelo Início ou pela barra de menus, digite": "When replying from Home or the menu bar, type",
   "e o atalho (ou parte do texto) para escolher uma delas.": "and the shortcut (or part of the text) to pick one.",
@@ -61,7 +66,7 @@ const en: Record<string, string> = {
   "Padrão": "Default",
   "Dica: durante uma gravação, dá para ligar o Isolamento de voz da Apple em Central de Controle → Modo do microfone.": "Tip: while recording, you can turn on Apple's Voice Isolation in Control Center → Mic Mode.",
   "Desfazer envio": "Undo send",
-  "No leitor de e-mail do Papeo, o e-mail espera este tempo antes de sair, com o botão \"Desfazer\". Se o app fechar durante a espera, ele não é enviado e volta ao editor. A assinatura fica na configuração do e-mail de cada conta.": "In Papeo's email reader, the email waits this long before going out, with an \"Undo\" button. If the app closes during the wait, it isn't sent and goes back to the editor. The signature is in each account's email settings.",
+  "No leitor de e-mail do Papeo, o e-mail espera este tempo antes de sair, com o botão \"Desfazer\". Se o app fechar durante a espera, ele não é enviado e volta ao editor.": "In Papeo's email reader, the email waits this long before going out, with an \"Undo\" button. If the app closes during the wait, it isn't sent and goes back to the editor.",
   "Não perturbe": "Do not disturb",
   "Silenciar todas as notificações": "Mute all notifications",
   "Ativo {ate}.": "Active {ate}.",

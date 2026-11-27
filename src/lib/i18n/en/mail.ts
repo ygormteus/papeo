@@ -1,6 +1,9 @@
 // Catálogo inglês da interface (mail) — ver `index.ts`.
 
 const en: Record<string, string> = {
+  "Assinatura de {conta}": "Signature for {conta}",
+  "Entra sozinha nas mensagens novas, respostas e encaminhamentos de {conta}, no leitor de e-mail do Papeo. Dá para apagar antes de enviar.": "Added automatically to new messages, replies and forwards from {conta} in Papeo's email reader. You can delete it before sending.",
+  "Sem assinatura": "No signature",
   "Abrir {nome}": "Open {nome}",
   "Salvar {nome} em Downloads": "Save {nome} to Downloads",
   "Mensagem": "Message",

@@ -35,6 +35,7 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import PinDialog from "./PinDialog.svelte";
+  import SignatureDialog from "./SignatureDialog.svelte";
   import Switch from "./Switch.svelte";
   import QuickReplies from "./QuickReplies.svelte";
   import { home, setConfirmFree } from "./homeState.svelte";
@@ -88,6 +89,10 @@
   } = $props();
 
   // Diagnóstico dos sites (spec 14): contas abertas com pontos relatados.
+  // Contas com o e-mail por IMAP: a assinatura de cada uma (spec 16).
+  const mailAccounts = $derived(snap.services.filter((s) => s.mail));
+  let signingId = $state<string | null>(null);
+  const signing = $derived(snap.services.find((s) => s.id === signingId && s.mail) ?? null);
   const probed = $derived(snap.services.filter((s) => s.loaded && s.probes?.length));
   let copied = $state(false);
   async function copyReport() {
@@ -518,7 +523,7 @@
           <div class="text">
             <span class="label">{t("Desfazer envio")}</span>
             <span class="hint">
-              {t("No leitor de e-mail do Papeo, o e-mail espera este tempo antes de sair, com o botão \"Desfazer\". Se o app fechar durante a espera, ele não é enviado e volta ao editor. A assinatura fica na configuração do e-mail de cada conta.")}
+              {t("No leitor de e-mail do Papeo, o e-mail espera este tempo antes de sair, com o botão \"Desfazer\". Se o app fechar durante a espera, ele não é enviado e volta ao editor.")}
             </span>
           </div>
           <select
@@ -532,7 +537,33 @@
             {/each}
           </select>
         </div>
+        <div class="row signatures">
+          <div class="text">
+            <span class="label">{t("Assinaturas")}</span>
+            <span class="hint">
+              {#if mailAccounts.length}
+                {t("Entra sozinha nas mensagens novas, respostas e encaminhamentos de cada conta, no leitor de e-mail do Papeo.")}
+              {:else}
+                {t("Para usar assinatura, configure o e-mail numa conta de e-mail: clique com o botão direito nela e escolha \"E-mail por IMAP…\".")}
+              {/if}
+            </span>
+            {#if mailAccounts.length}
+              <ul class="sig-list">
+                {#each mailAccounts as s (s.id)}
+                  <li>
+                    <span class="sig-name">{s.name}</span>
+                    <span class="sig-text">{s.mail?.signature ? s.mail.signature.split("\n")[0] : t("Sem assinatura")}</span>
+                    <button class="btn" onclick={() => (signingId = s.id)}>
+                      {s.mail?.signature ? t("Editar") : t("Criar")}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        </div>
       </section>
+      {#if signing}<SignatureDialog service={signing} onclose={() => (signingId = null)} />{/if}
     {:else if tab === "notificacoes"}
       <section class="card" aria-labelledby="s-notif">
         <h2 id="s-notif"><BellOff size={18} /> {t("Não perturbe")}</h2>
@@ -1175,6 +1206,36 @@
     font-weight: 500;
   }
 
+  .signatures .text {
+    flex: 1;
+    min-width: 0;
+  }
+  .sig-list {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sig-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .sig-name {
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .sig-text {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .hint {
     font-size: 13px;
     color: var(--text-muted);

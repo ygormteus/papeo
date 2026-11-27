@@ -26,11 +26,13 @@
     Send,
     ShieldAlert,
     Star,
+    Signature,
     Trash2,
     X,
   } from "@lucide/svelte";
   import { locale, t } from "./i18n.svelte";
   import MailComposer, { type ComposeStart } from "./MailComposer.svelte";
+  import SignatureDialog from "./SignatureDialog.svelte";
   import { loadUnsent, outbox, releaseReturned, startOutbox, takeReturned, undoSend } from "./outbox.svelte";
   import {
     api,
@@ -62,6 +64,8 @@
   } = $props();
 
   const PAGE = 50;
+  /** Editor da assinatura aberto (spec 16). */
+  let signing = $state(false);
   const ROLE_ICON: Record<MailRole, typeof Inbox> = {
     inbox: Inbox,
     drafts: FileText,
@@ -710,6 +714,7 @@
             <CircleAlert size={13} /> {status === "auth" ? t("Login recusado") : t("Sem conexão")}
           </p>
         {/if}
+        <button class="link-btn" onclick={() => (signing = true)}><Signature size={13} /> {t("Assinatura")}</button>
         <button class="link-btn" onclick={onsite}><Globe size={13} /> {t("Abrir no site")}</button>
       </div>
     </nav>
@@ -720,6 +725,7 @@
           {#each folders as f (f.path)}<option value={f.path}>{"  ".repeat(Math.min(f.depth, 4))}{f.name}</option>{/each}
         </select>
         <button class="icon-btn" onclick={() => compose()} aria-label={t("Escrever")} title={t("Escrever")}><PenLine size={15} /></button>
+        <button class="icon-btn" onclick={() => (signing = true)} aria-label={t("Assinatura")} title={t("Assinatura")}><Signature size={15} /></button>
         <button class="icon-btn" onclick={onsite} aria-label={t("Abrir no site")} title={t("Abrir no site")}><Globe size={15} /></button>
       </div>
       <form class="search" onsubmit={search} role="search">
@@ -923,6 +929,8 @@
   {/if}
 </div>
 
+
+{#if signing}<SignatureDialog {service} onclose={() => (signing = false)} />{/if}
 <style>
   .sending {
     position: absolute;

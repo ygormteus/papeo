@@ -48,7 +48,9 @@ digitada à mão.
 ### Assinatura
 
 - **R9.** O Papeo deve guardar uma assinatura de texto por conta de e-mail
-  (até 2000 caracteres), editada na configuração do IMAP da conta.
+  (até 2000 caracteres), editada na configuração do IMAP da conta, no
+  botão "Assinatura" do leitor de e-mail e em Configurações → Geral →
+  E-mail → Assinaturas (lista das contas com IMAP).
 - **R10.** Quando a pessoa começar uma mensagem nova, uma resposta ou um
   encaminhamento, o Papeo deve pôr a assinatura, depois de uma linha
   `-- `, entre o espaço do texto e a mensagem citada. A pessoa pode
@@ -114,6 +116,7 @@ digitada à mão.
 3. [x] Interface: barra de espera, Desfazer, rascunho devolvido, opção nas
    Configurações (R1–R4, R6).
 4. [x] Assinatura no `MailDialog` e no editor (R9, R10).
+5. [x] Assinatura também no leitor e nas Configurações (`SignatureDialog.svelte`, R9).
 
 ## Verificação
 
@@ -127,5 +130,5 @@ devolvido duas vezes numa corrida), corrigido com o conjunto `inEditor`.
 | R5 | `mailbox::validate` reusa o `build` do envio | não verificado | não verificado |
 | R6 | `settings.rs` (padrão 5, valor fora da lista volta a 5) | não verificado | — |
 | R8 | testes `file_round_trip_keeps_the_draft` (0600), `prune_drops_old_orphan_and_broken_files`, `ids_are_hex_only` | não verificado | não verificado (sem 0600) |
-| R9 | teste `signature_is_cleaned_and_optional` | não verificado | — |
+| R9 | teste `signature_is_cleaned_and_optional`; `SignatureDialog.svelte` (leitor e Configurações → E-mail → Assinaturas); mock | não verificado | — |
 | R10 | `MailReader.svelte` (nova, resposta, encaminhar) | não verificado | — |
