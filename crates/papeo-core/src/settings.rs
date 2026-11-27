@@ -53,7 +53,15 @@ pub struct Settings {
     /// Modo de diagnóstico: avisa na barra do topo quando um ponto de apoio
     /// do site some (spec 14).
     pub diagnostics: bool,
+    /// Espera antes de o leitor de e-mail enviar, para dar tempo de
+    /// desfazer (spec 16). 0 = envia na hora.
+    pub mail_undo_secs: u8,
 }
+
+/// Esperas aceitas para desfazer o envio de e-mail, em segundos.
+pub const MAIL_UNDO_CHOICES: [u8; 4] = [0, 5, 10, 20];
+/// Espera padrão para desfazer o envio.
+pub const MAIL_UNDO_DEFAULT: u8 = 5;
 
 /// Modo valendo agora: quais contas aparecem e notificam.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -356,6 +364,7 @@ impl Default for Settings {
             sleep_outside_mode: false,
             account_frame: true,
             diagnostics: false,
+            mail_undo_secs: MAIL_UNDO_DEFAULT,
         }
     }
 }
@@ -431,6 +440,9 @@ impl Settings {
             .map(|d| d.trim().to_owned())
             .filter(|d| !d.is_empty() && std::path::Path::new(d).is_absolute());
         self.lock.after_minutes = self.lock.after_minutes.min(LOCK_MAX_MINUTES);
+        if !MAIL_UNDO_CHOICES.contains(&self.mail_undo_secs) {
+            self.mail_undo_secs = MAIL_UNDO_DEFAULT;
+        }
         if self.reload_above_mb != 0 {
             self.reload_above_mb = self.reload_above_mb.clamp(RELOAD_MIN_MB, RELOAD_MAX_MB);
         }
@@ -538,6 +550,11 @@ mod tests {
         assert_eq!(old.mode, ModeChoice::All);
         assert!(old.account_frame);
         assert!(!old.diagnostics);
+        assert_eq!(old.mail_undo_secs, MAIL_UNDO_DEFAULT);
+        let odd: Settings = serde_json::from_str(r#"{"mailUndoSecs":7}"#).unwrap();
+        assert_eq!(odd.sanitized().mail_undo_secs, MAIL_UNDO_DEFAULT);
+        let off: Settings = serde_json::from_str(r#"{"mailUndoSecs":0}"#).unwrap();
+        assert_eq!(off.sanitized().mail_undo_secs, 0);
         assert_eq!(old.work_hours, WorkHours::default());
         let json = r#"{"id":"svc-0123456789ab","kind":"whatsapp","name":"W","url":"https://web.whatsapp.com/","session":"0123456789abcdef0123456789abcdef"}"#;
         let svc: Service = serde_json::from_str(json).unwrap();

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-unsent"
+description = "Enables the mail_unsent command without any pre-configured scope."
+commands.allow = ["mail_unsent"]
+
+[[permission]]
+identifier = "deny-mail-unsent"
+description = "Denies the mail_unsent command without any pre-configured scope."
+commands.deny = ["mail_unsent"]

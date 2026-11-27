@@ -11,7 +11,7 @@ use crate::secrets::{self, Saved};
 use crate::state::AppState;
 use papeo_core::mail::{ImapError, MailAccount, MailAuth};
 use papeo_core::mailbox::{self as core, Folder, MessageView, Page, Reader, Role};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -112,6 +112,15 @@ fn account_of(app: &AppHandle, id: &str) -> Result<(MailAccount, Saved), String>
     Ok((account, saved))
 }
 
+/// Mesma conexão: tudo igual menos a assinatura (que não muda o servidor).
+fn same_server(a: &MailAccount, b: &MailAccount) -> bool {
+    let strip = |m: &MailAccount| MailAccount {
+        signature: String::new(),
+        ..m.clone()
+    };
+    strip(a) == strip(b)
+}
+
 /// Roda `f` com a conexão de leitura da conta (abrindo ou reabrindo).
 fn with_reader<T>(
     app: &AppHandle,
@@ -140,14 +149,14 @@ fn with_reader_cached<T>(
     let mut slot = slot.lock().unwrap_or_else(|e| e.into_inner());
     // Conta trocada ou conexão parada há tempo e morta: abre outra.
     let stale = match slot.conn.as_mut() {
-        Some(conn) if conn.account != account => true,
+        Some(conn) if !same_server(&conn.account, &account) => true,
         Some(conn) if conn.used.elapsed() >= IDLE_CHECK => conn.reader.noop().is_err(),
         Some(_) => false,
         None => true,
     };
     if stale {
         if let Some(mut conn) = slot.conn.take() {
-            if conn.account != account {
+            if !same_server(&conn.account, &account) {
                 conn.reader.logout();
                 // Outra conta (novo login): os tokens guardados não valem.
                 slot.read = None;
@@ -363,7 +372,7 @@ fn mark_downloaded(path: &std::path::Path) {
     let _ = path;
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftAttachment {
     pub name: String,
@@ -372,7 +381,7 @@ pub struct DraftAttachment {
     pub data: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
     pub to: Vec<String>,
@@ -394,6 +403,19 @@ pub struct Draft {
     pub reply_uid: Option<u32>,
     #[serde(default)]
     pub attachments: Vec<DraftAttachment>,
+}
+
+/// Confere o e-mail como o envio conferiria (endereços, tamanhos, anexos),
+/// sem enviar: usado antes da espera para desfazer (spec 16, R5).
+pub fn validate(app: &AppHandle, id: &str, draft: &Draft) -> Result<(), String> {
+    let account = app
+        .state::<AppState>()
+        .lock()
+        .service(id)?
+        .mail
+        .clone()
+        .ok_or("Esta conta não tem o e-mail por IMAP configurado.")?;
+    build(&account, draft).map(|_| ())
 }
 
 /// Monta a mensagem (sem enviar).
@@ -594,6 +616,7 @@ mod tests {
             starttls: false,
             whole_inbox: false,
             auth: MailAuth::Password,
+            signature: String::new(),
         }
     }
 

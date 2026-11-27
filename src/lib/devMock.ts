@@ -1,6 +1,7 @@
 // Simula o backend no navegador comum (`pnpm dev` fora do Tauri) para
 // desenvolver a interface sem o app nativo. Nunca entra no app empacotado.
 // Mantém os mesmos padrões do backend (URLs, nomes numerados, validações).
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import notes020 from "../../release-notes/0.2.0.md?raw";
 import {
@@ -274,6 +275,10 @@ export function installDevMock() {
     };
   };
 
+  const held = new Map<string, ReturnType<typeof setTimeout>>();
+  const drafts = new Map<string, import("./api").MailDraft>();
+  let unsentTaken = false;
+
   mockIPC((cmd, payload) => {
     const args = (payload ?? {}) as Record<string, unknown>;
     const find = () => {
@@ -401,6 +406,59 @@ export function installDevMock() {
         const draft = args.draft as import("./api").MailDraft;
         if (!draft.to.length && !draft.cc.length && !draft.bcc.length) throw "Informe para quem enviar.";
         return undefined;
+      }
+      case "mail_send_later": {
+        // Simula a espera; assunto com "falha" volta com erro.
+        const draft = args.draft as import("./api").MailDraft;
+        if (!draft.to.length && !draft.cc.length && !draft.bcc.length) throw "Informe para quem enviar.";
+        const holdId = Math.random().toString(16).slice(2).padEnd(24, "0").slice(0, 24);
+        const id = String(args.id);
+        const secs = settings.mailUndoSecs;
+        held.set(
+          holdId,
+          setTimeout(() => {
+            held.delete(holdId);
+            const fail = /falha/i.test(draft.subject);
+            void emit("papeo://mail-send", {
+              holdId,
+              id,
+              error: fail ? "O servidor recusou o envio (simulado)." : null,
+              draft: fail ? draft : null,
+            });
+          }, secs * 1000),
+        );
+        drafts.set(holdId, draft);
+        return { holdId, secs };
+      }
+      case "mail_send_cancel": {
+        const holdId = String(args.holdId);
+        const timer = held.get(holdId);
+        if (timer === undefined) return null;
+        clearTimeout(timer);
+        held.delete(holdId);
+        return drafts.get(holdId) ?? null;
+      }
+      case "mail_unsent":
+        // `?naoenviado`: um e-mail que sobrou da sessão anterior.
+        if (new URLSearchParams(location.search).has("naoenviado") && !unsentTaken) {
+          unsentTaken = true;
+          return [
+            {
+              holdId: "0".repeat(24),
+              draft: { to: ["ana@exemplo.com"], cc: [], bcc: [], subject: "Proposta", body: "Segue a proposta.", attachments: [] },
+              maybeSent: false,
+              error: null,
+            },
+          ];
+        }
+        return [];
+      case "mail_unsent_taken":
+        return undefined;
+      case "set_mail_signature": {
+        const s = find();
+        if (!s.mail) throw "Esta conta não tem o e-mail por IMAP configurado.";
+        s.mail = { ...s.mail, signature: String(args.signature).trim().slice(0, 2000) || undefined };
+        return snap();
       }
       case "mail_show_site": {
         const s = find();
@@ -670,7 +728,7 @@ export function installDevMock() {
       default:
         return null;
     }
-  });
+  }, { shouldMockEvents: true });
 }
 
 function mk(

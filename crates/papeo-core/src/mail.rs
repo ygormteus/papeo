@@ -50,6 +50,24 @@ pub struct MailAccount {
     /// Como entrar: senha (padrão) ou login da Microsoft (Outlook).
     #[serde(default, skip_serializing_if = "MailAuth::is_password")]
     pub auth: MailAuth,
+    /// Assinatura em texto que o leitor põe nas mensagens (spec 16).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub signature: String,
+}
+
+/// Teto da assinatura, em caracteres.
+pub const SIGNATURE_MAX: usize = 2000;
+
+/// Assinatura limpa: sem controles (exceto quebra de linha e tab), sem
+/// espaços sobrando nas pontas, cortada no teto.
+pub fn normalize_signature(raw: &str) -> String {
+    let text: String = raw
+        .replace("\r\n", "\n")
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .take(SIGNATURE_MAX)
+        .collect();
+    text.trim().to_owned()
 }
 
 /// Forma de entrar no servidor IMAP.
@@ -122,6 +140,7 @@ impl MailAccount {
         if !self.is_gmail() {
             self.whole_inbox = false;
         }
+        self.signature = normalize_signature(&self.signature);
         Ok(self)
     }
 
@@ -1207,6 +1226,24 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
 
     #[test]
+    fn signature_is_cleaned_and_optional() {
+        // Conta gravada antes da assinatura: lê vazia e não grava o campo.
+        let old: MailAccount =
+            serde_json::from_str(r#"{"host":"imap.x.com","user":"a@x.com"}"#).unwrap();
+        assert_eq!(old.signature, "");
+        assert!(!serde_json::to_string(&old).unwrap().contains("signature"));
+        assert_eq!(
+            normalize_signature("  Ana\r\nPapeo\u{7}\t \n"),
+            "Ana\nPapeo"
+        );
+        let long = "a".repeat(SIGNATURE_MAX + 50);
+        assert_eq!(normalize_signature(&long).chars().count(), SIGNATURE_MAX);
+        let mut a = old.clone();
+        a.signature = " Ana ".into();
+        assert_eq!(a.sanitized().unwrap().signature, "Ana");
+    }
+
+    #[test]
     fn account_validation() {
         let account = MailAccount {
             host: "  IMAP.Gmail.com. ".into(),
@@ -1216,6 +1253,7 @@ mod tests {
             starttls: false,
             whole_inbox: false,
             auth: MailAuth::Password,
+            signature: String::new(),
         }
         .sanitized()
         .unwrap();
@@ -1433,6 +1471,7 @@ mod tests {
             starttls: false,
             whole_inbox: false,
             auth: MailAuth::Password,
+            signature: String::new(),
         };
         let s = account("imap.gmail.com", "a@gmail.com").smtp();
         assert_eq!(

@@ -445,6 +445,7 @@ mod tests {
             starttls: false,
             whole_inbox: false,
             auth: crate::mail::MailAuth::Password,
+            signature: String::new(),
         };
         let mut gmail = Service::new(ServiceKind::Gmail, None, None).unwrap();
         gmail.mail = Some(account.clone());

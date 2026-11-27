@@ -130,6 +130,7 @@ voz do WhatsApp).
 | `memory.rs`, `idle.rs` | Memória por conta (footprint no macOS, árvore de processos no Windows); tempo ocioso e tela apagada |
 | `mail.rs` | Vigia IMAP por conta (IDLE, avisos, contador, site hibernado) |
 | `mailbox.rs` | Leitor de e-mail (conexão de leitura por conta) e envio por SMTP (lettre) |
+| `outbox.rs` | Envios de e-mail em espera para desfazer (spec 16): fila na memória e em `outbox/` |
 | `microsoft.rs`, `drive.rs` | OAuth de app de computador (PKCE, loopback): Microsoft (IMAP/SMTP) e Google (Drive) |
 | `secrets.rs` | Senhas IMAP: arquivo 0600 (macOS) ou Gerenciador de Credenciais (Windows) |
 | `sync.rs`, `organizer.rs` | Sincronização das tarefas pelo Drive; tarefas, lembretes e anotações |
@@ -192,7 +193,8 @@ parâmetros `?demo`, `?modos`, `?alertas`, `?semhello`, `?update`,
 `hibernate_after_minutes`, `notifications`, `muted_until`, `color`,
 `emoji`, `media` (perguntar/permitir/bloquear), `zoom` (0,5–2,0),
 `user_agent`, `context` (trabalho, pessoal ou os dois) e `mail`
-(`MailAccount`, opcional).
+(`MailAccount`, opcional, com a `signature` do leitor, até 2000
+caracteres).
 
 Capacidades por tipo: resposta rápida e conversas recentes só em WhatsApp e
 Telegram (`supports_chat`). Vigia IMAP em Gmail, "Outro e-mail" e Outlook,
@@ -204,7 +206,8 @@ este só com o login da Microsoft.
 silencioso, pasta de downloads, bandeja e início escondido, prévia das
 notificações, proteção de tela, bloqueio, aparência, atualizações, recarga
 por memória, links, anexos, captura de voz, respostas prontas, modo e
-expediente, hibernar fora do modo, moldura da conta e modo de diagnóstico.
+expediente, hibernar fora do modo, moldura da conta, modo de diagnóstico e
+espera para desfazer o envio de e-mail (`mail_undo_secs`: 0, 5, 10 ou 20).
 
 ### 5.3 Organizador
 
@@ -227,6 +230,7 @@ Todos ficam na pasta de dados do app (`app_config_dir`/`app_data_dir`).
 | `webcrypto-master.key` | `webcrypto.rs` | macOS 15+, 16 bytes, 0600 |
 | Backup (`*.json` exportado) | `store.rs` | `kind: "papeo-backup"`, validação estrita, inclui o organizador visível, nunca o PIN nem as atualizações |
 | `app_cache_dir/anexos/` | `attachment.rs` | Temporários da visualização de anexos, apagados ao fechar e ao abrir |
+| `outbox/<id>.json` | `outbox.rs` | Em `app_local_data_dir`. E-mail em espera para desfazer (texto e anexos), modo 0600. Apagado quando o envio dá certo ou quando o e-mail volta ao editor (`mail_unsent_taken`); desfeito ou com falha fica até lá. Sobra de conta removida, sem o leitor ou com mais de 30 dias é apagada ao abrir. Nunca é enviado sozinho depois de reabrir. Fora do backup |
 
 **Regra de compatibilidade:** todo campo novo precisa de `serde(default)` e
 de um teste que leia o arquivo antigo. Um **valor novo de enum** (por
@@ -238,7 +242,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 84 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 89 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
@@ -266,6 +270,7 @@ certa, em `api.ts` e em `devMock.ts`.
 | `papeo://download` | andamento de download |
 | `papeo://sync` | estado da sincronização |
 | `papeo://mail-reveal` | abrir um e-mail no leitor a partir de um aviso |
+| `papeo://mail-send` | fim de um envio em espera: enviado, ou o erro com o e-mail de volta |
 | `papeo://preview`, `papeo://attachment` | estado das janelas de prévia e anexo |
 
 ### 7.3 Protocolo com os sites (`notification_shim.js`)
@@ -375,7 +380,10 @@ repetido e confere o nome no cabeçalho antes de enviar.
   própria. Imagens de fora ficam bloqueadas até "Mostrar imagens".
 - **Envio:** SMTP derivado do servidor IMAP (tabela de provedores, senão
   `imap.` → `smtp.` na 465). Grava cópia em Enviados quando o provedor não
-  faz isso sozinho.
+  faz isso sozinho. Com espera para desfazer (`outbox.rs`), o e-mail é
+  conferido, guardado em `outbox/` e enviado no fim da espera por um thread
+  próprio; quem tira a entrada da fila primeiro (o thread ou "Desfazer")
+  vence. Sobras de uma sessão anterior voltam ao editor da conta.
 
 ### 8.6 Laço de manutenção (a cada 15 s)
 

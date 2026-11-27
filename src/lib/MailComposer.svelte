@@ -8,6 +8,18 @@
     references?: string[];
     replyFolder?: string | null;
     replyUid?: number | null;
+    /** E-mail que voltou ao editor (desfeito, falhou ou sobrou). */
+    bcc?: string;
+    attachments?: { name: string; mime: string; data: string }[];
+    /** Aviso no topo do editor; `noticeError` o mostra como erro. */
+    notice?: string;
+    noticeError?: boolean;
+  }
+
+  /** Tamanho aproximado do conteúdo em base64. */
+  export function base64Size(data: string): number {
+    const pad = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((data.length * 3) / 4) - pad);
   }
 
   /** Separa endereços por vírgula ou ponto e vírgula (fora de aspas e `<>`). */
@@ -32,18 +44,23 @@
 
 <script lang="ts">
   import { LoaderCircle, Paperclip, Send, X } from "@lucide/svelte";
-  import { api, errorMessage, type ServiceView } from "./api";
+  import { api, errorMessage, type MailDraft, type ServiceView } from "./api";
+  import { queueSend } from "./outbox.svelte";
 
   let {
     service,
     start,
+    undoSecs,
     onclose,
     onsent,
   }: {
     service: ServiceView;
     start: ComposeStart;
+    /** Espera para desfazer; 0 envia na hora. */
+    undoSecs: number;
     onclose: () => void;
-    onsent: () => void;
+    /** `queued`: entrou na espera (ainda não saiu). */
+    onsent: (queued: boolean) => void;
   } = $props();
 
   const MAX_TOTAL = 25 * 1024 * 1024;
@@ -52,16 +69,23 @@
   let to = $state(start.to ?? "");
   // svelte-ignore state_referenced_locally
   let cc = $state(start.cc ?? "");
-  let bcc = $state("");
   // svelte-ignore state_referenced_locally
-  let showCc = $state(!!start.cc);
+  let bcc = $state(start.bcc ?? "");
+  // svelte-ignore state_referenced_locally
+  let showCc = $state(!!start.cc || !!start.bcc);
   // svelte-ignore state_referenced_locally
   let subject = $state(start.subject ?? "");
   // svelte-ignore state_referenced_locally
   let body = $state(start.body ?? "");
-  let files = $state<{ name: string; mime: string; size: number; data: string }[]>([]);
+  // svelte-ignore state_referenced_locally
+  let files = $state<{ name: string; mime: string; size: number; data: string }[]>(
+    (start.attachments ?? []).map((a) => ({ ...a, size: base64Size(a.data) })),
+  );
   let sending = $state(false);
-  let error = $state("");
+  // svelte-ignore state_referenced_locally
+  let error = $state(start.noticeError ? (start.notice ?? "") : "");
+  // svelte-ignore state_referenced_locally
+  const notice = start.noticeError ? "" : (start.notice ?? "");
   let picker: HTMLInputElement | undefined = $state();
   let bodyField: HTMLTextAreaElement | undefined = $state();
   let toField: HTMLInputElement | undefined = $state();
@@ -118,20 +142,26 @@
     if (sending || empty) return;
     sending = true;
     error = "";
+    const draft: MailDraft = {
+      to: splitAddresses(to),
+      cc: splitAddresses(cc),
+      bcc: splitAddresses(bcc),
+      subject,
+      body,
+      inReplyTo: start.inReplyTo ?? null,
+      references: start.references ?? [],
+      replyFolder: start.replyFolder ?? null,
+      replyUid: start.replyUid ?? null,
+      attachments: files.map(({ name, mime, data }) => ({ name, mime, data })),
+    };
     try {
-      await api.mailSend(service.id, {
-        to: splitAddresses(to),
-        cc: splitAddresses(cc),
-        bcc: splitAddresses(bcc),
-        subject,
-        body,
-        inReplyTo: start.inReplyTo ?? null,
-        references: start.references ?? [],
-        replyFolder: start.replyFolder ?? null,
-        replyUid: start.replyUid ?? null,
-        attachments: files.map(({ name, mime, data }) => ({ name, mime, data })),
-      });
-      onsent();
+      if (undoSecs > 0) {
+        await queueSend(service.id, draft);
+        onsent(true);
+      } else {
+        await api.mailSend(service.id, draft);
+        onsent(false);
+      }
     } catch (err) {
       error = errorMessage(err);
     } finally {
@@ -160,6 +190,7 @@
       <X size={18} />
     </button>
   </header>
+  {#if notice}<p class="notice" role="status">{notice}</p>{/if}
   <div class="fields">
     <label class="row">
       <span>Para</span>
@@ -296,6 +327,13 @@
     margin: 0;
     padding: 8px 16px;
     color: var(--danger);
+    font-size: 13px;
+  }
+  .notice {
+    margin: 0;
+    padding: 8px 16px;
+    background: var(--bg-subtle);
+    color: var(--text-muted);
     font-size: 13px;
   }
   footer {

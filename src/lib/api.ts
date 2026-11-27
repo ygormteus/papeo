@@ -114,6 +114,8 @@ export interface MailAccount {
   wholeInbox?: boolean;
   /** Outlook: login da Microsoft em vez de senha (ausente = senha). */
   auth?: "microsoft";
+  /** Assinatura em texto do leitor (ausente = sem assinatura). */
+  signature?: string;
 }
 
 /** Para ligar ou alterar; senha vazia mantém a guardada. */
@@ -327,6 +329,8 @@ export interface Settings {
   accountFrame: boolean;
   /** Modo de diagnóstico: aviso na barra do topo quando o site muda (spec 14). */
   diagnostics: boolean;
+  /** Espera antes de o leitor enviar um e-mail, para desfazer (0, 5, 10 ou 20 s). */
+  mailUndoSecs: number;
 }
 
 export interface QuickReply {
@@ -453,6 +457,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     sleepOutsideMode: false,
     accountFrame: true,
     diagnostics: false,
+    mailUndoSecs: 5,
   },
   dndActive: false,
   autostart: false,
@@ -511,6 +516,16 @@ export const api = {
     invoke<string>("mail_save_attachment", { id, folder, uid, index }),
   mailRevealFile: (path: string) => invoke<void>("mail_reveal_file", { path }),
   mailSend: (id: string, draft: MailDraft) => invoke<void>("mail_send", { id, draft }),
+  /** Confere e agenda o envio para o fim da espera (spec 16). */
+  mailSendLater: (id: string, draft: MailDraft) => invoke<MailHold>("mail_send_later", { id, draft }),
+  /** Desfaz o envio em espera; `null` se ele já saiu. */
+  mailSendCancel: (holdId: string) => invoke<MailDraft | null>("mail_send_cancel", { holdId }),
+  /** E-mails guardados da conta que ainda não voltaram ao editor. */
+  mailUnsent: (id: string) => invoke<MailUnsent[]>("mail_unsent", { id }),
+  /** O e-mail guardado voltou ao editor: apaga o arquivo. */
+  mailUnsentTaken: (holdId: string) => invoke<void>("mail_unsent_taken", { holdId }),
+  setMailSignature: (id: string, signature: string) =>
+    invoke<Snapshot>("set_mail_signature", { id, signature }),
   /** Conta com o leitor: mostra o site (`true`) ou volta ao leitor. */
   mailShowSite: (id: string, site: boolean) => invoke<Snapshot>("mail_show_site", { id, site }),
   setNotifications: (id: string, enabled: boolean) =>
@@ -559,6 +574,7 @@ export const api = {
         | "sleepOutsideMode"
         | "accountFrame"
         | "diagnostics"
+        | "mailUndoSecs"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
@@ -765,6 +781,33 @@ export interface MailDraft {
   replyUid?: number | null;
   /** Conteúdo em base64. */
   attachments: { name: string; mime: string; data: string }[];
+}
+
+export interface MailHold {
+  holdId: string;
+  secs: number;
+}
+
+/** E-mail guardado que ainda não voltou ao editor. */
+export interface MailUnsent {
+  holdId: string;
+  draft: MailDraft;
+  /** O app fechou durante o envio: pode ter saído. */
+  maybeSent: boolean;
+  /** O envio falhou com este erro. */
+  error: string | null;
+}
+
+/** Fim de um envio em espera: sem `error`, enviado; com erro, o e-mail volta. */
+export interface MailSendOutcome {
+  holdId: string;
+  id: string;
+  error: string | null;
+  draft: MailDraft | null;
+}
+
+export function onMailSend(cb: (o: MailSendOutcome) => void): Promise<UnlistenFn> {
+  return listen<MailSendOutcome>("papeo://mail-send", (e) => cb(e.payload));
 }
 
 /** Clique num aviso de e-mail de conta com o leitor: procura o assunto. */
@@ -997,6 +1040,14 @@ export const RELOAD_OPTIONS = [
   { mb: 2048, label: "Acima de 2 GB" },
   { mb: 3072, label: "Acima de 3 GB" },
   { mb: 4096, label: "Acima de 4 GB" },
+];
+
+/** Espera para desfazer o envio de e-mail (spec 16). */
+export const UNDO_OPTIONS = [
+  { secs: 0, label: "Desligado" },
+  { secs: 5, label: "5 segundos" },
+  { secs: 10, label: "10 segundos" },
+  { secs: 20, label: "20 segundos" },
 ];
 
 export const HIBERNATE_OPTIONS = [

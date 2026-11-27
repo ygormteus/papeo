@@ -30,6 +30,7 @@
     X,
   } from "@lucide/svelte";
   import MailComposer, { type ComposeStart } from "./MailComposer.svelte";
+  import { loadUnsent, outbox, releaseReturned, startOutbox, takeReturned, undoSend } from "./outbox.svelte";
   import {
     api,
     errorMessage,
@@ -44,6 +45,7 @@
   let {
     service,
     reveal,
+    undoSecs,
     onsite,
     onconfigure,
     ontoast,
@@ -51,6 +53,8 @@
     service: ServiceView;
     /** Assunto a procurar (clique num aviso); muda a cada pedido. */
     reveal: { query: string; n: number } | null;
+    /** Espera para desfazer o envio (spec 16); 0 envia na hora. */
+    undoSecs: number;
     onsite: () => void;
     onconfigure: () => void;
     ontoast: (text: string, action?: { label: string; run: () => void }) => void;
@@ -146,6 +150,68 @@
     closeMessage();
     void loadFolders().then(() => loadList());
   });
+
+  // Envios em espera (spec 16): e-mails devolvidos voltam ao editor. Ao abrir
+  // o leitor da conta, busca os guardados no disco (falhas fora da vista,
+  // sobras de uma sessão anterior); repetidos são ignorados pelo id.
+  let unsentFor = "";
+  $effect(() => {
+    const id = service.id;
+    if (unset || id === unsentFor) return;
+    unsentFor = id;
+    void startOutbox();
+    loadUnsent(id).catch(() => {});
+  });
+  $effect(() => {
+    if (composing || !outbox.returned.some((r) => r.id === service.id)) return;
+    const r = takeReturned(service.id);
+    if (!r) return;
+    const d = r.draft;
+    composing = {
+      to: d.to.join(", "),
+      cc: d.cc.join(", "),
+      bcc: d.bcc.join(", "),
+      subject: d.subject,
+      body: d.body,
+      inReplyTo: d.inReplyTo ?? null,
+      references: d.references ?? [],
+      replyFolder: d.replyFolder ?? null,
+      replyUid: d.replyUid ?? null,
+      attachments: d.attachments,
+      notice: r.notice,
+      noticeError: r.error,
+    };
+    releaseReturned(r);
+  });
+  let sentSeen = outbox.sent?.n ?? 0;
+  $effect(() => {
+    const done = outbox.sent;
+    if (!done || done.n === sentSeen) return;
+    sentSeen = done.n;
+    if (done.id !== service.id) return;
+    ontoast("E-mail enviado.");
+    if (current?.role === "sent") void loadList(true);
+  });
+  const waiting = $derived(outbox.pending.filter((p) => p.id === service.id));
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!waiting.length) return;
+    now = Date.now();
+    const t = setInterval(() => (now = Date.now()), 250);
+    return () => clearInterval(t);
+  });
+  let undoing = $state("");
+  async function undo(holdId: string) {
+    if (undoing) return;
+    undoing = holdId;
+    try {
+      if (!(await undoSend(holdId))) ontoast("O e-mail já foi enviado.");
+    } catch (err) {
+      ontoast(errorMessage(err));
+    } finally {
+      undoing = "";
+    }
+  }
 
   // O servidor avisou de mudança (contador mudou): atualiza a lista sem
   // piscar, se o usuário está vendo a primeira página da caixa.
@@ -359,6 +425,8 @@
   // ---- Escrever
 
   const me = $derived((service.mail?.user ?? "").toLowerCase());
+  // Assinatura acima do texto citado (spec 16, R10).
+  const signature = $derived(service.mail?.signature ? `\n\n-- \n${service.mail.signature}` : "");
 
   function addr(a: MailAddr) {
     if (!a.name) return a.email;
@@ -396,7 +464,7 @@
       to: toList.join(", "),
       cc: ccList.join(", "),
       subject: prefixed(m.subject, "Re"),
-      body: quote(m),
+      body: signature + quote(m),
       inReplyTo: m.messageId || null,
       references: m.references,
       replyFolder: folder,
@@ -416,15 +484,16 @@
     ]
       .filter(Boolean)
       .join("\n");
-    composing = { subject: prefixed(m.subject, "Enc"), body: `\n\n${head}\n\n${m.text}` };
+    composing = { subject: prefixed(m.subject, "Enc"), body: `${signature}\n\n${head}\n\n${m.text}` };
   }
 
   function compose(to = "") {
-    composing = { to };
+    composing = { to, body: signature };
   }
 
-  function sent() {
+  function sent(queued: boolean) {
     composing = null;
+    if (queued) return; // A barra de espera mostra; o aviso vem no fim.
     ontoast("E-mail enviado.");
     if (current?.role === "sent") void loadList(true);
   }
@@ -639,7 +708,7 @@
 
     <section class="view" aria-label="Mensagem">
       {#if composing}
-        <MailComposer {service} start={composing} onclose={() => (composing = null)} onsent={sent} />
+        <MailComposer {service} start={composing} {undoSecs} onclose={() => (composing = null)} onsent={sent} />
       {:else if opening}
         {@const s = messages.find((x) => x.uid === selected)}
         {#if s}
@@ -754,9 +823,57 @@
       {/if}
     </section>
   {/if}
+  {#if waiting.length}
+    <ul class="sending" aria-label="Envios em espera">
+      {#each waiting as p (p.holdId)}
+        <li role="status">
+          <Send size={14} />
+          <span class="what">Enviando <strong>{p.subject || "(sem assunto)"}</strong></span>
+          <span class="secs">em {Math.max(0, Math.ceil((p.until - now) / 1000))} s</span>
+          <button class="btn" onclick={() => undo(p.holdId)} disabled={undoing === p.holdId}>Desfazer</button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
 </div>
 
 <style>
+  .sending {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-width: calc(100% - 32px);
+  }
+  .sending li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.16);
+    font-size: 13px;
+  }
+  .sending .what {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sending .secs {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
   .reader {
     position: absolute;
     inset: 0;

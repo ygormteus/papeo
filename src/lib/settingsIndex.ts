@@ -33,6 +33,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Gravação de mensagens de voz",
     keywords: "áudio audio microfone whatsapp eco ruído atraso gravar voz mudo limpeza isolamento instantânea redução",
   },
+  { tab: "geral", label: "E-mail", keywords: "leitor imap enviar" },
+  { tab: "geral", label: "Desfazer envio", keywords: "e-mail email cancelar enviar espera arrependimento" },
   { tab: "notificacoes", label: "Silenciar todas as notificações", keywords: "não perturbe dnd mudo silêncio pausar" },
   { tab: "notificacoes", label: "Horário silencioso todos os dias", keywords: "não perturbe noite dormir agenda" },
   {

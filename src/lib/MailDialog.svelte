@@ -48,6 +48,8 @@
   let sleepSite = $state(start?.sleepSite ?? true);
   let starttls = $state(start?.starttls ?? false);
   let wholeInbox = $state(start?.wholeInbox ?? false);
+  // svelte-ignore state_referenced_locally
+  let signature = $state(start?.signature ?? "");
   // Provedor conhecido escolhido na lista (só preenche servidor e porta).
   // svelte-ignore state_referenced_locally
   let presetId = $state(MAIL_PRESETS.find((p) => p.host === (start?.host ?? initial?.host))?.id ?? "");
@@ -98,7 +100,7 @@
       user.trim() !== service.mail?.user ||
       Number(port) !== service.mail?.port,
   );
-  const dirty = $derived(
+  const accountDirty = $derived(
     !configured ||
       password !== "" ||
       host.trim().toLowerCase() !== service.mail?.host ||
@@ -108,9 +110,13 @@
       starttls !== (service.mail?.starttls ?? false) ||
       wholeInbox !== (service.mail?.wholeInbox ?? false),
   );
+  // A assinatura só existe com a conta configurada e é gravada à parte (não
+  // reconecta o IMAP).
+  const signatureDirty = $derived(configured && signature.trim() !== (service.mail?.signature ?? ""));
+  const dirty = $derived(accountDirty || signatureDirty);
   const canSave = $derived(
     microsoft
-      ? !busy && configured && sleepSite !== service.mail?.sleepSite
+      ? !busy && configured && (sleepSite !== service.mail?.sleepSite || signatureDirty)
       : !busy && dirty && !!host.trim() && !!user.trim() && (!needsPassword || password !== ""),
   );
 
@@ -137,7 +143,10 @@
       error = "";
       try {
         // Só o site hibernado muda; o resto vem do login.
-        await onsave({ host: service.mail!.host, port: service.mail!.port, user: service.mail!.user, sleepSite });
+        if (sleepSite !== service.mail?.sleepSite) {
+          await onsave({ host: service.mail!.host, port: service.mail!.port, user: service.mail!.user, sleepSite });
+        }
+        await saveSignature();
         saved = true;
       } catch (err) {
         error = errorMessage(err);
@@ -154,6 +163,11 @@
     busy = true;
     error = "";
     try {
+      if (!accountDirty) {
+        await saveSignature();
+        saved = true;
+        return;
+      }
       await onsave({
         host: host.trim(),
         port: portNumber,
@@ -164,12 +178,19 @@
         wholeInbox: gmail && wholeInbox,
       });
       password = "";
+      await saveSignature();
       saved = true;
     } catch (err) {
       error = errorMessage(err);
     } finally {
       busy = false;
     }
+  }
+
+  async function saveSignature() {
+    if (!signatureDirty) return;
+    await api.setMailSignature(service.id, signature);
+    signature = signature.trim();
   }
 
   async function turnOff() {
@@ -403,6 +424,16 @@
       </div>
     </section>
 
+    {#if configured}
+      <section aria-label="Assinatura">
+        <label class="signature">
+          <span class="toggle-label">Assinatura</span>
+          <textarea class="input" bind:value={signature} rows="3" maxlength="2000" placeholder="Ana Souza&#10;Loja Exemplo · (11) 0000-0000"></textarea>
+          <span class="note">Entra nas mensagens escritas no leitor do Papeo, acima do texto citado. Dá para apagar antes de enviar.</span>
+        </label>
+      </section>
+    {/if}
+
     <p class="privacy">
       {microsoft ? "O acesso" : "A senha"} fica só neste computador, fora do backup e da sincronização. O Papeo lê só o
       remetente e o assunto dos e-mails novos e não marca nada como lido.
@@ -633,6 +664,18 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
+  }
+
+  .signature {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .signature textarea {
+    resize: vertical;
+    min-height: 64px;
+    font: inherit;
   }
 
   .toggle-label {

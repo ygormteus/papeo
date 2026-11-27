@@ -237,6 +237,10 @@ pub async fn set_mail_account(
         starttls: input.starttls,
         whole_inbox: input.whole_inbox,
         auth: papeo_core::mail::MailAuth::Password,
+        signature: previous
+            .as_ref()
+            .map(|m| m.signature.clone())
+            .unwrap_or_default(),
     }
     .sanitized()?;
     let secret = input.password.filter(|p| !p.is_empty());
@@ -355,6 +359,10 @@ pub async fn mail_microsoft_login(
         starttls: false,
         whole_inbox: false,
         auth: MailAuth::Microsoft,
+        signature: previous
+            .as_ref()
+            .map(|m| m.signature.clone())
+            .unwrap_or_default(),
     }
     .sanitized()?;
     // Conta primeiro, token depois (como em `set_mail_account`).
@@ -655,6 +663,7 @@ pub struct Preferences {
     sleep_outside_mode: Option<bool>,
     account_frame: Option<bool>,
     diagnostics: Option<bool>,
+    mail_undo_secs: Option<u8>,
     voice_capture: Option<papeo_core::VoiceCapture>,
 }
 
@@ -699,6 +708,10 @@ pub async fn set_preferences(
         }
         if let Some(v) = prefs.voice_capture {
             s.voice_capture = v;
+        }
+        if let Some(v) = prefs.mail_undo_secs {
+            s.mail_undo_secs = v;
+            *s = std::mem::take(s).sanitized();
         }
         if let Some(v) = prefs.reload_above_mb {
             s.reload_above_mb = v;
@@ -1267,6 +1280,63 @@ pub async fn mail_save_attachment(
 pub async fn mail_send(app: AppHandle, id: String, draft: crate::mailbox::Draft) -> CmdResult<()> {
     ensure_unlocked(&app)?;
     crate::mailbox::send(app, id, draft).await
+}
+
+/// Envio com espera para desfazer (spec 16): confere, guarda e agenda.
+#[tauri::command]
+pub async fn mail_send_later(
+    app: AppHandle,
+    id: String,
+    draft: crate::mailbox::Draft,
+) -> CmdResult<crate::outbox::Hold> {
+    ensure_unlocked(&app)?;
+    crate::outbox::hold(&app, id, draft)
+}
+
+/// Desfaz um envio em espera; `None` se ele já saiu.
+#[tauri::command]
+pub async fn mail_send_cancel(
+    app: AppHandle,
+    hold_id: String,
+) -> CmdResult<Option<crate::mailbox::Draft>> {
+    ensure_unlocked(&app)?;
+    crate::outbox::cancel(&app, &hold_id)
+}
+
+/// E-mails guardados da conta que ainda não voltaram ao editor (desfeitos,
+/// com falha ou que ficaram na espera quando o app fechou).
+#[tauri::command]
+pub async fn mail_unsent(app: AppHandle, id: String) -> CmdResult<Vec<crate::outbox::Unsent>> {
+    ensure_unlocked(&app)?;
+    crate::outbox::unsent(&app, &id)
+}
+
+/// O e-mail guardado voltou ao editor: apaga o arquivo.
+#[tauri::command]
+pub async fn mail_unsent_taken(app: AppHandle, hold_id: String) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::outbox::taken(&app, &hold_id)
+}
+
+/// Assinatura do leitor de e-mail da conta (spec 16).
+#[tauri::command]
+pub async fn set_mail_signature(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    signature: String,
+) -> CmdResult {
+    ensure_unlocked(&app)?;
+    state.update(|inner| {
+        let mail = inner
+            .service_mut(&id)?
+            .mail
+            .as_mut()
+            .ok_or("Esta conta não tem o e-mail por IMAP configurado.")?;
+        mail.signature = papeo_core::mail::normalize_signature(&signature);
+        Ok(())
+    })?;
+    Ok(publish(&app))
 }
 
 /// Conta com o leitor: mostra o site (`true`) ou volta ao leitor.

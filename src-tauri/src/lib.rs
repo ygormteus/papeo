@@ -16,6 +16,7 @@ mod microsoft;
 mod notifications;
 mod notify;
 mod organizer;
+mod outbox;
 mod popover;
 mod preview;
 mod reply;
@@ -514,6 +515,7 @@ pub fn run() {
                 secrets::init(handle, &app.path().app_local_data_dir()?);
                 mail::init(handle);
                 mailbox::init(handle);
+                outbox::init(handle, &app.path().app_local_data_dir()?);
                 notifications::init(handle);
                 tray::install(handle)?;
                 #[cfg(target_os = "macos")]
@@ -544,6 +546,11 @@ pub fn run() {
             commands::mail_delete,
             commands::mail_save_attachment,
             commands::mail_send,
+            commands::mail_send_later,
+            commands::mail_send_cancel,
+            commands::mail_unsent,
+            commands::mail_unsent_taken,
+            commands::set_mail_signature,
             commands::mail_show_site,
             commands::mail_reveal_file,
             commands::set_notifications,

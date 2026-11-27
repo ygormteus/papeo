@@ -19,6 +19,7 @@
     FolderOpen,
     HardDrive,
     Link,
+    Mail,
     MemoryStick,
     Mic,
     Power,
@@ -44,6 +45,7 @@
     MODE_CHOICE_OPTIONS,
     PREVIEW_OPTIONS,
     RELOAD_OPTIONS,
+    UNDO_OPTIONS,
     LINK_OPTIONS,
     THEME_OPTIONS,
     api,
@@ -484,6 +486,29 @@
               microfone.
             </p>
           {/if}
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="s-mail">
+        <h2 id="s-mail"><Mail size={18} /> E-mail</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Desfazer envio</span>
+            <span class="hint">
+              No leitor de e-mail do Papeo, o e-mail espera este tempo antes de sair, com o botão "Desfazer". Se o app fechar
+              durante a espera, ele não é enviado e volta ao editor. A assinatura fica na configuração do e-mail de cada conta.
+            </span>
+          </div>
+          <select
+            class="select"
+            aria-label="Desfazer envio"
+            value={settings.mailUndoSecs}
+            onchange={(e) => run(api.setPreferences({ mailUndoSecs: Number(e.currentTarget.value) }))}
+          >
+            {#each UNDO_OPTIONS as option (option.secs)}
+              <option value={option.secs}>{option.label}</option>
+            {/each}
+          </select>
         </div>
       </section>
     {:else if tab === "notificacoes"}

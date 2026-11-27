@@ -51,6 +51,7 @@
     onCommand,
     onDownload,
     onMailReveal,
+    onMailSend,
     onOrganizer,
     onState,
     fresher,
@@ -499,6 +500,21 @@
       }),
       onCommand(handleCommand),
       onMailReveal((r) => (mailReveal = { ...r, n: (mailReveal?.n ?? 0) + 1 })),
+      // Envio em espera que falhou: o e-mail fica guardado e volta ao editor
+      // quando o leitor da conta estiver livre (aviso mesmo se ele já estiver
+      // escrevendo outra mensagem).
+      onMailSend((o) => {
+        if (!o.error || snap.locked) return;
+        const account = snap.services.find((x) => x.id === o.id);
+        const here = active?.id === o.id && active.reader;
+        showToast(
+          {
+            text: `Não deu para enviar o e-mail${account ? ` (${account.name})` : ""}. Ele volta ao editor da conta.`,
+            action: account && !here ? { label: "Abrir", run: () => run(api.activate(o.id)) } : undefined,
+          },
+          8000,
+        );
+      }),
       onDownload((d) =>
         !snap.locked &&
         showToast(
@@ -611,6 +627,7 @@
         <MailReader
           service={active}
           reveal={mailReveal?.id === active.id ? mailReveal : null}
+          undoSecs={snap.settings.mailUndoSecs}
           onsite={() => run(api.mailShowSite(active.id, true))}
           onconfigure={() => (mailingId = active.id)}
           ontoast={(text, action) => showToast({ text, action }, action ? 8000 : 4000)}

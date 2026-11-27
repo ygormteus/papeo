@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-send-later"
+description = "Enables the mail_send_later command without any pre-configured scope."
+commands.allow = ["mail_send_later"]
+
+[[permission]]
+identifier = "deny-mail-send-later"
+description = "Denies the mail_send_later command without any pre-configured scope."
+commands.deny = ["mail_send_later"]
