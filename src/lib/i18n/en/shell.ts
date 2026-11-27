@@ -134,6 +134,9 @@ const en: Record<string, string> = {
   "Bloquear agora ({atalho}L)": "Lock now ({atalho}L)",
   "Tema: {atual} (clique para {proximo})": "Theme: {atual} (click for {proximo})",
   "Tema: {atual}. Mudar para {proximo}": "Theme: {atual}. Switch to {proximo}",
+  "No servidor da sua empresa": "On your company's server",
+  "cloud.suaempresa.com.br": "cloud.yourcompany.com",
+  "O endereço do seu Nextcloud (o mesmo que você abre no navegador). O Papeo abre direto no Talk.": "Your Nextcloud address (the one you open in the browser). Papeo opens Talk directly.",
 };
 
 export default en;

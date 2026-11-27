@@ -26,6 +26,8 @@ pub enum ServiceKind {
     /// Microsoft Teams na web: trabalho/escola (padrão) ou pessoal, pelo
     /// endereço informado ao adicionar.
     Teams,
+    /// Nextcloud Talk no servidor da pessoa (spec 26).
+    Nextcloud,
 }
 
 impl ServiceKind {
@@ -67,6 +69,7 @@ impl ServiceKind {
             Self::Outlook => Some("Outlook"),
             Self::Slack => Some("Slack"),
             Self::Teams => Some("Teams"),
+            Self::Nextcloud => Some("Nextcloud Talk"),
             Self::Email | Self::Custom => None,
         }
     }
@@ -80,7 +83,7 @@ impl ServiceKind {
             Self::Outlook => Some("https://outlook.live.com/mail/"),
             Self::Slack => Some("https://app.slack.com/client"),
             Self::Teams => Some("https://teams.microsoft.com/v2/"),
-            Self::Email | Self::Custom => None,
+            Self::Email | Self::Custom | Self::Nextcloud => None,
         }
     }
 }
@@ -164,6 +167,7 @@ impl Service {
         url: Option<String>,
     ) -> Result<Self, String> {
         let url = match url.map(|u| u.trim().to_owned()).filter(|u| !u.is_empty()) {
+            Some(raw) if kind == ServiceKind::Nextcloud => talk_url(&normalize_url(&raw)?),
             Some(raw) => normalize_url(&raw)?,
             None => kind
                 .default_url()
@@ -370,6 +374,31 @@ pub(crate) fn normalize_url(raw: &str) -> Result<String, String> {
     }
 }
 
+/// Endereço do Talk no servidor Nextcloud informado (spec 26): aceita o
+/// servidor ("cloud.empresa.com", com ou sem pasta) ou qualquer página
+/// dele (Arquivos, uma conversa) e leva à lista de conversas.
+fn talk_url(normalized: &str) -> String {
+    let Ok(mut url) = url::Url::parse(normalized) else {
+        return normalized.to_owned();
+    };
+    let path = url.path().to_owned();
+    // Já é do Talk (lista ou conversa `/call/<token>`): fica.
+    if path.contains("/apps/spreed") || path.contains("/call/") {
+        return normalized.to_owned();
+    }
+    // Página de outro app: o que vem antes de `/index.php` ou `/apps/`.
+    let base = ["/index.php", "/apps/", "/login"]
+        .iter()
+        .filter_map(|marker| path.find(marker))
+        .min()
+        .map_or(path.as_str(), |at| &path[..at]);
+    let base = base.trim_end_matches('/');
+    url.set_path(&format!("{base}/index.php/apps/spreed/"));
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
+
 pub(crate) fn random_hex() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -384,6 +413,53 @@ pub(crate) fn random_hex() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nextcloud_talk_url() {
+        let talk = |raw: &str| {
+            Service::new(ServiceKind::Nextcloud, None, Some(raw.into()))
+                .unwrap()
+                .url
+        };
+        assert!(Service::new(ServiceKind::Nextcloud, None, None).is_err());
+        assert_eq!(
+            talk("cloud.empresa.com"),
+            "https://cloud.empresa.com/index.php/apps/spreed/"
+        );
+        assert_eq!(
+            talk("https://empresa.com/nextcloud/"),
+            "https://empresa.com/nextcloud/index.php/apps/spreed/"
+        );
+        assert_eq!(
+            talk("https://cloud.empresa.com/index.php/apps/files/?dir=/x"),
+            "https://cloud.empresa.com/index.php/apps/spreed/"
+        );
+        assert_eq!(
+            talk("https://cloud.empresa.com/apps/dashboard/"),
+            "https://cloud.empresa.com/index.php/apps/spreed/"
+        );
+        assert_eq!(
+            talk("https://cloud.empresa.com/login?redirect_url=/x"),
+            "https://cloud.empresa.com/index.php/apps/spreed/"
+        );
+        // Já no Talk: fica como está.
+        assert_eq!(
+            talk("https://cloud.empresa.com/apps/spreed/"),
+            "https://cloud.empresa.com/apps/spreed/"
+        );
+        assert_eq!(
+            talk("https://cloud.empresa.com/call/abc123"),
+            "https://cloud.empresa.com/call/abc123"
+        );
+        let s = Service::new(ServiceKind::Nextcloud, None, Some("cloud.x.com".into())).unwrap();
+        assert_eq!(s.name, "Nextcloud Talk");
+        assert_eq!(s.media_policy(), MediaPolicy::Allow);
+        assert!(!ServiceKind::Nextcloud.supports_chat() && !ServiceKind::Nextcloud.is_email());
+        assert_eq!(
+            serde_json::to_string(&ServiceKind::Nextcloud).unwrap(),
+            r#""nextcloud""#
+        );
+    }
 
     #[test]
     fn new_service_validates_url() {

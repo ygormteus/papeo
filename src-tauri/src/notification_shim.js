@@ -98,6 +98,9 @@
     if (host === "mail.google.com") return "gmail";
     if (OUTLOOK_HOSTS.includes(host)) return "outlook";
     if (window.rcmail || document.querySelector("#rcmloginuser")) return "roundcube";
+    // Nextcloud (Talk, spec 26) roda no servidor de cada um: toda página dele
+    // traz o token no <head>.
+    if (document.head?.hasAttribute("data-requesttoken")) return "nextcloud";
     return host;
   };
   const visible = (el) => Boolean(el && el.getClientRects?.().length);
@@ -110,6 +113,8 @@
     "web.telegram.org": "#auth-qr-form, #auth-phone-number-form, #auth-code-form, #auth-password-form",
     "discord.com": '[class*="authBox"]',
     roundcube: "#rcmloginuser",
+    // Páginas de visitante do Nextcloud (login, segundo fator).
+    nextcloud: "#body-login",
   };
   const loggedOut = () => {
     // Gmail desconectado cai nas páginas de login do Google.
@@ -185,6 +190,16 @@
         );
       if (!inbox) return undefined;
       return digits(inbox.textContent) ?? digits(inbox.getAttribute("aria-label")) ?? 0;
+    },
+    // Nextcloud Talk: soma dos números das conversas na lista. Fora do Talk
+    // ou sem a lista: vale o título.
+    nextcloud: () => {
+      if (!/\/(apps\/spreed|call)\b/.test(location.pathname || "")) return undefined;
+      const list = document.querySelector(".left-sidebar, ul.conversations, [class*='conversations-list']");
+      if (!list) return undefined;
+      let total = 0;
+      for (const bubble of list.querySelectorAll(".counter-bubble__counter")) total += digits(bubble.textContent) ?? 0;
+      return total;
     },
     roundcube: () => {
       const rc = window.rcmail;

@@ -204,7 +204,7 @@ parâmetros `?demo`, `?modos`, `?alertas`, `?semhello`, `?update`,
 
 `Service` (`service.rs`): `id` (`svc-` + 12 hex, vira rótulo de webview),
 `kind` (`whatsapp`, `telegram`, `discord`, `gmail`, `outlook`, `email`,
-`custom`, `slack`, `teams`), `name` (até 40), `url`, `session` (32 hex, vira nome de pasta),
+`custom`, `slack`, `teams`, `nextcloud`), `name` (até 40), `url`, `session` (32 hex, vira nome de pasta),
 `hibernate_after_minutes`, `notifications`, `muted_until`, `color`,
 `emoji`, `media` (perguntar/permitir/bloquear), `zoom` (0,5–2,0),
 `user_agent`, `context` (trabalho, pessoal ou os dois) e `mail`
@@ -479,7 +479,10 @@ aceita só endereços exatos como apelidos da Microsoft
 (`teams.microsoft.com` ↔ `teams.cloud.microsoft`; `outlook.office.com`,
 `outlook.office365.com` ↔ `outlook.cloud.microsoft`). Para Teams e
 Outlook, a página de login da Microsoft (`login.microsoftonline.com`,
-`login.live.com`) também marca "desconectado", e só isso.
+`login.live.com`) também marca "desconectado", e só isso. O Nextcloud
+(Talk) é reconhecido pela própria página (`<head data-requesttoken>`), em
+qualquer domínio: a tela de visitante (`#body-login`) marca
+"desconectado", e os números das conversas viram o contador.
 
 ## 11. Plataformas
 

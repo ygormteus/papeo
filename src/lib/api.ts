@@ -16,7 +16,8 @@ export type ServiceKind =
   | "email"
   | "custom"
   | "slack"
-  | "teams";
+  | "teams"
+  | "nextcloud";
 export type MediaPolicy = "ask" | "allow" | "block";
 export type LockMethod = "none" | "system" | "pin";
 export type Appearance = "system" | "light" | "dark" | "oled";
@@ -998,6 +999,7 @@ export const KIND_META: Record<ServiceKind, { label: string; color: string; hint
   custom: { label: tk("Outro site"), color: "#8b5cf6", hint: tk("Qualquer endereço https") },
   slack: { label: "Slack", color: "#611f69", hint: "app.slack.com" },
   teams: { label: "Teams", color: "#4b53bc", hint: tk("Trabalho ou pessoal") },
+  nextcloud: { label: "Nextcloud Talk", color: "#0082c9", hint: tk("No servidor da sua empresa") },
 };
 
 /** Paleta para diferenciar contas; tons escuros o bastante para ícone branco. */
@@ -1023,7 +1025,7 @@ export function serviceColor(service: Pick<ServiceView, "kind" | "color">): stri
 export function mediaPolicy(service: Pick<ServiceView, "kind" | "media">): MediaPolicy {
   return (
     service.media ??
-    (isMessenger(service) || ["discord", "slack", "teams"].includes(service.kind) ? "allow" : "ask")
+    (isMessenger(service) || ["discord", "slack", "teams", "nextcloud"].includes(service.kind) ? "allow" : "ask")
   );
 }
 
@@ -1039,7 +1041,7 @@ export function isEmail(service: Pick<ServiceView, "kind">): boolean {
 
 /** Tipos em que a pessoa informa o endereço. */
 export function needsUrl(kind: ServiceKind): boolean {
-  return kind === "custom" || kind === "email";
+  return kind === "custom" || kind === "email" || kind === "nextcloud";
 }
 
 /** Outlook: endereço de quem entra com conta de trabalho ou escola. */

@@ -34,6 +34,7 @@ const DEFAULT_NAME: Record<string, string> = {
   outlook: "Outlook",
   slack: "Slack",
   teams: "Teams",
+  nextcloud: "Nextcloud Talk",
 };
 const MB = 1024 ** 2;
 

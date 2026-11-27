@@ -76,7 +76,11 @@ pub fn probes_for(kind: ServiceKind) -> &'static [Probe] {
         ServiceKind::Gmail => &[Probe::Inbox, Probe::Subject],
         ServiceKind::Outlook => &[Probe::Inbox, Probe::Search, Probe::Subject],
         ServiceKind::Email => &[Probe::Inbox, Probe::Search],
-        ServiceKind::Discord | ServiceKind::Custom | ServiceKind::Slack | ServiceKind::Teams => &[],
+        ServiceKind::Discord
+        | ServiceKind::Custom
+        | ServiceKind::Slack
+        | ServiceKind::Teams
+        | ServiceKind::Nextcloud => &[],
     }
 }
 

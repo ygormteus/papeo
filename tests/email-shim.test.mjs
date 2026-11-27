@@ -19,7 +19,7 @@ const el = (props = {}) => ({
 });
 
 /** Carrega o script num "navegador" falso com a página dada. */
-function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
+function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {}, head = null }) {
   const calls = [];
   const timers = [];
   const timeouts = [];
@@ -31,6 +31,7 @@ function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
     querySelectorAll: (sel) => all[sel] ?? [],
     addEventListener() {},
     execCommand() {},
+    head: head && { hasAttribute: (name) => name in head },
   };
   const ctx = {
     location,
@@ -252,6 +253,24 @@ function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
   const pwd = { 'form[action*="signin" i], input[type="password"]': {} };
   check(load({ hostname: "empresa.slack.com", dom: pwd }).status().loggedOut, "slack: raiz com formulário");
   check(!load({ hostname: "slack.com" }).status().loggedOut, "slack: raiz sem formulário");
+}
+
+// Nextcloud Talk (spec 26): reconhecido pelo <head>, em qualquer domínio.
+{
+  const head = { "data-requesttoken": "x" };
+  const login = load({ hostname: "cloud.empresa.com", pathname: "/login", head, dom: { "#body-login": {} } }).status();
+  check(login.loggedOut, "nextcloud: tela de login");
+  const talk = (pathname, bubbles) => {
+    const list = { querySelectorAll: () => bubbles.map((n) => ({ textContent: String(n) })) };
+    return load({ hostname: "cloud.empresa.com", pathname, head, dom: { ".left-sidebar, ul.conversations, [class*='conversations-list']": list } }).status();
+  };
+  const open = talk("/index.php/apps/spreed/", [2, 3]);
+  check(!open.loggedOut && open.unread === 5, `nextcloud: soma das conversas (${open.unread})`);
+  check(talk("/call/abc", []).unread === 0, "nextcloud: conversa aberta, nada novo");
+  check(talk("/index.php/apps/files/", [4]).unread === null, "nextcloud: fora do Talk vale o título");
+  // Sem o <head> do Nextcloud, a mesma tela não conta.
+  const other = load({ hostname: "cloud.empresa.com", pathname: "/login", dom: { "#body-login": {} } }).status();
+  check(!other.loggedOut, "nextcloud: só no Nextcloud");
 }
 
 // Outros sites continuam sem contador da página (vale o título).

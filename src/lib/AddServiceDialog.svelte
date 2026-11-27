@@ -44,7 +44,7 @@
     presetId = presetForAddress(address)?.id ?? "";
   }
 
-  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "slack", "teams", "gmail", "outlook", "email", "custom"];
+  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "slack", "teams", "nextcloud", "gmail", "outlook", "email", "custom"];
   let kind = $state<ServiceKind>("whatsapp");
   let name = $state("");
   let url = $state("");
@@ -198,9 +198,12 @@
           id="svc-url"
           class="input"
           bind:value={url}
-          placeholder={t("app.exemplo.com")}
+          placeholder={kind === "nextcloud" ? t("cloud.suaempresa.com.br") : t("app.exemplo.com")}
           autofocus
         />
+        {#if kind === "nextcloud"}
+          <p class="note">{t("O endereço do seu Nextcloud (o mesmo que você abre no navegador). O Papeo abre direto no Talk.")}</p>
+        {/if}
         {#if url.trim().toLowerCase().startsWith("http://")}
           <p class="warn" role="note">
             {t("Endereço sem criptografia (http): mensagens e senhas podem ser lidas por quem estiver na mesma rede. Prefira https.")}
