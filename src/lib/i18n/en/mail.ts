@@ -139,7 +139,8 @@ const en: Record<string, string> = {
   "Data: {valor}": "Date: {valor}",
   "Assunto: {valor}": "Subject: {valor}",
   "Para: {valor}": "To: {valor}",
-  "Cc: {valor}": "Cc: {valor}",
+  "Para:": "To:",
+  "Cc:": "Cc:",
   "Enc": "Fwd",
   "(sem remetente)": "(no sender)",
   "(sem assunto)": "(no subject)",
@@ -195,6 +196,14 @@ const en: Record<string, string> = {
   "Desfazer": "Undo",
   "O app fechou durante o envio deste e-mail. Confira em Enviados antes de mandar de novo.": "The app closed while this email was being sent. Check Sent before sending it again.",
   "Este e-mail não foi enviado.": "This email wasn't sent.",
+  "Escrever para {nome}": "Write to {nome}",
+  "Copiar endereço": "Copy address",
+  "e mais {n}": "and {n} more",
+  "mostrar menos": "show less",
+  "{n} anexos salvos em {pasta}": "{n} attachments saved to {pasta}",
+  "Endereço copiado: {endereco}": "Address copied: {endereco}",
+  "{n} anexos": "{n} attachments",
+  "Baixar todos": "Download all",
 };
 
 export default en;

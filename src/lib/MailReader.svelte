@@ -33,6 +33,7 @@
   import { locale, t } from "./i18n.svelte";
   import MailComposer, { type ComposeStart } from "./MailComposer.svelte";
   import SignatureDialog from "./SignatureDialog.svelte";
+  import AddressList from "./AddressList.svelte";
   import { loadUnsent, outbox, releaseReturned, startOutbox, takeReturned, undoSend } from "./outbox.svelte";
   import {
     api,
@@ -493,6 +494,31 @@
     }
   }
 
+  let savingAll = $state(false);
+
+  /** Todos os anexos numa pasta em Downloads (spec 24). */
+  async function saveAll() {
+    if (!message || savingAll) return;
+    savingAll = true;
+    try {
+      const m = message;
+      const dir = await api.mailSaveAttachments(service.id, folder, m.uid, m.attachments.map((a) => a.index), m.subject);
+      const name = dir.split(/[\\/]/).pop() ?? dir;
+      ontoast(t("{n} anexos salvos em {pasta}", { n: m.attachments.length, pasta: name }), {
+        label: t("Mostrar na pasta"),
+        run: () => void api.mailRevealFile(dir),
+      });
+    } catch (err) {
+      ontoast(errorMessage(err));
+    } finally {
+      savingAll = false;
+    }
+  }
+
+  function copied(email: string) {
+    ontoast(t("Endereço copiado: {endereco}", { endereco: email }));
+  }
+
   // ---- Escrever
 
   const me = $derived((service.mail?.user ?? "").toLowerCase());
@@ -857,12 +883,27 @@
           <header class="head">
             <h2>{m.subject || t("(sem assunto)")}</h2>
             <div class="meta">
-              <span class="from"><strong>{who(m.from[0])}</strong>{#if m.from[0]?.name && m.from[0]?.email}<span class="email"> &lt;{m.from[0].email}&gt;</span>{/if}</span>
+              <span class="from">
+                {#if m.from.length}
+                  <AddressList list={m.from} full oncompose={(a) => compose(addr(a))} oncopied={copied} />
+                {:else}<strong>{who(m.from[0])}</strong>{/if}
+              </span>
               <span class="date">{m.date ? new Date(m.date * 1000).toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" }) : ""}</span>
             </div>
-            {#if m.to.length}<div class="rcpt">{t("Para: {valor}", { valor: m.to.map((a) => a.name || a.email).join(", ") })}</div>{/if}
-            {#if m.cc.length}<div class="rcpt">{t("Cc: {valor}", { valor: m.cc.map((a) => a.name || a.email).join(", ") })}</div>{/if}
+            {#key m.uid}
+              {#if m.to.length}<AddressList label={t("Para:")} list={m.to} oncompose={(a) => compose(addr(a))} oncopied={copied} />{/if}
+              {#if m.cc.length}<AddressList label={t("Cc:")} list={m.cc} oncompose={(a) => compose(addr(a))} oncopied={copied} />{/if}
+            {/key}
           </header>
+          {#if m.attachments.length > 1}
+            <div class="all-attachments">
+              <span>{t("{n} anexos", { n: m.attachments.length })}</span>
+              <button class="link-btn" onclick={saveAll} disabled={savingAll}>
+                <Download size={13} />
+                {t("Baixar todos")}
+              </button>
+            </div>
+          {/if}
           {#if m.attachments.length}
             <ul class="attachments">
               {#each m.attachments as a (a.index)}
@@ -1293,14 +1334,22 @@
     flex-wrap: wrap;
     font-size: 13.5px;
   }
-  .email,
-  .rcpt {
+  .head .from {
+    min-width: 0;
+  }
+  .all-attachments {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 6px;
     color: var(--text-muted);
     font-size: 12.5px;
-    overflow-wrap: anywhere;
   }
-  .rcpt {
-    margin-top: 3px;
+  .all-attachments .link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
   }
   .attachments {
     list-style: none;

@@ -79,6 +79,7 @@ pub(super) fn get(pt: &str) -> Option<&'static str> {
             "Esta conta não tem pasta de arquivo." => "This account has no archive folder.",
             "Pasta não encontrada." => "Folder not found.",
             "Anexo não encontrado." => "Attachment not found.",
+            "Anexos" => "Attachments",
             "Não deu para salvar o anexo ({erro})." => "Couldn't save the attachment ({erro}).",
             "O usuário da conta não é um endereço de e-mail." => "The account username isn't an email address.",
             "Endereço inválido: {endereco}" => "Invalid address: {endereco}",

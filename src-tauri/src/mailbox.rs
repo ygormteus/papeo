@@ -336,6 +336,65 @@ pub async fn save_attachment(
     .await
 }
 
+/// Grava vários anexos de uma mensagem numa pasta nova em Downloads, com o
+/// nome do assunto (spec 24), e devolve o caminho da pasta.
+pub async fn save_attachments(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+    indices: Vec<u32>,
+    subject: String,
+) -> Result<String, String> {
+    if indices.is_empty() {
+        return Err(tr("Anexo não encontrado.").into());
+    }
+    blocking(move || {
+        let files = with_reader_cached(&app, &id, |r, _, last| {
+            let raw = match last {
+                Some((f, u, raw)) if *f == folder && *u == uid => raw.clone(),
+                _ => Arc::new(r.fetch_raw(&folder, uid, false)?.0),
+            };
+            indices
+                .iter()
+                .map(|&i| {
+                    core::attachment(&raw, i)
+                        .ok_or_else(|| ImapError::Rejected(tr("Anexo não encontrado.").into()))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        let base = crate::downloads::downloads_dir(&app);
+        // Pasta: o assunto sem barras nem pontos (o ponto viraria extensão).
+        let name: String = subject
+            .replace(['/', '\\', '.'], " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(80)
+            .collect();
+        let name = papeo_core::safe_file_name(&name);
+        let name = if name.trim().is_empty() || name == "download" {
+            tr("Anexos").to_string()
+        } else {
+            name
+        };
+        let dir = papeo_core::unique_path(&base, &name, &[]);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| trf("Não deu para salvar o anexo ({erro}).", &[("erro", &e)]))?;
+        let mut written: Vec<std::path::PathBuf> = Vec::new();
+        for (file, bytes) in files {
+            let path = papeo_core::unique_path(&dir, &papeo_core::safe_file_name(&file), &written);
+            std::fs::write(&path, bytes)
+                .map_err(|e| trf("Não deu para salvar o anexo ({erro}).", &[("erro", &e)]))?;
+            mark_downloaded(&path);
+            written.push(path);
+        }
+        Ok(dir.to_string_lossy().into_owned())
+    })
+    .await
+}
+
 /// Abre o anexo na janela de visualização (spec 21). `false`: o tipo não
 /// tem visualização (a tela salva em Downloads).
 pub async fn preview_attachment(

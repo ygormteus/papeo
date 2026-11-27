@@ -556,6 +556,7 @@ pub fn run() {
             commands::mail_move,
             commands::mail_delete,
             commands::mail_save_attachment,
+            commands::mail_save_attachments,
             commands::mail_preview_attachment,
             commands::mail_signature,
             commands::mail_send,

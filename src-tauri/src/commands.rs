@@ -1347,6 +1347,20 @@ pub async fn mail_save_attachment(
     crate::mailbox::save_attachment(app, id, folder, uid, index).await
 }
 
+/// Salva vários anexos numa pasta em Downloads (spec 24); devolve a pasta.
+#[tauri::command]
+pub async fn mail_save_attachments(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+    indices: Vec<u32>,
+    subject: String,
+) -> CmdResult<String> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::save_attachments(app, id, folder, uid, indices, subject).await
+}
+
 #[tauri::command]
 pub async fn mail_send(app: AppHandle, id: String, draft: crate::mailbox::Draft) -> CmdResult<()> {
     ensure_unlocked(&app)?;

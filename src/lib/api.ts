@@ -559,6 +559,10 @@ export const api = {
   /** Salva o anexo na pasta de downloads; devolve o caminho. */
   mailSaveAttachment: (id: string, folder: string, uid: number, index: number) =>
     invoke<string>("mail_save_attachment", { id, folder, uid, index }),
+  /** Salva vários anexos numa pasta nova em Downloads, com o nome do
+   * assunto (spec 24); devolve o caminho da pasta. */
+  mailSaveAttachments: (id: string, folder: string, uid: number, indices: number[], subject: string) =>
+    invoke<string>("mail_save_attachments", { id, folder, uid, indices, subject }),
   /** Abre o anexo na janela de visualização (spec 21); `false`: tipo sem
    * visualização (salve em Downloads). */
   mailPreviewAttachment: (id: string, folder: string, uid: number, index: number) =>
