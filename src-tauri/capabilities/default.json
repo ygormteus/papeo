@@ -25,6 +25,7 @@
     "allow-mail-move",
     "allow-mail-delete",
     "allow-mail-save-attachment",
+    "allow-mail-preview-attachment",
     "allow-mail-send",
     "allow-mail-save-draft",
     "allow-mail-discard-draft",

@@ -335,9 +335,32 @@ pub async fn save_attachment(
     .await
 }
 
+/// Abre o anexo na janela de visualização (spec 21). `false`: o tipo não
+/// tem visualização (a tela salva em Downloads).
+pub async fn preview_attachment(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+    index: u32,
+) -> Result<bool, String> {
+    blocking(move || {
+        let (name, bytes) = with_reader_cached(&app, &id, |r, _, last| {
+            let raw = match last {
+                Some((f, u, raw)) if *f == folder && *u == uid => raw.clone(),
+                _ => Arc::new(r.fetch_raw(&folder, uid, false)?.0),
+            };
+            core::attachment(&raw, index)
+                .ok_or_else(|| ImapError::Rejected(tr("Anexo não encontrado.").into()))
+        })?;
+        crate::attachment::show_bytes(&app, &id, &name, &bytes)
+    })
+    .await
+}
+
 /// Marca o arquivo como baixado da internet: o sistema avisa antes de abrir
 /// um executável (Gatekeeper no macOS, SmartScreen no Windows).
-fn mark_downloaded(path: &std::path::Path) {
+pub(crate) fn mark_downloaded(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
     {
         use std::os::unix::ffi::OsStrExt;

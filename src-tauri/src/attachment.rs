@@ -132,6 +132,36 @@ pub fn intercept(app: &AppHandle, service_id: &str, url: &str, file_name: &str) 
     Some(path)
 }
 
+/// Anexo de e-mail (spec 21): grava numa pasta nova do temporário e mostra
+/// na janela. `Ok(false)` sem gravar nada se o tipo não tem visualização.
+/// Nunca na thread principal (o `open` espera a janela).
+pub fn show_bytes(
+    app: &AppHandle,
+    service_id: &str,
+    name: &str,
+    bytes: &[u8],
+) -> Result<bool, String> {
+    let file_name = papeo_core::safe_file_name(name);
+    if papeo_core::attachment_view(&file_name, quick_look()).is_none() {
+        return Ok(false);
+    }
+    let dir = temp_root(app)
+        .ok_or(tr("Não foi possível abrir o anexo."))?
+        .join(papeo_core::new_item_id());
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(&file_name);
+    if let Err(e) = std::fs::write(&path, bytes) {
+        remove_temp(app, &path);
+        return Err(trf(
+            "Não deu para salvar o anexo ({erro}).",
+            &[("erro", &e)],
+        ));
+    }
+    crate::mailbox::mark_downloaded(&path);
+    open(app, service_id, path);
+    Ok(true)
+}
+
 /// Fim de um download. `true` se era um anexo para visualizar (já tratado).
 pub fn finished(
     app: &AppHandle,

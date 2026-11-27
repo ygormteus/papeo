@@ -446,6 +446,38 @@
     closeMessage();
   }
 
+  // Tipos que a janela de anexos mostra (`attachment_view` no núcleo): só
+  // para o atalho de espaço escolher qual abrir; quem decide é o backend.
+  const VIEWABLE = /\.(pdf|png|jpe?g|gif|webp|bmp|mp4|mp3|m4a|wav|txt|docx?|xls[xm]?|pptx?|od[tsp]|rtf|csv|pages|numbers|key|heic|heif|tiff?|mov)$/i;
+  let viewing = $state<number | null>(null);
+
+  /** Abre o anexo na janela de visualização; tipo sem visualização é salvo. */
+  async function openAttachment(index: number) {
+    if (!message || viewing !== null) return;
+    viewing = index;
+    try {
+      const shown = await api.mailPreviewAttachment(service.id, folder, message.uid, index);
+      if (!shown) await saveAttachment(index);
+    } catch (err) {
+      ontoast(errorMessage(err));
+    } finally {
+      viewing = null;
+    }
+  }
+
+  /** Espaço com a mensagem aberta: o primeiro anexo que dá para ver. */
+  function spaceKey(e: KeyboardEvent) {
+    if (e.key !== " " || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+    if (!message || composing) return;
+    const el = e.target as HTMLElement | null;
+    if (el?.closest("input, textarea, select, button, a, [contenteditable], [role='dialog'], dialog")) return;
+    if (document.querySelector("[role='dialog'], dialog[open]")) return;
+    const first = message.attachments.find((a) => VIEWABLE.test(a.name));
+    if (!first) return;
+    e.preventDefault();
+    void openAttachment(first.index);
+  }
+
   async function saveAttachment(index: number) {
     if (!message) return;
     try {
@@ -622,6 +654,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={spaceKey} />
 
 <div class="reader">
   {#if unset}
@@ -826,11 +860,18 @@
           {#if m.attachments.length}
             <ul class="attachments">
               {#each m.attachments as a (a.index)}
-                <li>
-                  <button class="attachment" onclick={() => saveAttachment(a.index)} title={t("Salvar em Downloads")}>
+                <li class="attachment" class:busy={viewing === a.index}>
+                  <button class="open" onclick={() => openAttachment(a.index)} title={t("Abrir {nome}", { nome: a.name })}>
                     <Paperclip size={14} />
                     <span class="name">{a.name}</span>
                     <span class="size">{size(a.size)}</span>
+                  </button>
+                  <button
+                    class="save"
+                    onclick={() => saveAttachment(a.index)}
+                    title={t("Salvar em Downloads")}
+                    aria-label={t("Salvar {nome} em Downloads", { nome: a.name })}
+                  >
                     <Download size={14} />
                   </button>
                 </li>
@@ -1263,19 +1304,38 @@
   }
   .attachment {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 280px;
-    padding: 5px 9px;
+    align-items: stretch;
+    max-width: 320px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-subtle);
+    overflow: hidden;
+  }
+  .attachment.busy {
+    opacity: 0.6;
+  }
+  .attachment button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    background: none;
     color: var(--text);
     font-size: 12.5px;
     cursor: pointer;
   }
-  .attachment:hover {
+  .attachment .open {
+    min-width: 0;
+    padding: 5px 9px;
+  }
+  .attachment .save {
+    padding: 5px 8px;
+    border-left: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .attachment button:hover {
     background: var(--bg-hover);
+    color: var(--text);
   }
   .attachment .name {
     overflow: hidden;

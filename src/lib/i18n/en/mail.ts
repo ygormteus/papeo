@@ -1,6 +1,8 @@
 // Catálogo inglês da interface (mail) — ver `index.ts`.
 
 const en: Record<string, string> = {
+  "Abrir {nome}": "Open {nome}",
+  "Salvar {nome} em Downloads": "Save {nome} to Downloads",
   "Mensagem": "Message",
   "imap.seuprovedor.com.br": "imap.yourprovider.com",
   "voce@exemplo.com": "you@example.com",

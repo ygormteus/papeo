@@ -556,6 +556,10 @@ export const api = {
   /** Salva o anexo na pasta de downloads; devolve o caminho. */
   mailSaveAttachment: (id: string, folder: string, uid: number, index: number) =>
     invoke<string>("mail_save_attachment", { id, folder, uid, index }),
+  /** Abre o anexo na janela de visualização (spec 21); `false`: tipo sem
+   * visualização (salve em Downloads). */
+  mailPreviewAttachment: (id: string, folder: string, uid: number, index: number) =>
+    invoke<boolean>("mail_preview_attachment", { id, folder, uid, index }),
   mailRevealFile: (path: string) => invoke<void>("mail_reveal_file", { path }),
   mailSend: (id: string, draft: MailDraft) => invoke<void>("mail_send", { id, draft }),
   /** Salva o rascunho na pasta Rascunhos do servidor; devolve o token dele. */

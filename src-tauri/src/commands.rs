@@ -1310,6 +1310,19 @@ pub async fn mail_delete(
     crate::mailbox::delete(app, id, folder, uids).await
 }
 
+/// Abre o anexo na visualização (spec 21); `false`: tipo sem visualização.
+#[tauri::command]
+pub async fn mail_preview_attachment(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+    index: u32,
+) -> CmdResult<bool> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::preview_attachment(app, id, folder, uid, index).await
+}
+
 #[tauri::command]
 pub async fn mail_save_attachment(
     app: AppHandle,

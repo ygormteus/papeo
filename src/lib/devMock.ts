@@ -429,6 +429,9 @@ export function installDevMock() {
         return undefined;
       case "mail_save_attachment":
         return "/Users/voce/Downloads/anexo.pdf";
+      case "mail_preview_attachment":
+        // Sem a janela nativa no navegador: finge que abriu.
+        return true;
       case "mail_reveal_file":
         return undefined;
       case "mail_send": {

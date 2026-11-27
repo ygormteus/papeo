@@ -124,7 +124,7 @@ voz do WhatsApp).
 | `reply.rs` | Resposta rápida: carrega a conta, confere o site e pede ao shim para enviar |
 | `popover.rs` | Mini janela da barra de menus ou da bandeja |
 | `tray.rs`, `menu.rs` | Ícone e menu da bandeja; menu nativo (só macOS) |
-| `downloads.rs`, `attachment.rs`, `preview.rs` | Downloads, visualização de anexos (Quick Look ou webview), prévia de links |
+| `downloads.rs`, `attachment.rs`, `preview.rs` | Downloads, visualização de anexos dos sites e do leitor de e-mail (Quick Look ou webview; spec 21), prévia de links |
 | `lock.rs` | Bloqueio com Touch ID/Windows Hello ou PIN do Papeo |
 | `sessions.rs` | Pastas de sessão; remoção adiada com novas tentativas |
 | `memory.rs`, `idle.rs` | Memória por conta (footprint no macOS, árvore de processos no Windows); tempo ocioso e tela apagada |
@@ -244,7 +244,7 @@ Todos ficam na pasta de dados do app (`app_config_dir`/`app_data_dir`).
 | `sync.json` | `sync.rs` | Token do Google, chave derivada e base da junção, modo 0600 |
 | `webcrypto-master.key` | `webcrypto.rs` | macOS 15+, 16 bytes, 0600 |
 | Backup (`*.json` exportado) | `store.rs` | `kind: "papeo-backup"`, validação estrita, inclui o organizador visível, nunca o PIN nem as atualizações |
-| `app_cache_dir/anexos/` | `attachment.rs` | Temporários da visualização de anexos, apagados ao fechar e ao abrir |
+| `app_cache_dir/anexos/` | `attachment.rs` | Temporários da visualização de anexos (sites e e-mail), apagados ao fechar e ao abrir |
 | `outbox/<id>.json` | `outbox.rs` | Em `app_local_data_dir`. E-mail em espera para desfazer (texto e anexos), modo 0600. Apagado quando o envio dá certo ou quando o e-mail volta ao editor (`mail_unsent_taken`); desfeito ou com falha fica até lá. Sobra de conta removida, sem o leitor ou com mais de 30 dias é apagada ao abrir. Nunca é enviado sozinho depois de reabrir. Fora do backup |
 
 **Regra de compatibilidade:** todo campo novo precisa de `serde(default)` e
@@ -257,7 +257,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 93 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 94 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
