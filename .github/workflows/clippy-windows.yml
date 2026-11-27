@@ -1,0 +1,54 @@
+name: Clippy Windows
+
+# O desenvolvimento é no Mac, onde não há alvo Windows: este job compila e
+# passa o clippy no Windows a cada push na `main` (e em PRs), para o erro
+# aparecer no mesmo dia e não só no build de uma versão. Repositório público:
+# os minutos do runner Windows não são cobrados.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/clippy-windows.yml"
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/clippy-windows.yml"
+
+permissions: {}
+
+# Um push novo cancela a conferência do anterior.
+concurrency:
+  group: clippy-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clippy:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      # Actions fixadas por SHA de commit (a tag ao lado é só referência).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # O `generate_context!` do Tauri embute `../dist`; para o clippy basta
+      # uma página vazia (o build da interface roda no Autoteste e nas versões).
+      - shell: bash
+        run: mkdir -p dist && echo '<!doctype html>' > dist/index.html
+      - run: cargo clippy -p papeo-core --all-targets -- -D warnings
+      - run: cargo clippy -p papeo --all-targets -- -D warnings
+      - run: cargo clippy -p papeo --all-targets --features selftest -- -D warnings

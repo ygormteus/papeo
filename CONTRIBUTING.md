@@ -34,6 +34,13 @@ pnpm test                       # shim de notificações injetado nos sites
 pnpm build                      # build da interface
 ```
 
+## Design e especificações
+
+A arquitetura está em [`sdd/arquitetura.md`](sdd/arquitetura.md). Recurso
+novo ou mudança de comportamento começa por uma especificação em
+[`sdd/specs/`](sdd/specs/README.md) (requisitos → design → tarefas →
+verificação); o passo a passo está em [`sdd/README.md`](sdd/README.md).
+
 ## Estrutura
 
 | Caminho | Conteúdo |
