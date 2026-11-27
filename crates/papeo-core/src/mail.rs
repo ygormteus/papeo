@@ -73,6 +73,18 @@ impl MailAuth {
 /// Servidor IMAP do Outlook (pessoal e Microsoft 365).
 pub const OUTLOOK_HOST: &str = "outlook.office365.com";
 
+/// SMTP com TLS direto e com STARTTLS (envio).
+pub const SMTPS_PORT: u16 = 465;
+pub const SUBMISSION_PORT: u16 = 587;
+
+/// Servidor de envio de uma conta.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmtpServer {
+    pub host: String,
+    pub port: u16,
+    pub starttls: bool,
+}
+
 fn imaps_port() -> u16 {
     IMAPS_PORT
 }
@@ -120,6 +132,60 @@ impl MailAccount {
 
     pub fn is_gmail(&self) -> bool {
         self.host == "imap.gmail.com" || self.host == "imap.googlemail.com"
+    }
+
+    /// Servidor de envio (SMTP) desta conta, tirado do de leitura: provedor
+    /// conhecido pela tabela; outro, `imap.` vira `smtp.` (ou o mesmo
+    /// servidor), na 465 com TLS direto. Fica preso ao servidor de leitura
+    /// (a senha guardada vale para os dois).
+    pub fn smtp(&self) -> SmtpServer {
+        let host = self.host.as_str();
+        let tls = |host: &str| SmtpServer {
+            host: host.to_owned(),
+            port: SMTPS_PORT,
+            starttls: false,
+        };
+        let starttls = |host: &str| SmtpServer {
+            host: host.to_owned(),
+            port: SUBMISSION_PORT,
+            starttls: true,
+        };
+        match host {
+            "imap.gmail.com" | "imap.googlemail.com" => tls("smtp.gmail.com"),
+            OUTLOOK_HOST | "imap-mail.outlook.com" => {
+                let domain = self
+                    .user
+                    .rsplit_once('@')
+                    .map(|(_, d)| d.to_ascii_lowercase())
+                    .unwrap_or_default();
+                let personal = ["hotmail.", "outlook.", "live.", "msn.", "passport."]
+                    .iter()
+                    .any(|p| domain.starts_with(p));
+                if personal {
+                    starttls("smtp-mail.outlook.com")
+                } else {
+                    starttls("smtp.office365.com")
+                }
+            }
+            "email-ssl.com.br" => tls("email-ssl.com.br"),
+            "imap.kinghost.net" => tls("smtp.kinghost.net"),
+            "imap.uni5.net" => tls("smtp.uni5.net"),
+            "imap.hostinger.com" => tls("smtp.hostinger.com"),
+            "imap.uol.com.br" => tls("smtps.uol.com.br"),
+            "imap.bol.com.br" => tls("smtps.bol.com.br"),
+            "imap.terra.com.br" => starttls("smtp.terra.com.br"),
+            "imap.mail.yahoo.com" => tls("smtp.mail.yahoo.com"),
+            "imap.mail.me.com" => starttls("smtp.mail.me.com"),
+            _ => match host.strip_prefix("imap.") {
+                Some(rest) => tls(&format!("smtp.{rest}")),
+                None => tls(host),
+            },
+        }
+    }
+
+    /// O provedor já guarda o enviado por SMTP na pasta Enviados.
+    pub fn saves_sent(&self) -> bool {
+        self.is_gmail() || self.host == OUTLOOK_HOST || self.host == "imap-mail.outlook.com"
     }
 
     /// Senha como o servidor espera. A senha de app do Google aparece em
@@ -398,9 +464,9 @@ impl Transport for std::net::TcpStream {
 /// Uma resposta do servidor: a linha (literais trocados por `{n}`) e os
 /// blocos literais, em ordem.
 #[derive(Debug, Default)]
-struct Response {
-    line: String,
-    literals: Vec<Vec<u8>>,
+pub(crate) struct Response {
+    pub(crate) line: String,
+    pub(crate) literals: Vec<Vec<u8>>,
 }
 
 /// Situação da Caixa de Entrada ao abrir.
@@ -420,11 +486,15 @@ pub struct Imap<S: Transport> {
     /// O servidor avisou de mudança na caixa fora do IDLE (junto da
     /// resposta de outro comando).
     changed: bool,
+    /// Teto de um bloco literal e da soma deles numa resposta (o leitor
+    /// aumenta para receber e-mails inteiros).
+    literal_max: usize,
+    literals_max: usize,
 }
 
 /// Argumento de comando: texto entre aspas ou, com caracteres fora do
 /// ASCII visível, literal (`{n}` seguido dos bytes).
-fn push_string(parts: &mut Vec<Part>, text: &str) {
+pub(crate) fn push_string(parts: &mut Vec<Part>, text: &str) {
     if text.bytes().all(|b| (0x20..0x7f).contains(&b)) {
         let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
         parts.push(Part::Text(format!("\"{escaped}\"")));
@@ -433,7 +503,7 @@ fn push_string(parts: &mut Vec<Part>, text: &str) {
     }
 }
 
-enum Part {
+pub(crate) enum Part {
     Text(String),
     Literal(Vec<u8>),
 }
@@ -447,6 +517,8 @@ impl<S: Transport> Imap<S> {
             idling: None,
             preauth: false,
             changed: false,
+            literal_max: LITERAL_MAX,
+            literals_max: LITERALS_MAX,
         };
         let greeting = imap.read_response()?;
         let mut words = greeting.line.split_whitespace();
@@ -468,7 +540,15 @@ impl<S: Transport> Imap<S> {
             idling: None,
             preauth: false,
             changed: false,
+            literal_max: LITERAL_MAX,
+            literals_max: LITERALS_MAX,
         }
+    }
+
+    /// Aceita respostas com até `bytes` em literais (e-mail inteiro).
+    pub fn allow_large(&mut self, bytes: usize) {
+        self.literal_max = bytes.max(LITERAL_MAX);
+        self.literals_max = bytes.max(LITERALS_MAX);
     }
 
     /// Marca aviso de mudança recebido fora do IDLE (a resposta ao nosso
@@ -538,7 +618,7 @@ impl<S: Transport> Imap<S> {
                 break;
             };
             total += size;
-            if size > LITERAL_MAX || total > LITERALS_MAX {
+            if size > self.literal_max || total > self.literals_max {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "bloco longo demais",
@@ -564,7 +644,7 @@ impl<S: Transport> Imap<S> {
     }
 
     /// Envia um comando e junta as respostas sem tag até a resposta dele.
-    fn command(&mut self, parts: Vec<Part>) -> ImapResult<Vec<Response>> {
+    pub(crate) fn command(&mut self, parts: Vec<Part>) -> ImapResult<Vec<Response>> {
         let tag = self.next_tag();
         let mut pending = tag.clone().into_bytes();
         let mut untagged = Vec::new();
@@ -937,7 +1017,7 @@ fn literal_size(line: &[u8]) -> Option<usize> {
 }
 
 /// Número logo depois de `key` (ex.: `[UIDNEXT 42]`, `UID 7 `).
-fn code_number(upper: &str, key: &str) -> Option<u32> {
+pub(crate) fn code_number(upper: &str, key: &str) -> Option<u32> {
     let start = upper.find(key)? + key.len();
     let digits: String = upper[start..]
         .chars()
@@ -946,7 +1026,7 @@ fn code_number(upper: &str, key: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
-fn clip(text: &str) -> String {
+pub(crate) fn clip(text: &str) -> String {
     crate::clip(text.trim(), 200)
 }
 
@@ -1341,6 +1421,49 @@ mod tests {
             Err(ImapError::Auth(_))
         ));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn smtp_follows_the_reading_server() {
+        let account = |host: &str, user: &str| MailAccount {
+            host: host.into(),
+            port: IMAPS_PORT,
+            user: user.into(),
+            sleep_site: false,
+            starttls: false,
+            whole_inbox: false,
+            auth: MailAuth::Password,
+        };
+        let s = account("imap.gmail.com", "a@gmail.com").smtp();
+        assert_eq!(
+            (s.host.as_str(), s.port, s.starttls),
+            ("smtp.gmail.com", 465, false)
+        );
+        let s = account(OUTLOOK_HOST, "a@hotmail.com").smtp();
+        assert_eq!(
+            (s.host.as_str(), s.port, s.starttls),
+            ("smtp-mail.outlook.com", 587, true)
+        );
+        let s = account(OUTLOOK_HOST, "a@empresa.com.br").smtp();
+        assert_eq!(s.host, "smtp.office365.com");
+        assert_eq!(
+            account("imap.hostinger.com", "a@x.com").smtp().host,
+            "smtp.hostinger.com"
+        );
+        assert_eq!(
+            account("imap.uol.com.br", "a@uol.com.br").smtp().host,
+            "smtps.uol.com.br"
+        );
+        assert_eq!(
+            account("imap.exemplo.com", "a@x.com").smtp().host,
+            "smtp.exemplo.com"
+        );
+        assert_eq!(
+            account("mail.exemplo.com", "a@x.com").smtp().host,
+            "mail.exemplo.com"
+        );
+        assert!(account("imap.gmail.com", "a@gmail.com").saves_sent());
+        assert!(!account("imap.hostinger.com", "a@x.com").saves_sent());
     }
 
     #[test]

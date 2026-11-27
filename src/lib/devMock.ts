@@ -222,9 +222,17 @@ export function installDevMock() {
     return settings.mode === "auto" && manual?.scheduled === scheduled ? manual.mode : scheduled;
   };
   const inMode = (s: ServiceView, mode: Mode) => mode === "all" || !s.context || s.context === mode;
+  // Leitor de e-mail simulado: contas que pediram o site e a caixa de exemplo.
+  const siteView = new Set<string>();
+  const mailSetup = new Set<string>();
+  const mailbox = mockMailbox();
   const snap = (): Snapshot => {
     const mode = currentMode();
-    const list = structuredClone(services).map((s) => ({ ...s, inMode: inMode(s, mode) }));
+    const list = structuredClone(services).map((s) => ({
+      ...s,
+      inMode: inMode(s, mode),
+      reader: (!!s.mail || mailSetup.has(s.id)) && !siteView.has(s.id),
+    }));
     const hidden = new Set(list.filter((s) => !s.inMode).map((s) => s.id));
     return {
       rev: ++rev,
@@ -311,6 +319,7 @@ export function installDevMock() {
         let name = base;
         for (let n = 2; !args.name && services.some((s) => s.name === name); n++) name = `${base} ${n}`;
         services.push(mk(id, kind, name, (args.url as string) || DEFAULT_URL[kind] || "", true, 0));
+        if (kind === "gmail" || kind === "email" || kind === "outlook") mailSetup.add(id);
         active = id;
         return snap();
       }
@@ -351,6 +360,42 @@ export function installDevMock() {
       case "set_hibernation":
         find().hibernateAfterMinutes = Number(args.minutes);
         return snap();
+      case "mail_folders":
+        return mailbox.folders;
+      case "mail_list": {
+        const q = String(args.query ?? "").toLowerCase();
+        const all = mailbox.messages(String(args.folder)).filter(
+          (m) => !q || `${m.subject} ${m.from.name} ${m.preview}`.toLowerCase().includes(q),
+        );
+        const page = Number(args.page ?? 0);
+        return { messages: all.slice(page * 50, page * 50 + 50), total: all.length };
+      }
+      case "mail_open":
+        return mailbox.open(String(args.folder), Number(args.uid));
+      case "mail_set_flag":
+        mailbox.flag(String(args.folder), args.uids as number[], String(args.flag), Boolean(args.on));
+        return undefined;
+      case "mail_move":
+      case "mail_delete":
+        mailbox.remove(String(args.folder), args.uids as number[]);
+        return undefined;
+      case "mail_save_attachment":
+        return "/Users/voce/Downloads/anexo.pdf";
+      case "mail_reveal_file":
+        return undefined;
+      case "mail_send": {
+        const draft = args.draft as import("./api").MailDraft;
+        if (!draft.to.length && !draft.cc.length && !draft.bcc.length) throw "Informe para quem enviar.";
+        return undefined;
+      }
+      case "mail_show_site": {
+        const s = find();
+        if (args.site) siteView.add(s.id);
+        else siteView.delete(s.id);
+        active = s.id;
+        s.loaded = Boolean(args.site);
+        return snap();
+      }
       case "mail_microsoft_cancel":
         return undefined;
       case "mail_microsoft_login": {
@@ -636,5 +681,88 @@ function mk(
     status: loaded ? "ok" : "sleeping",
     idleMinutes: null,
     inMode: true,
+  };
+}
+
+/** Caixa de e-mail de exemplo para o leitor no navegador comum. */
+function mockMailbox() {
+  type Summary = import("./api").MailSummary;
+  const folders: import("./api").MailFolder[] = [
+    { path: "INBOX", name: "Caixa de Entrada", depth: 0, role: "inbox" },
+    { path: "Rascunhos", name: "Rascunhos", depth: 0, role: "drafts" },
+    { path: "Enviados", name: "Enviados", depth: 0, role: "sent" },
+    { path: "Arquivo", name: "Arquivo", depth: 0, role: "archive" },
+    { path: "Spam", name: "Spam", depth: 0, role: "junk" },
+    { path: "Lixeira", name: "Lixeira", depth: 0, role: "trash" },
+    { path: "Projetos", name: "Projetos", depth: 0, role: null },
+  ];
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const people = ["Ana Souza", "Banco Exemplo", "Carlos Lima", "Equipe Papeo", "Dani Rocha"];
+  const subjects = [
+    "Reunião de quinta",
+    "Seu extrato chegou",
+    "Proposta revisada",
+    "Novidades da semana",
+    "Fotos da viagem",
+  ];
+  const boxes = new Map<string, Summary[]>();
+  boxes.set(
+    "INBOX",
+    Array.from({ length: 64 }, (_, i) => ({
+      uid: 1000 - i,
+      from: { name: people[i % 5], email: `contato${i % 5}@exemplo.com` },
+      to: [{ name: "Você", email: "voce@exemplo.com" }],
+      subject: `${subjects[i % 5]}${i >= 5 ? ` (${i})` : ""}`,
+      date: nowSecs - i * 5400,
+      seen: i > 3,
+      flagged: i === 2,
+      answered: i === 6,
+      size: 4000 + i * 100,
+      preview: "Olá! Segue o que combinamos. Qualquer dúvida, me avise que eu explico melhor.",
+      hasAttachments: i % 4 === 1,
+    })),
+  );
+  const list = (folder: string) => boxes.get(folder) ?? [];
+  return {
+    folders,
+    messages: list,
+    open(folder: string, uid: number): import("./api").MailMessage {
+      const m = list(folder).find((x) => x.uid === uid);
+      if (!m) throw "Mensagem não encontrada.";
+      m.seen = true;
+      return {
+        uid,
+        subject: m.subject,
+        from: [m.from],
+        to: m.to,
+        cc: [],
+        replyTo: [],
+        date: m.date,
+        messageId: `m${uid}@exemplo.com`,
+        references: [],
+        html:
+          uid % 2 === 0
+            ? `<div style="font-family:Georgia,serif"><h2 style="color:#2563eb">${m.subject}</h2><p>Olá!</p><p>Segue o que combinamos. <a href="https://example.com">Veja aqui</a>.</p><img src="https://example.com/logo.png" alt="logo"></div>`
+            : null,
+        hasRemote: uid % 2 === 0,
+        text: `Olá!\n\nSegue o que combinamos.\n\n${m.from.name}`,
+        attachments: m.hasAttachments ? [{ index: 0, name: "proposta.pdf", mime: "application/pdf", size: 182_000 }] : [],
+        seen: true,
+        flagged: m.flagged,
+      };
+    },
+    flag(folder: string, uids: number[], flag: string, on: boolean) {
+      for (const m of list(folder)) {
+        if (!uids.includes(m.uid)) continue;
+        if (flag === "seen") m.seen = on;
+        if (flag === "flagged") m.flagged = on;
+      }
+    },
+    remove(folder: string, uids: number[]) {
+      boxes.set(
+        folder,
+        list(folder).filter((m) => !uids.includes(m.uid)),
+      );
+    },
   };
 }

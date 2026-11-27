@@ -53,6 +53,10 @@ export interface ServiceView {
   mail?: MailAccount;
   /** Situação do IMAP (só contas que o usam). */
   mailStatus?: MailStatus;
+  /** Abre no leitor de e-mail do Papeo (o site só quando pedido). */
+  reader?: boolean;
+  /** Servidor de envio (SMTP) usado pelo leitor, `host:porta`. */
+  mailSmtp?: string;
 }
 
 export interface MailAccount {
@@ -98,11 +102,14 @@ export interface MailPreset {
   /** Dica curta mostrada ao escolher. */
   note?: string;
   domains?: string[];
+  /** Webmail do provedor (para "Abrir no site"). */
+  webmail?: string;
 }
 
 export const MAIL_PRESETS: MailPreset[] = [
   {
     id: "locaweb",
+    webmail: "https://webmail-seguro.com.br/",
     label: "Locaweb",
     host: "email-ssl.com.br",
     note: "Use o e-mail completo como usuário.",
@@ -113,9 +120,11 @@ export const MAIL_PRESETS: MailPreset[] = [
     host: "imap.kinghost.net",
     note: "Em domínio de revenda, o servidor é imap.uni5.net.",
   },
-  { id: "hostinger", label: "Hostinger", host: "imap.hostinger.com", note: "Use o e-mail completo como usuário." },
+  { id: "hostinger",
+    webmail: "https://mail.hostinger.com/", label: "Hostinger", host: "imap.hostinger.com", note: "Use o e-mail completo como usuário." },
   {
     id: "uol",
+    webmail: "https://email.uol.com.br/",
     label: "UOL",
     host: "imap.uol.com.br",
     note: "Ative o IMAP no webmail do UOL: Configurações → IMAP.",
@@ -123,14 +132,17 @@ export const MAIL_PRESETS: MailPreset[] = [
   },
   {
     id: "bol",
+    webmail: "https://email.bol.uol.com.br/",
     label: "BOL",
     host: "imap.bol.com.br",
     note: "O BOL só libera IMAP no plano pago.",
     domains: ["bol.com.br"],
   },
-  { id: "terra", label: "Terra", host: "imap.terra.com.br", domains: ["terra.com.br"] },
+  { id: "terra",
+    webmail: "https://mail.terra.com.br/", label: "Terra", host: "imap.terra.com.br", domains: ["terra.com.br"] },
   {
     id: "yahoo",
+    webmail: "https://mail.yahoo.com/",
     label: "Yahoo",
     host: "imap.mail.yahoo.com",
     note: "O Yahoo pede uma senha de app, criada na segurança da conta.",
@@ -138,12 +150,20 @@ export const MAIL_PRESETS: MailPreset[] = [
   },
   {
     id: "icloud",
+    webmail: "https://www.icloud.com/mail/",
     label: "iCloud",
     host: "imap.mail.me.com",
     note: "O iCloud pede uma senha de app, criada em account.apple.com.",
     domains: ["icloud.com", "me.com", "mac.com"],
   },
 ];
+
+/** Webmail para "Abrir no site": o do provedor ou `webmail.<domínio>`. */
+export function webmailFor(address: string, preset?: MailPreset): string {
+  if (preset?.webmail) return preset.webmail;
+  const domain = address.trim().toLowerCase().split("@")[1] ?? "";
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain) ? `https://webmail.${domain}/` : "";
+}
 
 /** Provedor reconhecido pelo domínio do endereço de e-mail. */
 export function presetForAddress(address: string): MailPreset | undefined {
@@ -427,6 +447,26 @@ export const api = {
     invoke<Snapshot>("mail_microsoft_login", { id, sleepSite }),
   /** Desiste do login da Microsoft aberto no navegador. */
   mailMicrosoftCancel: () => invoke<void>("mail_microsoft_cancel"),
+  mailFolders: (id: string, refresh = false) => invoke<MailFolder[]>("mail_folders", { id, refresh }),
+  mailList: (id: string, folder: string, page: number, query: string) =>
+    invoke<MailPage>("mail_list", { id, folder, page, query }),
+  /** Abre a mensagem (e a marca como lida). */
+  mailOpen: (id: string, folder: string, uid: number, peek = false) =>
+    invoke<MailMessage>("mail_open", { id, folder, uid, peek }),
+  mailSetFlag: (id: string, folder: string, uids: number[], flag: "seen" | "flagged", on: boolean) =>
+    invoke<void>("mail_set_flag", { id, folder, uids, flag, on }),
+  /** `target`: caminho da pasta ou `role:archive`, `role:junk`, `role:inbox`. */
+  mailMove: (id: string, folder: string, uids: number[], target: string) =>
+    invoke<void>("mail_move", { id, folder, uids, target }),
+  mailDelete: (id: string, folder: string, uids: number[]) =>
+    invoke<void>("mail_delete", { id, folder, uids }),
+  /** Salva o anexo na pasta de downloads; devolve o caminho. */
+  mailSaveAttachment: (id: string, folder: string, uid: number, index: number) =>
+    invoke<string>("mail_save_attachment", { id, folder, uid, index }),
+  mailRevealFile: (path: string) => invoke<void>("mail_reveal_file", { path }),
+  mailSend: (id: string, draft: MailDraft) => invoke<void>("mail_send", { id, draft }),
+  /** Conta com o leitor: mostra o site (`true`) ou volta ao leitor. */
+  mailShowSite: (id: string, site: boolean) => invoke<Snapshot>("mail_show_site", { id, site }),
   setNotifications: (id: string, enabled: boolean) =>
     invoke<Snapshot>("set_notifications", { id, enabled }),
   muteService: (id: string, minutes: number) => invoke<Snapshot>("mute_service", { id, minutes }),
@@ -603,6 +643,87 @@ export const LINK_OPTIONS: { value: LinkTarget; label: string }[] = [
   { value: "browser", label: "No navegador" },
   { value: "preview", label: "Na prévia do Papeo" },
 ];
+
+export type MailRole = "inbox" | "drafts" | "sent" | "archive" | "all" | "flagged" | "junk" | "trash";
+
+export interface MailFolder {
+  /** Nome no servidor (vai de volta nos comandos). */
+  path: string;
+  name: string;
+  depth: number;
+  role?: MailRole | null;
+}
+
+export interface MailAddr {
+  name: string;
+  email: string;
+}
+
+export interface MailSummary {
+  uid: number;
+  from: MailAddr;
+  to: MailAddr[];
+  subject: string;
+  /** Segundos Unix. */
+  date: number;
+  seen: boolean;
+  flagged: boolean;
+  answered: boolean;
+  size: number;
+  preview: string;
+  hasAttachments: boolean;
+}
+
+export interface MailPage {
+  messages: MailSummary[];
+  total: number;
+}
+
+export interface MailAttachment {
+  index: number;
+  name: string;
+  mime: string;
+  size: number;
+}
+
+export interface MailMessage {
+  uid: number;
+  subject: string;
+  from: MailAddr[];
+  to: MailAddr[];
+  cc: MailAddr[];
+  replyTo: MailAddr[];
+  date: number;
+  messageId: string;
+  references: string[];
+  /** HTML já limpo pelo Papeo. */
+  html?: string | null;
+  /** O HTML pede imagens de fora (bloqueadas até mostrar). */
+  hasRemote: boolean;
+  text: string;
+  attachments: MailAttachment[];
+  seen: boolean;
+  flagged: boolean;
+}
+
+export interface MailDraft {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  inReplyTo?: string | null;
+  references?: string[];
+  replyFolder?: string | null;
+  replyUid?: number | null;
+  /** Conteúdo em base64. */
+  attachments: { name: string; mime: string; data: string }[];
+}
+
+/** Clique num aviso de e-mail de conta com o leitor: procura o assunto. */
+export function onMailReveal(cb: (r: { id: string; query: string }) => void): Promise<UnlistenFn> {
+  return listen<{ id: string; query: string }>("papeo://mail-reveal", (e) => cb(e.payload));
+}
 
 export function onSync(cb: (s: SyncStatus) => void): Promise<UnlistenFn> {
   return listen<SyncStatus>("papeo://sync", (e) => cb(e.payload));

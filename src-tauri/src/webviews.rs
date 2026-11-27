@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use tauri::webview::{
     NewWindowResponse, PageLoadEvent, PermissionKind, PermissionResponse, WebviewBuilder,
 };
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl};
 use tauri_plugin_opener::OpenerExt;
 
 const SERVICE_SCRIPT: &str = include_str!("notification_shim.js");
@@ -245,6 +245,8 @@ pub fn restore_open(app: &AppHandle) {
             .services
             .iter()
             .filter(|s| inner.config.open.contains(&s.id))
+            // Leitor de e-mail: o site só abre quando pedido.
+            .filter(|s| !inner.reader(&s.id))
             .map(|s| s.id.clone())
             .collect()
     };
@@ -401,7 +403,14 @@ pub fn apply_layout(app: &AppHandle) {
     let state = app.state::<AppState>();
     let (ids, active, area, overlay) = {
         let inner = state.lock();
-        let ids: Vec<String> = inner.config.services.iter().map(|s| s.id.clone()).collect();
+        // Contas no leitor de e-mail: o site (se carregado para os avisos)
+        // fica escondido; a tela é do Papeo.
+        let ids: Vec<(String, bool)> = inner
+            .config
+            .services
+            .iter()
+            .map(|s| (s.id.clone(), inner.reader(&s.id)))
+            .collect();
         // Bloqueado: nenhuma conversa aparece.
         (
             ids,
@@ -410,11 +419,11 @@ pub fn apply_layout(app: &AppHandle) {
             inner.overlay || inner.locked,
         )
     };
-    for id in ids {
+    for (id, reader) in ids {
         let Some(webview) = app.get_webview(&id) else {
             continue;
         };
-        if active.as_deref() == Some(id.as_str()) && !overlay {
+        if active.as_deref() == Some(id.as_str()) && !overlay && !reader {
             let _ = webview.set_position(LogicalPosition::new(area.x, area.y));
             let _ = webview.set_size(LogicalSize::new(area.width, area.height));
             let _ = webview.show();
@@ -445,7 +454,9 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
         }
         inner.active = id.clone();
         inner.overlay = false;
-        let to_create = service.filter(|s| app.get_webview(&s.id).is_none());
+        let to_create = service
+            .filter(|s| app.get_webview(&s.id).is_none())
+            .filter(|s| !inner.reader(&s.id));
         (to_create, inner.area)
     };
     // Sem o lock: add_child espera a thread principal, que também usa o estado.
@@ -455,7 +466,12 @@ pub fn activate(app: &AppHandle, id: Option<String>) -> Result<Snapshot, String>
     apply_layout(app);
     // Bloqueado: o teclado não vai para a conversa escondida.
     let locked = state.lock().locked;
-    let focus = if locked { None } else { id.as_deref() };
+    let reader = id.as_deref().is_some_and(|id| state.lock().reader(id));
+    let focus = if locked || reader {
+        None
+    } else {
+        id.as_deref()
+    };
     if let Some(webview) = focus.and_then(|id| app.get_webview(id)) {
         let _ = webview.set_focus();
     } else if let Some(ui) = app.get_webview(UI_WEBVIEW) {
@@ -474,6 +490,14 @@ pub fn open_chat(app: &AppHandle, id: &str, query: &str, exact: bool) -> Result<
     let query = papeo_core::clip(&query, 100);
     let snap = activate(app, Some(id.to_owned()))?;
     if query.is_empty() {
+        return Ok(snap);
+    }
+    // Leitor de e-mail: a tela do Papeo procura (pelo assunto).
+    if app.state::<AppState>().lock().reader(id) {
+        let _ = app.emit(
+            "papeo://mail-reveal",
+            serde_json::json!({ "id": id, "query": query }),
+        );
         return Ok(snap);
     }
     let ready = {
@@ -504,6 +528,26 @@ pub fn run_open_chat(webview: &Webview, query: &str, exact: bool) {
     let _ = webview.eval(format!(
         "window.__papeoOpenChat && window.__papeoOpenChat({arg}, {exact})"
     ));
+}
+
+/// Conta com o leitor de e-mail: mostra o site (`true`, carregando-o) ou
+/// volta ao leitor (`false`, descarregando o site).
+pub fn show_site(app: &AppHandle, id: &str, site: bool) -> Result<Snapshot, String> {
+    {
+        let state = app.state::<AppState>();
+        let mut inner = state.lock();
+        inner.service(id)?;
+        if site {
+            inner.site_view.insert(id.to_owned());
+            inner.mail_setup.remove(id);
+        } else {
+            inner.site_view.remove(id);
+        }
+    }
+    if !site {
+        hibernate(app, id);
+    }
+    activate(app, Some(id.to_owned()))
 }
 
 /// Descarrega a webview (libera a memória); a sessão continua salva.

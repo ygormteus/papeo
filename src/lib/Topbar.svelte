@@ -1,8 +1,10 @@
 <script lang="ts">
   import {
     Circle,
+    Globe,
     Lock,
     LockOpen,
+    Mail,
     Minus,
     Monitor,
     NotebookPen,
@@ -34,6 +36,7 @@
     ontheme,
     onreload,
     onhibernate,
+    onsite,
     onzoom,
     panelOpen,
     onpanel,
@@ -49,6 +52,8 @@
     ontheme: () => void;
     onreload: () => void;
     onhibernate: () => void;
+    /** Conta com o leitor de e-mail: mostra o site (`true`) ou volta ao leitor. */
+    onsite: (site: boolean) => void;
     /** Zoom absoluto (`zoom`) ou relativo (`delta`). */
     onzoom: (change: { zoom?: number; delta?: number }) => void;
     /** Painel de tarefas e anotações do contato. */
@@ -127,7 +132,17 @@
 
   <div class="spacer" data-tauri-drag-region></div>
 
-  {#if active}
+  {#if active?.mail}
+    <!-- E-mail por IMAP: leitor do Papeo ou o site do provedor. -->
+    <button
+      class="btn view-toggle"
+      onclick={() => onsite(!!active.reader)}
+      title={active.reader ? "Abrir o site do e-mail (carrega a página)" : "Voltar ao leitor do Papeo (libera a memória do site)"}
+    >
+      {#if active.reader}<Globe size={15} /> Abrir no site{:else}<Mail size={15} /> Voltar ao leitor{/if}
+    </button>
+  {/if}
+  {#if active && !active.reader}
     <div class="zoom" role="group" aria-label="Zoom de {active.name}">
       <button
         onclick={() => onzoom({ delta: -0.1 })}
@@ -355,6 +370,11 @@
   .pressed {
     background: var(--bg-hover);
     border-color: var(--border-strong);
+  }
+
+  .view-toggle {
+    gap: 6px;
+    white-space: nowrap;
   }
 
   .spacer {

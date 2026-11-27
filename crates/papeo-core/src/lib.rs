@@ -3,6 +3,7 @@
 //! para ser testado em qualquer máquina.
 
 pub mod mail;
+pub mod mailbox;
 mod organizer;
 mod pin;
 mod privacy;

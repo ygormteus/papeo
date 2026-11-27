@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-folders"
+description = "Enables the mail_folders command without any pre-configured scope."
+commands.allow = ["mail_folders"]
+
+[[permission]]
+identifier = "deny-mail-folders"
+description = "Denies the mail_folders command without any pre-configured scope."
+commands.deny = ["mail_folders"]

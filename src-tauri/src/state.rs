@@ -213,6 +213,12 @@ pub struct Inner {
     pub mode_override: Option<ModeOverride>,
     /// Avisos por IMAP de cada conta de e-mail que os usa.
     pub mail: HashMap<String, MailLive>,
+    /// Contas de e-mail com o leitor que o usuário pediu para ver no site
+    /// (até voltar ao leitor).
+    pub site_view: HashSet<String>,
+    /// Contas de e-mail recém-adicionadas, ainda sem o IMAP: abrem na tela
+    /// de configuração do leitor, não no site (até o usuário escolher).
+    pub mail_setup: HashSet<String>,
 }
 
 /// Situação dos avisos por IMAP de uma conta.
@@ -242,6 +248,14 @@ pub struct MailLive {
 }
 
 impl Inner {
+    /// A conta abre no leitor de e-mail do Papeo (IMAP configurado), não no
+    /// site. Sem senha ou com erro, o leitor mostra o problema e oferece o
+    /// site.
+    pub fn reader(&self, id: &str) -> bool {
+        !self.site_view.contains(id)
+            && (self.mail_setup.contains(id) || self.service(id).is_ok_and(|s| s.mail.is_some()))
+    }
+
     pub fn new(config: Config) -> Self {
         let config_lock_enabled = config.settings.lock.enabled;
         // A espera entre tentativas continua depois de reabrir o app.
@@ -283,6 +297,8 @@ impl Inner {
             organizer_error: None,
             mode_override: None,
             mail: HashMap::new(),
+            site_view: HashSet::new(),
+            mail_setup: HashSet::new(),
         }
     }
 
@@ -671,6 +687,11 @@ pub struct ServiceView {
     /// Avisos por IMAP (só contas que os usam).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mail_status: Option<MailStatus>,
+    /// Abre no leitor de e-mail do Papeo (o site só quando pedido).
+    pub reader: bool,
+    /// Servidor de envio (SMTP) da conta, `host:porta`, para mostrar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mail_smtp: Option<String>,
 }
 
 /// Como o bloqueio confirma a identidade.
@@ -791,6 +812,11 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                     .as_ref()
                     .map(|_| inner.mail.get(&s.id).map(|m| m.status.clone()))
                     .map(|status| status.unwrap_or(MailStatus::Connecting)),
+                reader: inner.reader(&s.id),
+                mail_smtp: s.mail.as_ref().map(|m| {
+                    let smtp = m.smtp();
+                    format!("{}:{}", smtp.host, smtp.port)
+                }),
             }
         })
         .collect::<Vec<_>>();

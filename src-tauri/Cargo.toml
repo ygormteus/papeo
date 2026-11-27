@@ -39,6 +39,8 @@ base64 = "0.21"
 url = "2"
 # Avisos de e-mail por IMAP (o mesmo TLS do sistema que o reqwest usa).
 native-tls = "0.2"
+# Envio de e-mail (SMTP com TLS do sistema; também monta a mensagem).
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "native-tls", "hostname"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

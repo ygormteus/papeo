@@ -30,7 +30,7 @@ pub const SLEEP_SITE_AFTER: Duration = Duration::from_secs(2 * 60);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Controle de um vigia: parar, acordar da espera e derrubar a conexão.
-struct Control {
+pub(crate) struct Control {
     generation: u64,
     stop: AtomicBool,
     /// Conexão em uso (para derrubar na hora ao parar ou acordar).
@@ -41,6 +41,17 @@ struct Control {
 }
 
 impl Control {
+    /// Controle avulso (leitor de e-mail): nunca para sozinho.
+    pub(crate) fn detached() -> Self {
+        Self {
+            generation: 0,
+            stop: AtomicBool::new(false),
+            socket: Mutex::new(None),
+            wake: Mutex::new(0),
+            cv: Condvar::new(),
+        }
+    }
+
     fn stopped(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
     }
@@ -422,7 +433,7 @@ fn run(app: &AppHandle, id: &str, options: Options, saved: &Saved, control: &Arc
 }
 
 /// Texto curto para a tela.
-fn describe(err: &ImapError) -> String {
+pub(crate) fn describe(err: &ImapError) -> String {
     match err {
         ImapError::Io(e) if e.kind() == io::ErrorKind::Other && e.to_string().contains("TLS") => {
             "Conexão segura recusada: confira o servidor e a porta.".into()
@@ -474,7 +485,7 @@ fn auth_failed(app: &AppHandle, id: &str, microsoft: bool) {
 }
 
 /// Conexão TLS (só TLS direto, porta 993 em geral).
-struct Tls(native_tls::TlsStream<TcpStream>);
+pub(crate) struct Tls(native_tls::TlsStream<TcpStream>);
 
 impl Read for Tls {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -583,16 +594,17 @@ impl core::Sink for AppSink<'_> {
 }
 
 /// Token de acesso da Microsoft e quando vence.
-type Access = Option<(String, Instant)>;
+pub(crate) type Access = Option<(String, Instant)>;
 
 /// Token de acesso válido (renovando se preciso). O token de renovação
 /// novo vai para o cofre só se o guardado ainda é o que este vigia usou.
-fn microsoft_token(
+pub(crate) fn microsoft_token(
     app: &AppHandle,
     id: &str,
     saved: &mut Saved,
     access: &mut Access,
     control: &Control,
+    scope: crate::microsoft::Scope,
 ) -> Result<String, ImapError> {
     use crate::microsoft::TokenError;
     if let Some((token, until)) = access.as_ref() {
@@ -600,13 +612,12 @@ fn microsoft_token(
             return Ok(token.clone());
         }
     }
-    let tokens = tauri::async_runtime::block_on(crate::microsoft::refresh(&saved.secret)).map_err(
-        |err| match err {
+    let tokens = tauri::async_runtime::block_on(crate::microsoft::refresh(&saved.secret, scope))
+        .map_err(|err| match err {
             TokenError::Reauth => ImapError::Auth("login da Microsoft vencido".into()),
             TokenError::Network(text) => ImapError::Io(io::Error::other(text)),
             TokenError::Refused(text) => ImapError::Rejected(text),
-        },
-    )?;
+        })?;
     // Parado durante a renovação: não grava nada (outro vigia pode já ter
     // assumido a conta).
     if control.stopped() {
@@ -642,6 +653,63 @@ fn microsoft_token(
     Ok(tokens.access_token)
 }
 
+/// Conecta e entra (senha ou login da Microsoft).
+pub(crate) fn open(
+    app: &AppHandle,
+    id: &str,
+    starttls: bool,
+    microsoft: bool,
+    saved: &mut Saved,
+    access: &mut Access,
+    control: &Control,
+) -> Result<core::Imap<Tls>, ImapError> {
+    use crate::microsoft::Scope;
+    // Token antes da conexão: a renovação não a deixa parada esperando.
+    let cached = access.is_some();
+    let token = if microsoft {
+        Some(microsoft_token(
+            app,
+            id,
+            saved,
+            access,
+            control,
+            Scope::Read,
+        )?)
+    } else {
+        None
+    };
+    let stream = connect(&saved.host, saved.port, starttls, control)?;
+    let mut imap = if starttls {
+        core::Imap::after_starttls(stream)
+    } else {
+        core::Imap::connect(stream)?
+    };
+    if let Some(token) = token {
+        match imap.authenticate_xoauth2(&saved.user, &token) {
+            // Token guardado recusado (revogado antes da hora): renova
+            // e tenta de novo uma vez na mesma conexão.
+            Err(ImapError::Auth(_)) if cached => {
+                *access = None;
+                let token = microsoft_token(app, id, saved, access, control, Scope::Read)?;
+                imap.authenticate_xoauth2(&saved.user, &token)?;
+            }
+            other => other?,
+        }
+    } else {
+        let account = MailAccount {
+            host: saved.host.clone(),
+            port: saved.port,
+            user: saved.user.clone(),
+            sleep_site: false,
+            starttls,
+            whole_inbox: false,
+            auth: MailAuth::Password,
+        };
+        imap.login(&saved.user, &account.login_secret(&saved.secret))?;
+    }
+    Ok(imap)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn session(
     app: &AppHandle,
@@ -654,42 +722,15 @@ fn session(
     connected: &mut bool,
 ) -> Result<(), ImapError> {
     let result = (|| {
-        // Token antes da conexão: a renovação não a deixa parada esperando.
-        let cached = access.is_some();
-        let token = if options.microsoft {
-            Some(microsoft_token(app, id, saved, access, control)?)
-        } else {
-            None
-        };
-        let stream = connect(&saved.host, saved.port, options.starttls, control)?;
-        let mut imap = if options.starttls {
-            core::Imap::after_starttls(stream)
-        } else {
-            core::Imap::connect(stream)?
-        };
-        if let Some(token) = token {
-            match imap.authenticate_xoauth2(&saved.user, &token) {
-                // Token guardado recusado (revogado antes da hora): renova
-                // e tenta de novo uma vez na mesma conexão.
-                Err(ImapError::Auth(_)) if cached => {
-                    *access = None;
-                    let token = microsoft_token(app, id, saved, access, control)?;
-                    imap.authenticate_xoauth2(&saved.user, &token)?;
-                }
-                other => other?,
-            }
-        } else {
-            let account = MailAccount {
-                host: saved.host.clone(),
-                port: saved.port,
-                user: saved.user.clone(),
-                sleep_site: false,
-                starttls: options.starttls,
-                whole_inbox: false,
-                auth: MailAuth::Password,
-            };
-            imap.login(&saved.user, &account.login_secret(&saved.secret))?;
-        }
+        let mut imap = open(
+            app,
+            id,
+            options.starttls,
+            options.microsoft,
+            saved,
+            access,
+            control,
+        )?;
         let mut sink = AppSink {
             app,
             id,

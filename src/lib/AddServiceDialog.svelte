@@ -2,12 +2,43 @@
   import { Check, CirclePlus, X } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
-  import { KIND_META, OUTLOOK_WORK_URL, errorMessage, needsUrl, type ServiceKind } from "./api";
+  import {
+    KIND_META,
+    MAIL_PRESETS,
+    OUTLOOK_WORK_URL,
+    errorMessage,
+    needsUrl,
+    presetForAddress,
+    webmailFor,
+    type ServiceKind,
+  } from "./api";
 
   let {
     onclose,
     onsubmit,
-  }: { onclose: () => void; onsubmit: (kind: ServiceKind, name: string, url: string) => Promise<void> } = $props();
+  }: {
+    onclose: () => void;
+    /** `mail`: e-mail por IMAP a configurar em seguida (servidor e usuário). */
+    onsubmit: (
+      kind: ServiceKind,
+      name: string,
+      url: string,
+      mail?: { host: string; user: string },
+    ) => Promise<void>;
+  } = $props();
+
+  // Outro e-mail: endereço e provedor (o IMAP vem a seguir); o webmail só
+  // serve para "Abrir no site".
+  let address = $state("");
+  let presetId = $state("");
+  let presetTouched = $state(false);
+  const preset = $derived(MAIL_PRESETS.find((p) => p.id === presetId));
+  const addressOk = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.trim()));
+
+  function guessPreset() {
+    if (presetTouched) return;
+    presetId = presetForAddress(address)?.id ?? "";
+  }
 
   const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "gmail", "outlook", "email", "custom"];
   let kind = $state<ServiceKind>("whatsapp");
@@ -20,15 +51,38 @@
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (kind === "email") {
+      if (!addressOk) {
+        error = "Informe o endereço de e-mail.";
+        return;
+      }
+      const site = url.trim() || webmailFor(address, preset);
+      if (!site) {
+        error = "Informe o endereço do webmail.";
+        return;
+      }
+      busy = true;
+      error = "";
+      try {
+        await onsubmit(kind, name.trim(), site, {
+          host: preset?.host ?? "",
+          user: address.trim(),
+        });
+      } catch (err) {
+        error = errorMessage(err);
+        busy = false;
+      }
+      return;
+    }
     if (needsUrl(kind) && !url.trim()) {
-      error = kind === "email" ? "Informe o endereço do webmail." : "Informe o endereço do site.";
+      error = "Informe o endereço do site.";
       return;
     }
     busy = true;
     error = "";
     try {
-      const address = needsUrl(kind) ? url.trim() : kind === "outlook" && outlookWork ? OUTLOOK_WORK_URL : "";
-      await onsubmit(kind, name.trim(), address);
+      const site = needsUrl(kind) ? url.trim() : kind === "outlook" && outlookWork ? OUTLOOK_WORK_URL : "";
+      await onsubmit(kind, name.trim(), site);
     } catch (err) {
       error = errorMessage(err);
       busy = false;
@@ -69,23 +123,57 @@
       {/each}
     </fieldset>
 
-    {#if needsUrl(kind)}
+    {#if kind === "email"}
       <div class="field">
-        <label for="svc-url">{kind === "email" ? "Endereço do webmail" : "Endereço"}</label>
+        <label for="svc-address">Seu e-mail</label>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          id="svc-address"
+          class="input"
+          type="email"
+          bind:value={address}
+          oninput={guessPreset}
+          placeholder="voce@seudominio.com.br"
+          autocomplete="email"
+          autofocus
+        />
+      </div>
+      <div class="field">
+        <label for="svc-preset">Provedor</label>
+        <select
+          id="svc-preset"
+          class="input"
+          bind:value={presetId}
+          onchange={() => (presetTouched = true)}
+        >
+          <option value="">Outro (informo o servidor IMAP)</option>
+          {#each MAIL_PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
+        </select>
+        <p class="note">
+          {preset?.note ?? "O Papeo lê e envia pelo IMAP, sem abrir o site. A senha vem no próximo passo."}
+        </p>
+      </div>
+      <div class="field">
+        <label for="svc-url">Webmail <span class="muted">(opcional, para abrir no site)</span></label>
+        <input
+          id="svc-url"
+          class="input"
+          bind:value={url}
+          placeholder={webmailFor(address, preset).replace(/^https:\/\//, "").replace(/\/$/, "") ||
+            "webmail.seudominio.com.br"}
+        />
+      </div>
+    {:else if needsUrl(kind)}
+      <div class="field">
+        <label for="svc-url">Endereço</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           id="svc-url"
           class="input"
           bind:value={url}
-          placeholder={kind === "email" ? "webmail.seudominio.com.br" : "app.exemplo.com"}
+          placeholder="app.exemplo.com"
           autofocus
         />
-        {#if kind === "email"}
-          <p class="note">
-            O mesmo endereço em que você lê esse e-mail no navegador. No Roundcube, o Papeo também lê o assunto
-            aberto e as não lidas.
-          </p>
-        {/if}
         {#if url.trim().toLowerCase().startsWith("http://")}
           <p class="warn" role="note">
             Endereço sem criptografia (http): mensagens e senhas podem ser lidas por quem estiver na mesma

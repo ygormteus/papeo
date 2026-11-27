@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-set-flag"
+description = "Enables the mail_set_flag command without any pre-configured scope."
+commands.allow = ["mail_set_flag"]
+
+[[permission]]
+identifier = "deny-mail-set-flag"
+description = "Denies the mail_set_flag command without any pre-configured scope."
+commands.deny = ["mail_set_flag"]

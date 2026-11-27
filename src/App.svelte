@@ -26,6 +26,7 @@
   import ContextMenu from "./lib/ContextMenu.svelte";
   import CustomizeDialog from "./lib/CustomizeDialog.svelte";
   import MailDialog from "./lib/MailDialog.svelte";
+  import MailReader from "./lib/MailReader.svelte";
   import Home from "./lib/Home.svelte";
   import LockScreen from "./lib/LockScreen.svelte";
   import Settings from "./lib/Settings.svelte";
@@ -49,6 +50,7 @@
     usesModes,
     onCommand,
     onDownload,
+    onMailReveal,
     onOrganizer,
     onState,
     fresher,
@@ -114,6 +116,10 @@
   /** Conta com o diálogo de avisos por IMAP aberto (pelo id: a situação
    *  da conexão chega ao vivo pelo estado). */
   let mailingId = $state<string | null>(null);
+  // Servidor e usuário já informados ao adicionar a conta.
+  let mailStart = $state<{ host: string; user: string } | null>(null);
+  // Clique num aviso de e-mail de conta com o leitor: assunto a procurar.
+  let mailReveal = $state<{ id: string; query: string; n: number } | null>(null);
   const mailing = $derived(snap.services.find((s) => s.id === mailingId) ?? null);
   let restoring = $state<{
     path: string;
@@ -354,10 +360,20 @@
     store.set("papeo.sidebar", collapsed ? "collapsed" : "expanded");
   }
 
-  async function addService(kind: ServiceKind, name: string, url: string) {
+  async function addService(
+    kind: ServiceKind,
+    name: string,
+    url: string,
+    mail?: { host: string; user: string },
+  ) {
     // Erros sobem para o diálogo, que os mostra no próprio formulário.
     snap = fresher(await api.addService(kind, name || undefined, url || undefined), snap);
     addOpen = false;
+    // E-mail: já pede o IMAP (o leitor do Papeo, sem carregar o site).
+    if (supportsMailWatch(kind) && snap.active) {
+      mailStart = mail ?? null;
+      mailingId = snap.active;
+    }
   }
 
   function zoom(change: { zoom?: number; delta?: number }) {
@@ -409,7 +425,7 @@
       },
       { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
       ...(supportsMailWatch(service.kind)
-        ? [{ label: "Avisos por IMAP…", icon: MailCheck, run: () => (mailingId = service.id) }]
+        ? [{ label: "E-mail por IMAP…", icon: MailCheck, run: () => (mailingId = service.id) }]
         : []),
       { label: "Sair e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },
       { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
@@ -482,6 +498,7 @@
         if (!snap.locked) org = o;
       }),
       onCommand(handleCommand),
+      onMailReveal((r) => (mailReveal = { ...r, n: (mailReveal?.n ?? 0) + 1 })),
       onDownload((d) =>
         !snap.locked &&
         showToast(
@@ -569,6 +586,7 @@
       ontheme={cycleTheme}
       onreload={() => active && run(api.reload(active.id))}
       onhibernate={() => active && run(api.hibernate(active.id))}
+      onsite={(site) => active && run(api.mailShowSite(active.id, site))}
       onzoom={zoom}
       {panelOpen}
       onpanel={togglePanel}
@@ -586,7 +604,17 @@
       bind:this={content}
       aria-live="polite"
     >
-      {#if active}
+      {#if active?.reader && !snap.locked}
+        {#key active.id}
+        <MailReader
+          service={active}
+          reveal={mailReveal?.id === active.id ? mailReveal : null}
+          onsite={() => run(api.mailShowSite(active.id, true))}
+          onconfigure={() => (mailingId = active.id)}
+          ontoast={(text, action) => showToast({ text, action }, action ? 8000 : 4000)}
+        />
+        {/key}
+      {:else if active}
         <div class="placeholder">
           {#if menuCovers && !modalOpen}
             {active.name} oculto enquanto o menu está aberto.
@@ -755,7 +783,11 @@
   {@const target = mailing}
   <MailDialog
     service={target}
-    onclose={() => (mailingId = null)}
+    initial={mailStart}
+    onclose={() => {
+      mailingId = null;
+      mailStart = null;
+    }}
     onsave={async (account) => {
       // Erros sobem para o diálogo, que os mostra no formulário.
       snap = fresher(await api.setMailAccount(target.id, account), snap);

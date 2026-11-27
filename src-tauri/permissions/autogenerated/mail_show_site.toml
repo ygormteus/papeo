@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-show-site"
+description = "Enables the mail_show_site command without any pre-configured scope."
+commands.allow = ["mail_show_site"]
+
+[[permission]]
+identifier = "deny-mail-show-site"
+description = "Denies the mail_show_site command without any pre-configured scope."
+commands.deny = ["mail_show_site"]

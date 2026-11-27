@@ -50,6 +50,10 @@ pub async fn add_service(
             // Segunda conta do mesmo mensageiro: "WhatsApp 2", "WhatsApp 3"…
             service.name = papeo_core::unique_name(&service.name, &inner.config.services);
         }
+        // E-mail: começa pela configuração do IMAP (leve), não pelo site.
+        if service.kind.supports_mail_watch() || service.kind == ServiceKind::Outlook {
+            inner.mail_setup.insert(service.id.clone());
+        }
         inner.config.services.push(service);
         Ok(())
     })?;
@@ -187,6 +191,15 @@ pub async fn set_mail_account(
         })?;
         crate::mail::forget(&app, &id);
         crate::mail::sync(&app);
+        {
+            let mut inner = state.lock();
+            inner.site_view.remove(&id);
+            inner.mail_setup.remove(&id);
+        }
+        // Sem o leitor, a conta aberta volta a ser o site.
+        if state.lock().active.as_deref() == Some(id.as_str()) {
+            return crate::webviews::activate(&app, Some(id));
+        }
         if slept {
             crate::mail::site_fallback(&app, &id, false);
         }
@@ -1138,4 +1151,122 @@ pub async fn set_updates(app: AppHandle, state: State<'_, AppState>, check: bool
         Ok(())
     })?;
     Ok(publish(&app))
+}
+
+// ---------------------------------------------------------------------------
+// Leitor de e-mail (IMAP/SMTP), para contas com o e-mail configurado.
+
+#[tauri::command]
+pub async fn mail_folders(
+    app: AppHandle,
+    id: String,
+    refresh: bool,
+) -> CmdResult<Vec<papeo_core::mailbox::Folder>> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::folders(app, id, refresh).await
+}
+
+#[tauri::command]
+pub async fn mail_list(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    page: u32,
+    query: String,
+) -> CmdResult<papeo_core::mailbox::Page> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::list(app, id, folder, page, query).await
+}
+
+#[tauri::command]
+pub async fn mail_open(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+    peek: Option<bool>,
+) -> CmdResult<papeo_core::mailbox::MessageView> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::open(app, id, folder, uid, peek.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn mail_set_flag(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uids: Vec<u32>,
+    flag: String,
+    on: bool,
+) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::set_flag(app, id, folder, uids, flag, on).await
+}
+
+#[tauri::command]
+pub async fn mail_move(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uids: Vec<u32>,
+    target: String,
+) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::move_to(app, id, folder, uids, target).await
+}
+
+#[tauri::command]
+pub async fn mail_delete(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uids: Vec<u32>,
+) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::delete(app, id, folder, uids).await
+}
+
+#[tauri::command]
+pub async fn mail_save_attachment(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+    index: u32,
+) -> CmdResult<String> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::save_attachment(app, id, folder, uid, index).await
+}
+
+#[tauri::command]
+pub async fn mail_send(app: AppHandle, id: String, draft: crate::mailbox::Draft) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::send(app, id, draft).await
+}
+
+/// Conta com o leitor: mostra o site (`true`) ou volta ao leitor.
+#[tauri::command]
+pub async fn mail_show_site(app: AppHandle, id: String, site: bool) -> CmdResult {
+    ensure_unlocked(&app)?;
+    crate::webviews::show_site(&app, &id, site)
+}
+
+/// Mostra um arquivo salvo pelo leitor (anexo) na pasta dele.
+#[tauri::command]
+pub async fn mail_reveal_file(app: AppHandle, path: String) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = std::path::PathBuf::from(path);
+    // Só o que está na pasta de downloads (onde o leitor salva).
+    let dir = crate::downloads::downloads_dir(&app);
+    let inside = path
+        .canonicalize()
+        .ok()
+        .zip(dir.canonicalize().ok())
+        .is_some_and(|(p, d)| p.starts_with(d));
+    if !inside {
+        return Err("Arquivo fora da pasta de downloads.".into());
+    }
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|e| e.to_string())
 }

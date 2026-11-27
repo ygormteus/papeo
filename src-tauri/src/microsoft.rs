@@ -14,8 +14,27 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Contas pessoais (Outlook.com, Hotmail) e de trabalho/escola.
 const AUTHORIZE_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
-/// Ler a caixa por IMAP, continuar com acesso (renovação) e saber o e-mail.
-const SCOPE: &str = "https://outlook.office.com/IMAP.AccessAsUser.All offline_access openid email";
+/// No login: ler a caixa por IMAP, enviar por SMTP, continuar com acesso
+/// (renovação) e saber o e-mail.
+const SCOPE: &str = "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access openid email";
+
+/// Para que serve o token de acesso pedido na renovação.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// Ler por IMAP (logins antigos só liberaram isto).
+    Read,
+    /// Enviar por SMTP.
+    Send,
+}
+
+impl Scope {
+    fn text(self) -> &'static str {
+        match self {
+            Scope::Read => "https://outlook.office.com/IMAP.AccessAsUser.All offline_access",
+            Scope::Send => "https://outlook.office.com/SMTP.Send offline_access",
+        }
+    }
+}
 /// App "Papeo" registrado no Microsoft Entra (cliente público, sem segredo).
 const DEFAULT_CLIENT_ID: &str = "cd10f1fa-0501-4cd3-a402-c5bd7920c139";
 
@@ -171,12 +190,12 @@ pub async fn exchange(login: LoginCode) -> Result<Tokens, TokenError> {
 }
 
 /// Novo token de acesso (e, em geral, um novo de renovação).
-pub async fn refresh(refresh_token: &str) -> Result<Tokens, TokenError> {
+pub async fn refresh(refresh_token: &str, scope: Scope) -> Result<Tokens, TokenError> {
     token_request(form(&[
         ("client_id", client_id()),
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
-        ("scope", SCOPE),
+        ("scope", scope.text()),
     ]))
     .await
 }

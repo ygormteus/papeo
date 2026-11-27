@@ -8,6 +8,7 @@ mod drive;
 mod idle;
 mod lock;
 mod mail;
+mod mailbox;
 mod memory;
 #[cfg(target_os = "macos")]
 mod menu;
@@ -512,6 +513,7 @@ pub fn run() {
                 sync::init(handle, app.path().app_local_data_dir()?);
                 secrets::init(handle, &app.path().app_local_data_dir()?);
                 mail::init(handle);
+                mailbox::init(handle);
                 notifications::init(handle);
                 tray::install(handle)?;
                 #[cfg(target_os = "macos")]
@@ -534,6 +536,16 @@ pub fn run() {
             commands::set_mail_account,
             commands::mail_microsoft_login,
             commands::mail_microsoft_cancel,
+            commands::mail_folders,
+            commands::mail_list,
+            commands::mail_open,
+            commands::mail_set_flag,
+            commands::mail_move,
+            commands::mail_delete,
+            commands::mail_save_attachment,
+            commands::mail_send,
+            commands::mail_show_site,
+            commands::mail_reveal_file,
             commands::set_notifications,
             commands::mute_service,
             commands::set_media_policy,

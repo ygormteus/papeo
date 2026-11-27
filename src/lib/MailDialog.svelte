@@ -14,10 +14,13 @@
 
   let {
     service,
+    initial = null,
     onclose,
     onsave,
     onmicrosoft,
   }: {
+    /** Conta nova: servidor e usuário informados ao adicionar. */
+    initial?: { host: string; user: string } | null;
     /** Conta ao vivo (a situação do IMAP muda enquanto o diálogo está aberto). */
     service: ServiceView;
     onclose: () => void;
@@ -34,17 +37,20 @@
   // svelte-ignore state_referenced_locally
   const start = service.mail;
   // svelte-ignore state_referenced_locally
-  let host = $state(start?.host ?? (service.kind === "gmail" ? GMAIL_IMAP.host : ""));
+  let host = $state(
+    start?.host ?? (service.kind === "gmail" ? GMAIL_IMAP.host : initial?.host || ""),
+  );
   // svelte-ignore state_referenced_locally
   let port = $state(String(start?.port ?? GMAIL_IMAP.port));
-  let user = $state(start?.user ?? "");
+  // svelte-ignore state_referenced_locally
+  let user = $state(start?.user ?? initial?.user ?? "");
   let password = $state("");
   let sleepSite = $state(start?.sleepSite ?? true);
   let starttls = $state(start?.starttls ?? false);
   let wholeInbox = $state(start?.wholeInbox ?? false);
   // Provedor conhecido escolhido na lista (só preenche servidor e porta).
   // svelte-ignore state_referenced_locally
-  let presetId = $state(MAIL_PRESETS.find((p) => p.host === start?.host)?.id ?? "");
+  let presetId = $state(MAIL_PRESETS.find((p) => p.host === (start?.host ?? initial?.host))?.id ?? "");
   const preset = $derived(MAIL_PRESETS.find((p) => p.id === presetId));
 
   function choosePreset(id: string) {
@@ -179,13 +185,13 @@
   }
 </script>
 
-<Modal {onclose} label="Avisos por IMAP de {service.name}" width={480}>
+<Modal {onclose} label="E-mail por IMAP de {service.name}" width={480}>
   <form onsubmit={submit}>
     <header>
-      <h2>Avisos por IMAP</h2>
+      <h2>E-mail por IMAP</h2>
       <p class="lead">
-        O Papeo recebe o remetente e o assunto dos e-mails novos de {service.name} direto do servidor, sem precisar
-        do site aberto.
+        O Papeo lê, envia e avisa dos e-mails de {service.name} direto do servidor, sem carregar o site (ele só abre
+        quando você pedir).
       </p>
     </header>
 
@@ -233,6 +239,9 @@
           </span>
         {/if}
       </div>
+      {#if service.mailSmtp}
+        <p class="smtp">Envio pelo servidor {service.mailSmtp}, {microsoft ? "com o mesmo login" : "com a mesma senha"}.</p>
+      {/if}
     {/if}
 
     {#if gmail}
@@ -406,8 +415,9 @@
           <button type="button" class="btn danger-text" disabled={busy} onclick={turnOff}>Desligar</button>
         {/if}
         <span class="spacer"></span>
-        <button type="button" class="btn" onclick={onclose}>{saved && !dirty ? "Fechar" : "Cancelar"}</button>
-        {#if !microsoft || configured}
+        <button type="button" class="btn" onclick={onclose}>{(microsoft ? !canSave : saved && !dirty) ? "Fechar" : "Cancelar"}</button>
+        <!-- Outlook: o login já liga tudo; Salvar só para o site hibernado. -->
+        {#if !microsoft || canSave}
           <button type="submit" class="btn btn-primary" disabled={!canSave}>
             {busy && !signingIn ? "Salvando…" : configured ? "Salvar" : "Ligar"}
           </button>
@@ -433,6 +443,12 @@
   .lead {
     margin: 0;
     color: var(--text-muted);
+  }
+
+  .smtp {
+    margin: -4px 0 0;
+    color: var(--text-faint);
+    font-size: 12px;
   }
 
   .status {
