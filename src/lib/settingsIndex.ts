@@ -56,6 +56,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: "arquivos", label: "Anexos", keywords: "arquivos visualizar pdf planilha quick look" },
   { tab: "sistema", label: "Confirmar antes de liberar memória", keywords: "ram recarregar perguntar" },
   { tab: "sistema", label: "Verificar atualizações", keywords: "versão update atualizar nova" },
+  {
+    tab: "sistema",
+    label: "Modo de diagnóstico",
+    keywords: "diagnóstico site mudou quebrado problema resposta rápida não funciona seletores",
+  },
   { tab: "arquivos", label: "Pasta dos arquivos baixados", keywords: "downloads pasta salvar" },
   { tab: "dados", label: "Sincronização", keywords: "google drive nuvem outro computador sync" },
   { tab: "dados", label: "Exportar ou restaurar a configuração", keywords: "backup importar exportar copiar" },

@@ -654,6 +654,7 @@ pub struct Preferences {
     attachments: Option<papeo_core::AttachmentMode>,
     sleep_outside_mode: Option<bool>,
     account_frame: Option<bool>,
+    diagnostics: Option<bool>,
     voice_capture: Option<papeo_core::VoiceCapture>,
 }
 
@@ -692,6 +693,9 @@ pub async fn set_preferences(
         }
         if let Some(v) = prefs.account_frame {
             s.account_frame = v;
+        }
+        if let Some(v) = prefs.diagnostics {
+            s.diagnostics = v;
         }
         if let Some(v) = prefs.voice_capture {
             s.voice_capture = v;

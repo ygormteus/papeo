@@ -5,6 +5,7 @@ use crate::state::{
     local_minute_of_day, now_secs, publish, status_of, AppState, ChatMessage, MAIN_WINDOW,
 };
 use papeo_core::NotificationPreview;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State, Webview};
 
@@ -98,7 +99,7 @@ pub fn deliver(
             && inner.config.settings.notification_preview != NotificationPreview::Hidden;
         let target = crate::notifications::Target {
             service_id: id.clone(),
-            reply: service.kind.supports_chat() && shows_chat,
+            reply: inner.can_reply(&id) && shows_chat,
             // "Lembrar em 1 h": conversa de mensageiro ou assunto de e-mail.
             later: (service.kind.supports_chat() || service.kind.is_email()) && shows_chat,
             chat: (!open.is_empty()).then_some(open),
@@ -171,6 +172,8 @@ pub async fn service_status(
     // Não lidas lidas na própria página (caixas de e-mail); sem valor, vale
     // o número do título.
     unread: Option<u32>,
+    // Pontos de apoio do site encontrados na página (spec 14): só presença.
+    probes: Option<HashMap<String, Option<bool>>>,
 ) -> Result<(), String> {
     let id = webview.label().to_owned();
     let page = webview.url().map(|u| u.to_string()).unwrap_or_default();
@@ -181,11 +184,24 @@ pub async fn service_status(
         let own_site = inner
             .service(&id)
             .is_ok_and(|s| papeo_core::same_site(&s.url, &page));
+        let kind = inner.service(&id).map(|s| s.kind).ok();
         let Some(health) = inner.health.get_mut(&id) else {
             return Ok(());
         };
         health.last_beat = Some(Instant::now());
         health.logged_out = own_site && logged_out;
+        // Diagnóstico: só a página do próprio site, conectada.
+        let mut probes_changed = false;
+        // Só os seis pontos conhecidos interessam: relatório maior é lixo.
+        let probes = probes.filter(|p| own_site && !logged_out && p.len() <= 16);
+        if let (Some(kind), Some(probes)) = (kind, probes) {
+            probes_changed = health.probes.update(
+                kind,
+                probes.iter().map(|(k, v)| (k.as_str(), *v)),
+                chat.as_deref(),
+                crate::organizer::now_ms(),
+            );
+        }
         // Vale mesmo fora do site do serviço: só evita recarregar.
         if media == Some(true) {
             health.media_at = health.last_beat;
@@ -220,7 +236,7 @@ pub async fn service_status(
         // A página está pronta: abre a conversa que esperava por ela.
         let pending = own_site.then(|| inner.pending_chat.remove(&id)).flatten();
         (
-            chat_changed || before != status_of(&inner, &id, true),
+            chat_changed || probes_changed || before != status_of(&inner, &id, true),
             pending,
         )
     };

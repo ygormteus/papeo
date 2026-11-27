@@ -58,6 +58,8 @@ pub struct Health {
     pub logged_out: bool,
     /// Último sinal de vida com chamada ou áudio/vídeo em curso.
     pub media_at: Option<Instant>,
+    /// Pontos de apoio do site encontrados na página (spec 14).
+    pub probes: papeo_core::probes::ProbeTracker,
 }
 
 impl Health {
@@ -73,6 +75,7 @@ impl Health {
             last_beat: None,
             logged_out: false,
             media_at: None,
+            probes: Default::default(),
         }
     }
 }
@@ -455,11 +458,18 @@ impl Inner {
                     body: if last_in.mine { String::new() } else { body },
                     at: last.at,
                     messages,
-                    can_reply: service.kind.supports_chat(),
+                    can_reply: self.can_reply(&service.id),
                     unread: chat.has_unread(),
                 })
             })
             .collect()
+    }
+
+    /// Resposta rápida oferecida para a conta: mensageiro conhecido e
+    /// nenhum ponto de apoio dela sumido do site há tempo demais (spec 14).
+    pub fn can_reply(&self, id: &str) -> bool {
+        self.service(id).is_ok_and(|s| s.kind.supports_chat())
+            && self.health.get(id).is_none_or(|h| h.probes.can_reply())
     }
 
     pub fn push_download(&mut self, mut entry: DownloadEntry) -> u64 {
@@ -692,6 +702,9 @@ pub struct ServiceView {
     /// Servidor de envio (SMTP) da conta, `host:porta`, para mostrar.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mail_smtp: Option<String>,
+    /// Pontos de apoio do site relatados pela página (spec 14).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub probes: Vec<papeo_core::probes::ProbeView>,
 }
 
 /// Como o bloqueio confirma a identidade.
@@ -817,6 +830,12 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
                     let smtp = m.smtp();
                     format!("{}:{}", smtp.host, smtp.port)
                 }),
+                probes: inner
+                    .health
+                    .get(&s.id)
+                    .filter(|_| loaded)
+                    .map(|h| h.probes.view())
+                    .unwrap_or_default(),
             }
         })
         .collect::<Vec<_>>();

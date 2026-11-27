@@ -8,6 +8,7 @@
   import { TAB_LABEL, type SettingsTab, type SettingsTarget } from "./settingsIndex";
   import SyncSettings from "./SyncSettings.svelte";
   import {
+    Activity,
     BellOff,
     Briefcase,
     Cloud,
@@ -58,6 +59,10 @@
     type AttachmentMode,
     ATTACHMENT_OPTIONS,
     VOICE_OPTIONS,
+    KIND_META,
+    PROBE_LABEL,
+    PROBE_STATE_LABEL,
+    probeReport,
     type ModeChoice,
     type Snapshot,
     type WorkHours,
@@ -77,6 +82,19 @@
     /** Opção a mostrar ao abrir (vinda da busca): troca de aba, rola e destaca a linha. */
     target?: SettingsTarget | null;
   } = $props();
+
+  // Diagnóstico dos sites (spec 14): contas abertas com pontos relatados.
+  const probed = $derived(snap.services.filter((s) => s.loaded && s.probes?.length));
+  let copied = $state(false);
+  async function copyReport() {
+    try {
+      await navigator.clipboard.writeText(probeReport(snap.appVersion, snap.services));
+      copied = true;
+      setTimeout(() => (copied = false), 4000);
+    } catch (e) {
+      run(Promise.reject(e));
+    }
+  }
   const hasNotes = $derived(notesHistory(snap.appVersion).length > 0);
 
   const settings = $derived(snap.settings);
@@ -726,6 +744,50 @@
         </div>
       </section>
 
+      <section class="card" aria-labelledby="s-diagnostics">
+        <h2 id="s-diagnostics"><Activity size={18} /> Diagnóstico dos sites</h2>
+        <div class="row">
+          <div class="text">
+            <span class="label">Modo de diagnóstico</span>
+            <span class="hint">
+              Avisa na barra do topo quando o Papeo deixa de encontrar no site de uma conta o que a resposta
+              rápida, o contador ou a busca usam (sinal de que o site mudou). Mesmo desligado, a resposta rápida
+              some sozinha da conta enquanto o site estiver assim.
+            </span>
+          </div>
+          <Switch
+            checked={settings.diagnostics}
+            label="Modo de diagnóstico"
+            onchange={(v) => run(api.setPreferences({ diagnostics: v }))}
+          />
+        </div>
+        {#if probed.length}
+          {#each probed as s (s.id)}
+            <div class="row stack probes">
+              <span class="label">{s.name} <span class="hint">· {KIND_META[s.kind].label}</span></span>
+              <ul>
+                {#each s.probes ?? [] as p (p.probe)}
+                  <li class={p.state}>
+                    <span>{PROBE_LABEL[p.probe]}</span>
+                    <span class="state">{PROBE_STATE_LABEL[p.state]}</span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/each}
+        {:else}
+          <p class="hint probes-empty">Nenhuma conta aberta com pontos verificáveis (eles aparecem 30 s depois de a conta carregar).</p>
+        {/if}
+        <div class="row">
+          <div class="text">
+            <span class="hint" role="status">
+              {copied ? "Relatório copiado. Ele não leva nomes de contas nem de conversas." : "Para relatar um problema: o relatório não leva nomes de contas nem de conversas."}
+            </span>
+          </div>
+          <button class="btn" onclick={copyReport}>Copiar relatório</button>
+        </div>
+      </section>
+
       <section class="card" aria-labelledby="s-updates">
         <h2 id="s-updates"><RefreshCw size={18} /> Atualizações</h2>
         <div class="row">
@@ -1061,6 +1123,34 @@
   .hint {
     font-size: 13px;
     color: var(--text-muted);
+  }
+
+  .probes ul {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+  }
+  .probes li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .probes .state {
+    color: var(--text-muted);
+  }
+  .probes li.found .state {
+    color: var(--success-text);
+  }
+  .probes li.broken .state,
+  .probes li.missing .state {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .probes-empty {
+    margin: 4px 0 8px;
   }
 
   .path {

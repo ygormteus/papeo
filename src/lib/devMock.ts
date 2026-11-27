@@ -61,6 +61,20 @@ export function installDevMock() {
       services[4].context = "work";
     }
     settings.updates.noticeSeen = true;
+    // `?diagnostico`: o campo de texto do WhatsApp sumiu (modo ligado).
+    if (new URLSearchParams(location.search).has("diagnostico")) {
+      settings.diagnostics = true;
+      services[0].probes = [
+        { probe: "list", state: "found" },
+        { probe: "search", state: "found" },
+        { probe: "header", state: "found" },
+        { probe: "composer", state: "broken" },
+      ];
+      services[3].probes = [
+        { probe: "inbox", state: "found" },
+        { probe: "subject", state: "unknown" },
+      ];
+    }
     // `?alertas`: uma conta fora do ar e outra travada.
     if (new URLSearchParams(location.search).has("alertas")) {
       services[0].status = "loggedOut";

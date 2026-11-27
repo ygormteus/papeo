@@ -592,6 +592,8 @@
       onpanel={togglePanel}
       extra={!active && page === "home" && snap.services.length ? homeStats : undefined}
       {twin}
+      diagnostics={snap.settings.diagnostics}
+      ondiagnostics={() => openSettings({ tab: "sistema", label: "Modo de diagnóstico" })}
     />
     {#snippet homeStats()}
       <HomeStats {snap} {run} onopen={select} />

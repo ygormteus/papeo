@@ -50,6 +50,9 @@ pub struct Settings {
     pub sleep_outside_mode: bool,
     /// Moldura com a cor da conta em volta do site aberto.
     pub account_frame: bool,
+    /// Modo de diagnóstico: avisa na barra do topo quando um ponto de apoio
+    /// do site some (spec 14).
+    pub diagnostics: bool,
 }
 
 /// Modo valendo agora: quais contas aparecem e notificam.
@@ -352,6 +355,7 @@ impl Default for Settings {
             work_hours: WorkHours::default(),
             sleep_outside_mode: false,
             account_frame: true,
+            diagnostics: false,
         }
     }
 }
@@ -533,6 +537,7 @@ mod tests {
         let old: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(old.mode, ModeChoice::All);
         assert!(old.account_frame);
+        assert!(!old.diagnostics);
         assert_eq!(old.work_hours, WorkHours::default());
         let json = r#"{"id":"svc-0123456789ab","kind":"whatsapp","name":"W","url":"https://web.whatsapp.com/","session":"0123456789abcdef0123456789abcdef"}"#;
         let svc: Service = serde_json::from_str(json).unwrap();

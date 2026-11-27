@@ -404,8 +404,15 @@
     const chat = currentChat();
     const list = chatList();
     const unread = pageUnread();
-    const key = JSON.stringify([list, unread, MAIL_SUBJECT[site()] ? chat : null]);
-    return { chat, list, unread, key };
+    // Diagnóstico nunca derruba o sinal de vida.
+    let found;
+    try {
+      found = probes();
+    } catch (_) {
+      found = undefined;
+    }
+    const key = JSON.stringify([list, unread, MAIL_SUBJECT[site()] ? chat : null, found]);
+    return { chat, list, unread, probes: found, key };
   };
   const report = (page) => {
     lastChat = page.chat;
@@ -416,6 +423,7 @@
       chat: lastChat ?? null,
       list: page.list,
       unread: page.unread ?? null,
+      probes: page.probes ?? null,
     });
   };
   // Sempre completo: também desfaz não lidas que a página já mostra lidas.
@@ -638,6 +646,79 @@
     ],
     "web.telegram.org": [".Composer button.send", "button.btn-send", ".btn-send"],
   };
+  // Diagnóstico dos sites (spec 14): o Papeo pergunta se os pontos de apoio
+  // usados acima existem na página. Só presença (true/false); null = não dá
+  // para avaliar agora (ex.: campo de texto sem conversa aberta). Nenhum
+  // texto da página vai junto.
+  const shimStart = Date.now();
+  const PROBE_WARMUP = 30000;
+  const CHAT_OPEN = {
+    "web.whatsapp.com": () => Boolean(document.querySelector("#main")),
+    "web.telegram.org": () => (location.hash || "").length > 1,
+  };
+  const has = (sel) => Boolean(document.querySelector(sel));
+  // Cada ponto só é julgado quando a tela em que ele vive está aberta: a
+  // busca, com a lista de conversas à vista (a aba Status do WhatsApp e as
+  // Configurações do Telegram trocam o painel); o campo de texto, com o nome
+  // da conversa no cabeçalho (canais e grupos só de avisos não têm campo:
+  // o Papeo só desconfia quando falta em mais de uma conversa).
+  const messengerProbes = (host) => {
+    const list = has(CHAT_TITLES[host]);
+    const header = CHAT_OPEN[host]() ? has(CHAT_HEADER[host]) : null;
+    return {
+      list,
+      search: list ? Boolean(findSearchBox()) : null,
+      header,
+      composer: header ? Boolean(first(COMPOSER[host])) : null,
+    };
+  };
+  // Gmail: e-mail aberto = último trecho do endereço é o id da mensagem
+  // ("#inbox/<id>", "#label/X/<id>", "#search/q/<id>"; "#search/<q>" e
+  // "#label/<nome>" não).
+  const gmailMessageOpen = () => {
+    const parts = (location.hash || "").split("/");
+    const min = parts[0] === "#search" || parts[0] === "#label" ? 3 : 2;
+    return parts.length >= min && /^[A-Za-z0-9]{16,}$/.test(parts.at(-1));
+  };
+  const PROBES = {
+    "web.whatsapp.com": () => messengerProbes("web.whatsapp.com"),
+    "web.telegram.org": () => messengerProbes("web.telegram.org"),
+    gmail: () => ({
+      inbox: has('a[href$="#inbox"]'),
+      subject: gmailMessageOpen() ? Boolean(MAIL_SUBJECT.gmail()) : null,
+    }),
+    // Outlook: a Caixa de Entrada só com a lista de pastas à vista (o
+    // painel pode estar recolhido); o assunto, fora de um rascunho aberto.
+    outlook: () => ({
+      inbox: has('[role="tree"]') ? MAIL_UNREAD.outlook() !== undefined : null,
+      search: Boolean(outlookSearchBox()),
+      subject:
+        /\/id\//.test(location.pathname || "") && !has('[contenteditable="true"][role="textbox"]')
+          ? Boolean(MAIL_SUBJECT.outlook())
+          : null,
+    }),
+    // Roundcube: só na lista de e-mails (escrevendo ou lendo em tela cheia,
+    // a busca e o contador não estão na página).
+    roundcube: () => {
+      const rc = window.rcmail;
+      const mail = rc?.env?.task === "mail" && !rc.env.action;
+      return {
+        inbox: mail ? typeof rc.env.unread_counts?.INBOX === "number" || has("#mailboxlist li.inbox") : null,
+        search: mail ? Boolean(rc.gui_objects?.qsearchbox) : null,
+      };
+    },
+  };
+  const probes = () => {
+    if (Date.now() - shimStart < PROBE_WARMUP || document.readyState !== "complete") return undefined;
+    const check = PROBES[site()];
+    if (!check || loggedOut()) return undefined;
+    try {
+      return check();
+    } catch (_) {
+      return undefined;
+    }
+  };
+
   const first = (sels) => {
     for (const sel of sels || []) {
       const el = document.querySelector(sel);

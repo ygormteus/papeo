@@ -57,6 +57,8 @@ fn failure(code: &str) -> String {
         "ambiguous" => "Há mais de uma conversa com esse nome. Abra a conversa para responder.",
         "draft" => "Há um rascunho nessa conversa. Abra a conversa para terminar.",
         "unsupported" => "Esse serviço não aceita resposta rápida.",
+        // Spec 14: o site mudou e o Papeo não acha mais o campo ou a busca.
+        "probes" => "O site dessa conta mudou e a resposta rápida está indisponível. Abra a conversa para responder.",
         "timeout" => "O site demorou e a mensagem não foi enviada. Tente de novo.",
         "send" => "O site não aceitou a mensagem; ela não foi enviada.",
         // Não dá para saber se saiu: reenviar poderia duplicar.
@@ -148,6 +150,9 @@ pub fn send(app: &AppHandle, id: &str, chat: &str, text: &str) -> Result<Snapsho
         }
         if !inner.service(id)?.kind.supports_chat() {
             return Err(failure("unsupported"));
+        }
+        if !inner.can_reply(id) {
+            return Err(failure("probes"));
         }
     }
     let webview = ensure_loaded(app, id)?;

@@ -2,6 +2,7 @@
   import {
     Circle,
     Globe,
+    Activity,
     Lock,
     LockOpen,
     Mail,
@@ -22,6 +23,7 @@
     MODE_LABEL,
     THEME_OPTIONS,
     isInsecure,
+    hasBrokenProbe,
     modKey,
     serviceColor,
     type Appearance,
@@ -44,6 +46,8 @@
     onlock,
     extra,
     twin = false,
+    diagnostics = false,
+    ondiagnostics,
   }: {
     active: ServiceView | null;
     appearance: Appearance;
@@ -65,6 +69,9 @@
     extra?: Snippet;
     /** Há outra conta do mesmo serviço: destaca a troca de conta. */
     twin?: boolean;
+    /** Modo de diagnóstico ligado: avisa quando o site da conta mudou. */
+    diagnostics?: boolean;
+    ondiagnostics?: () => void;
   } = $props();
 
   const ZOOM_MIN = 0.5;
@@ -128,6 +135,16 @@
     <span class="alert" class:danger={active.status === "unresponsive"} role="status" title={message}>
       <span class="alert-text">{message}</span>
     </span>
+  {/if}
+
+  {#if diagnostics && active && hasBrokenProbe(active)}
+    <button
+      class="alert alert-btn"
+      onclick={ondiagnostics}
+      title="O Papeo não encontra mais parte do site desta conta; algum recurso pode não funcionar. Clique para ver o diagnóstico."
+    >
+      <Activity size={15} /> <span class="alert-text">O site mudou</span>
+    </button>
   {/if}
 
   <div class="spacer" data-tauri-drag-region></div>
@@ -307,6 +324,11 @@
     color: var(--warn-text);
     background: var(--warn-bg);
     border: 1px solid var(--warn-border);
+  }
+
+  .alert-btn {
+    font: inherit;
+    cursor: pointer;
   }
 
   .alert.danger {

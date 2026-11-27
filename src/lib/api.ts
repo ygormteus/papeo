@@ -57,6 +57,49 @@ export interface ServiceView {
   reader?: boolean;
   /** Servidor de envio (SMTP) usado pelo leitor, `host:porta`. */
   mailSmtp?: string;
+  /** Pontos de apoio do site que a página relatou (diagnóstico, spec 14). */
+  probes?: ProbeView[];
+}
+
+/** Ponto de apoio procurado na página do site (spec 14). */
+export type Probe = "list" | "search" | "header" | "composer" | "inbox" | "subject";
+/** `broken`: ausente há 10 min ou mais; `unknown`: ainda não avaliado. */
+export type ProbeState = "found" | "missing" | "broken" | "unknown";
+export interface ProbeView {
+  probe: Probe;
+  state: ProbeState;
+}
+
+export const PROBE_LABEL: Record<Probe, string> = {
+  list: "Lista de conversas",
+  search: "Busca",
+  header: "Nome da conversa aberta",
+  composer: "Campo de texto",
+  inbox: "Caixa de Entrada",
+  subject: "Assunto do e-mail aberto",
+};
+
+export const PROBE_STATE_LABEL: Record<ProbeState, string> = {
+  found: "Encontrado",
+  missing: "Não encontrado",
+  broken: "Não encontrado há 10 min",
+  unknown: "Não avaliado",
+};
+
+/** A página da conta perdeu um ponto de apoio há tempo demais. */
+export const hasBrokenProbe = (s: ServiceView) => !!s.probes?.some((p) => p.state === "broken");
+
+/** Relatório do diagnóstico sem nomes de contas, conversas ou endereços. */
+export function probeReport(version: string, services: ServiceView[]): string {
+  const lines = [`Papeo ${version} — diagnóstico dos sites`];
+  services
+    .filter((s) => s.probes?.length)
+    .forEach((s, i) => {
+      lines.push("", `${KIND_META[s.kind].label} (conta ${i + 1})`);
+      for (const p of s.probes!) lines.push(`- ${PROBE_LABEL[p.probe]}: ${PROBE_STATE_LABEL[p.state]}`);
+    });
+  if (lines.length === 1) lines.push("", "Nenhuma conta aberta com pontos verificáveis.");
+  return lines.join("\n");
 }
 
 export interface MailAccount {
@@ -282,6 +325,8 @@ export interface Settings {
   sleepOutsideMode: boolean;
   /** Moldura com a cor da conta em volta do site aberto. */
   accountFrame: boolean;
+  /** Modo de diagnóstico: aviso na barra do topo quando o site muda (spec 14). */
+  diagnostics: boolean;
 }
 
 export interface QuickReply {
@@ -407,6 +452,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     workHours: { days: [1, 2, 3, 4, 5], start: 9 * 60, end: 18 * 60 },
     sleepOutsideMode: false,
     accountFrame: true,
+    diagnostics: false,
   },
   dndActive: false,
   autostart: false,
@@ -512,6 +558,7 @@ export const api = {
         | "voiceCapture"
         | "sleepOutsideMode"
         | "accountFrame"
+        | "diagnostics"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),

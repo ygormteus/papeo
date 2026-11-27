@@ -143,6 +143,7 @@ voz do WhatsApp).
 |---|---|
 | `service.rs` | `Service`, `ServiceKind`, ids e sessões, validação (nome, cor, emoji, zoom, URL, user-agent), `unique_name` |
 | `settings.rs` | `Settings` e regras: `should_notify`, não perturbe, horário silencioso, modos e expediente |
+| `probes.rs` | Diagnóstico dos sites: pontos de apoio por tipo, ausência há 10 min, se a resposta rápida continua oferecida |
 | `store.rs` | `services.json` (versão, carga tolerante, `.corrompido`) e backup |
 | `organizer.rs` | Tarefas, repetição, contatos e anotações, apagados por 90 dias |
 | `sync.rs` | Argon2id + XChaCha20-Poly1305, junção por registro |
@@ -203,7 +204,7 @@ este só com o login da Microsoft.
 silencioso, pasta de downloads, bandeja e início escondido, prévia das
 notificações, proteção de tela, bloqueio, aparência, atualizações, recarga
 por memória, links, anexos, captura de voz, respostas prontas, modo e
-expediente, hibernar fora do modo e moldura da conta.
+expediente, hibernar fora do modo, moldura da conta e modo de diagnóstico.
 
 ### 5.3 Organizador
 
@@ -274,9 +275,11 @@ O shim substitui `window.Notification`, `permissions.query`,
 `getUserMedia`. Ele envia:
 
 - `service_notify {title, body, silent}`, um por notificação do site;
-- `service_status {loggedOut, media, chat, list, unread}`: sinal de vida a
-  cada 20 s, mudança conferida a cada 5 s, troca de conversa com espera de
-  400 ms, e também ao carregar e ao ficar visível.
+- `service_status {loggedOut, media, chat, list, unread, probes}`: sinal de
+  vida a cada 20 s, mudança conferida a cada 5 s, troca de conversa com
+  espera de 400 ms, e também ao carregar e ao ficar visível. `probes` é o
+  diagnóstico dos sites (spec 14): presença (`true`/`false`/`null`) de cada
+  ponto de apoio, a partir de 30 s depois da carga e fora da tela de login.
 
 E expõe ao backend (`eval`): `__papeoOpenChat`, `__papeoReply`,
 `__papeoReplyStatus` e `__papeoReplyCancel`.
@@ -285,7 +288,10 @@ O site é reconhecido pelo domínio. O Roundcube é a exceção: é reconhecido
 pela própria página (`window.rcmail`). Os **seletores de DOM** por site
 (lista, cabeçalho da conversa, campo de texto, botão Enviar, busca, telas de
 login) são a parte mais frágil do sistema: quando o site muda, o recurso
-falha em silêncio (ver §14).
+falha em silêncio (ver §14). O diagnóstico dos sites
+(`papeo_core::probes`, `Health.probes`) acompanha esses pontos: um ponto
+ausente há 10 min esconde "Responder" da conta e, no modo de diagnóstico,
+mostra um aviso na barra do topo.
 
 ### 7.4 Redes externas
 
@@ -466,7 +472,7 @@ Resumo; os detalhes e o histórico ficam nas especificações.
 
 | # | Risco | Efeito | Mitigação atual / proposta |
 |---|---|---|---|
-| 1 | Seletores de DOM dos sites mudam | Resposta rápida, contador, busca e "desconectado" param em silêncio | Testes do shim com DOM falso; **proposta:** diagnóstico dos sites ([spec 14](specs/14-diagnostico-dos-sites.md)) |
+| 1 | Seletores de DOM dos sites mudam | Resposta rápida, contador, busca e "desconectado" param em silêncio | Testes do shim com DOM falso; diagnóstico dos sites ([spec 14](specs/14-diagnostico-dos-sites.md)): esconde "Responder" quando o site muda e mostra o estado em Configurações → Sistema |
 | 2 | Muita coisa só verificada por compilação no Windows | Defeito chega a quem usa | `clippy-windows.yml` a cada push; Autoteste no Windows a cada versão |
 | 3 | Valor de enum desconhecido invalida o `services.json` inteiro | Voltar de versão perde a lista (fica em `.corrompido`) | Documentado; **possível:** variante `Unknown` com preservação |
 | 4 | `spawn_maintenance` concentra muitas responsabilidades | Difícil de testar e de mudar | **Proposta:** dividir em tarefas com intervalos próprios |
@@ -485,7 +491,7 @@ Resumo; os detalhes e o histórico ficam nas especificações.
 | `cargo test -p papeo-core` (≈ 92 testes) e `cargo test -p papeo --lib` | local, Autoteste, Build |
 | clippy `-D warnings` macOS | local |
 | clippy `-D warnings` Windows (com e sem `selftest`) | `clippy-windows.yml` (push na `main` e PRs) |
-| `pnpm check`, `pnpm build`, `pnpm test` (9 scripts Node: shim, voz, e-mail, ACL, tarefas, datas, notas, respostas prontas, índice das configurações) | local, Autoteste |
+| `pnpm check`, `pnpm build`, `pnpm test` (10 scripts Node: shim, voz, e-mail, diagnóstico dos sites, ACL, tarefas, datas, notas, respostas prontas, índice das configurações) | local, Autoteste |
 | Autoteste no app (`--features selftest`): links, não lidas, prévia, anexo | `selftest.yml` (macOS e Windows), antes de cada versão |
 
 Uma versão é uma tag `v*`: cria o rascunho, roda o Autoteste e gera os

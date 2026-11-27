@@ -7,6 +7,7 @@ pub mod mailbox;
 mod organizer;
 mod pin;
 mod privacy;
+pub mod probes;
 mod service;
 mod settings;
 mod store;
