@@ -3,12 +3,15 @@
 // no catálogo; o catálogo não pode ter frase que ninguém usa nem trocar os
 // `{nomes}` dos valores. `pnpm test`.
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const failures = [];
 const check = (ok, msg) => ok || failures.push(msg);
+
+// Caminho com "/" também no Windows (para filtrar pastas).
+const posix = (f) => f.split(sep).join("/");
 
 function walk(dir, exts, out = []) {
   for (const name of readdirSync(dir)) {
@@ -42,7 +45,7 @@ function used(files, pattern) {
 const names = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
 
 // Interface.
-const uiFiles = walk(join(root, "src"), [".svelte", ".ts"]).filter((f) => !f.includes("/i18n/"));
+const uiFiles = walk(join(root, "src"), [".svelte", ".ts"]).filter((f) => !posix(f).includes("/i18n/"));
 const uiUsed = used(
   uiFiles,
   /\b(?:t|tk)\(\s*(?:"(?<dq>(?:[^"\\\n]|\\.)*)"|'(?<sq>(?:[^'\\\n]|\\.)*)'|`(?<bq>(?:[^`\\]|\\.)*)`)/g,
@@ -67,7 +70,7 @@ for (const [pt, { en, file }] of uiCatalog) {
 
 // Rust.
 const rsFiles = [...walk(join(root, "src-tauri/src"), [".rs"]), ...walk(join(root, "crates/papeo-core/src"), [".rs"])].filter(
-  (f) => !f.includes("/i18n/"),
+  (f) => !posix(f).includes("/i18n/"),
 );
 const rsUsed = used(rsFiles, /\b(?:trf?|tk|tr_in\([^,()]+,)\(?\s*"(?<dq>(?:[^"\\]|\\.)*)"/g);
 const rsCatalog = new Map();

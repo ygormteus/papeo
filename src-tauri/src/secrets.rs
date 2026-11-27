@@ -191,6 +191,7 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use super::{Saved, SecretStore};
+    use papeo_core::i18n::{tr, trf};
     use windows::core::{HSTRING, PWSTR};
     use windows::Win32::Security::Credentials::{
         CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
