@@ -5,14 +5,19 @@
 
 export type SettingsTab = "geral" | "notificacoes" | "privacidade" | "sistema" | "arquivos" | "dados" | "sobre";
 
+// Chaves em português (catálogo i18n): traduza com `t(TAB_LABEL[aba])` ao exibir.
+// `tk` marca a frase para o catálogo; aqui é identidade para este arquivo rodar
+// também no Node (teste), sem importar o módulo de runas.
+const tk = (pt: string): string => pt;
+
 export const TAB_LABEL: Record<SettingsTab, string> = {
-  geral: "Geral",
-  notificacoes: "Notificações",
-  privacidade: "Privacidade",
-  sistema: "Sistema",
-  arquivos: "Arquivos",
-  dados: "Dados",
-  sobre: "Sobre",
+  geral: tk("Geral"),
+  notificacoes: tk("Notificações"),
+  privacidade: tk("Privacidade"),
+  sistema: tk("Sistema"),
+  arquivos: tk("Arquivos"),
+  dados: tk("Dados"),
+  sobre: tk("Sobre"),
 };
 
 export type SettingsTarget = { tab: SettingsTab; label: string };
@@ -27,6 +32,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: "geral", label: "Contas mostradas", keywords: "modo trabalho pessoal expediente horário contas" },
   { tab: "geral", label: "Hibernar as contas fora do modo", keywords: "memória trabalho pessoal dormir" },
   { tab: "geral", label: "Moldura com a cor da conta", keywords: "borda cor conta errada" },
+  { tab: "geral", label: "Idioma", keywords: "idioma língua language english inglês português" },
   { tab: "geral", label: "Respostas prontas", keywords: "atalho texto modelo resposta rápida barra" },
   {
     tab: "geral",
@@ -72,16 +78,24 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
 const normalize = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
-/** Opções que casam com todas as palavras da busca (no rótulo, na aba ou nas palavras-chave). */
-export function searchSettings(query: string, limit = 5): SettingsEntry[] {
+/**
+ * Opções que casam com todas as palavras da busca (no rótulo, na aba ou nas
+ * palavras-chave). Casa também com o texto traduzido: passe `t` em `tr` para
+ * a busca funcionar no idioma da interface.
+ */
+export function searchSettings(query: string, limit = 5, tr: (pt: string) => string = (s) => s): SettingsEntry[] {
   const words = normalize(query).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const scored = SETTINGS_INDEX.map((e) => {
     const label = normalize(e.label);
-    const all = `${label} ${normalize(TAB_LABEL[e.tab])} ${normalize(e.keywords)}`;
+    const shown = normalize(tr(e.label));
+    const all = `${label} ${shown} ${normalize(TAB_LABEL[e.tab])} ${normalize(tr(TAB_LABEL[e.tab]))} ${normalize(e.keywords)}`;
     if (!words.every((w) => all.includes(w))) return null;
     // Rótulo que começa com a busca vem primeiro; depois, rótulo que contém.
-    const score = label.startsWith(words[0]) ? 0 : words.every((w) => label.includes(w)) ? 1 : 2;
+    const score =
+      label.startsWith(words[0]) || shown.startsWith(words[0]) ? 0
+      : words.every((w) => label.includes(w) || shown.includes(w)) ? 1
+      : 2;
     return { e, score };
   }).filter((x) => x !== null);
   return scored.sort((a, b) => a.score - b.score).slice(0, limit).map((x) => x.e);

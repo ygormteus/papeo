@@ -11,6 +11,7 @@
 //! do app, por identificador; nada disso vai para o sistema.
 
 use crate::state::AppState;
+use papeo_core::i18n::tr;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -102,6 +103,13 @@ pub fn init(app: &AppHandle) {
     mac::init();
 }
 
+/// Refaz os botões das notificações no idioma atual (macOS; no Windows os
+/// botões vão em cada aviso).
+pub fn relabel() {
+    #[cfg(target_os = "macos")]
+    mac::relabel();
+}
+
 /// Mostra a notificação. `sound`: nome do som para o plugin (caminho
 /// alternativo); o nativo usa o som padrão do sistema.
 pub fn show(
@@ -177,7 +185,7 @@ fn replied(id: &str, text: String) {
                 later: false,
                 ..target
             };
-            let _ = show(&app, "Resposta não enviada", &err, None, retry);
+            let _ = show(&app, tr("Resposta não enviada"), &err, None, retry);
         }
     });
 }
@@ -203,7 +211,7 @@ fn later(id: &str) {
                 later: false,
                 ..target
             };
-            let _ = show(&app, "Lembrete não criado", &err, None, retry);
+            let _ = show(&app, tr("Lembrete não criado"), &err, None, retry);
         }
     });
 }
@@ -237,6 +245,7 @@ mod mac {
         UNNotificationSound, UNTextInputNotificationAction, UNUserNotificationCenter,
         UNUserNotificationCenterDelegate,
     };
+    use papeo_core::i18n::tr;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::OnceLock;
 
@@ -320,6 +329,65 @@ mod mac {
             .ends_with(".app")
     }
 
+    /// Botões das notificações no idioma atual (na abertura e ao trocar o
+    /// idioma, spec 20).
+    pub fn relabel() {
+        if bundled() {
+            register_categories(&UNUserNotificationCenter::currentNotificationCenter());
+        }
+    }
+
+    fn register_categories(center: &UNUserNotificationCenter) {
+        let action = UNTextInputNotificationAction::actionWithIdentifier_title_options_textInputButtonTitle_textInputPlaceholder(
+            &NSString::from_str(REPLY_ACTION),
+            &NSString::from_str(tr("Responder")),
+            // Com o Mac bloqueado, responder pede a senha/Touch ID antes.
+            UNNotificationActionOptions::AuthenticationRequired,
+            &NSString::from_str(tr("Enviar")),
+            &NSString::from_str(tr("Mensagem")),
+        );
+        let button = |id: &str, title: &str| {
+            UNNotificationAction::actionWithIdentifier_title_options(
+                &NSString::from_str(id),
+                &NSString::from_str(title),
+                UNNotificationActionOptions::empty(),
+            )
+        };
+        let actions: Retained<NSArray<UNNotificationAction>> = NSArray::from_retained_slice(&[
+            Retained::into_super(action),
+            button(LATER_ACTION, tr("Lembrar em 1 h")),
+        ]);
+        let category =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(CATEGORY),
+                &actions,
+                &NSArray::new(),
+                UNNotificationCategoryOptions::empty(),
+            );
+        let later_actions: Retained<NSArray<UNNotificationAction>> =
+            NSArray::from_retained_slice(&[button(LATER_ACTION, tr("Lembrar em 1 h"))]);
+        let later =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(LATER_CATEGORY),
+                &later_actions,
+                &NSArray::new(),
+                UNNotificationCategoryOptions::empty(),
+            );
+        let reminder_actions: Retained<NSArray<UNNotificationAction>> =
+            NSArray::from_retained_slice(&[
+                button("snooze", tr("Adiar 1 h")),
+                button("done", tr("Concluir")),
+            ]);
+        let reminder =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(REMINDER_CATEGORY),
+                &reminder_actions,
+                &NSArray::new(),
+                UNNotificationCategoryOptions::empty(),
+            );
+        center.setNotificationCategories(&NSSet::from_retained_slice(&[category, later, reminder]));
+    }
+
     pub fn init() {
         if !bundled() {
             return;
@@ -334,54 +402,7 @@ mod mac {
         let delegate = unsafe { &*delegate };
         center.setDelegate(Some(ProtocolObject::from_ref(delegate)));
 
-        let action = UNTextInputNotificationAction::actionWithIdentifier_title_options_textInputButtonTitle_textInputPlaceholder(
-            &NSString::from_str(REPLY_ACTION),
-            &NSString::from_str("Responder"),
-            // Com o Mac bloqueado, responder pede a senha/Touch ID antes.
-            UNNotificationActionOptions::AuthenticationRequired,
-            &NSString::from_str("Enviar"),
-            &NSString::from_str("Mensagem"),
-        );
-        let button = |id: &str, title: &str| {
-            UNNotificationAction::actionWithIdentifier_title_options(
-                &NSString::from_str(id),
-                &NSString::from_str(title),
-                UNNotificationActionOptions::empty(),
-            )
-        };
-        let actions: Retained<NSArray<UNNotificationAction>> = NSArray::from_retained_slice(&[
-            Retained::into_super(action),
-            button(LATER_ACTION, "Lembrar em 1 h"),
-        ]);
-        let category =
-            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-                &NSString::from_str(CATEGORY),
-                &actions,
-                &NSArray::new(),
-                UNNotificationCategoryOptions::empty(),
-            );
-        let later_actions: Retained<NSArray<UNNotificationAction>> =
-            NSArray::from_retained_slice(&[button(LATER_ACTION, "Lembrar em 1 h")]);
-        let later =
-            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-                &NSString::from_str(LATER_CATEGORY),
-                &later_actions,
-                &NSArray::new(),
-                UNNotificationCategoryOptions::empty(),
-            );
-        let reminder_actions: Retained<NSArray<UNNotificationAction>> =
-            NSArray::from_retained_slice(&[
-                button("snooze", "Adiar 1 h"),
-                button("done", "Concluir"),
-            ]);
-        let reminder =
-            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-                &NSString::from_str(REMINDER_CATEGORY),
-                &reminder_actions,
-                &NSArray::new(),
-                UNNotificationCategoryOptions::empty(),
-            );
-        center.setNotificationCategories(&NSSet::from_retained_slice(&[category, later, reminder]));
+        register_categories(&center);
 
         let done = RcBlock::new(|granted: Bool, _error: *mut NSError| {
             AUTHORIZED.store(granted.as_bool(), Ordering::Relaxed);
@@ -433,6 +454,7 @@ mod mac {
 #[cfg(windows)]
 mod win {
     use super::Target;
+    use papeo_core::i18n::tr;
     use std::collections::VecDeque;
     use std::sync::Mutex;
     use tauri::AppHandle;
@@ -476,17 +498,25 @@ mod win {
         } else {
             r#"<audio silent="true"/>"#
         };
-        const LATER: &str =
-            r#"<action content="Lembrar em 1 h" arguments="later" activationType="foreground"/>"#;
+        let later_action = format!(
+            r#"<action content="{}" arguments="later" activationType="foreground"/>"#,
+            escape(tr("Lembrar em 1 h"))
+        );
         let actions = if reminder {
-            r#"<actions><action content="Adiar 1 h" arguments="snooze" activationType="foreground"/><action content="Concluir" arguments="done" activationType="foreground"/></actions>"#.to_owned()
+            format!(
+                r#"<actions><action content="{}" arguments="snooze" activationType="foreground"/><action content="{}" arguments="done" activationType="foreground"/></actions>"#,
+                escape(tr("Adiar 1 h")),
+                escape(tr("Concluir"))
+            )
         } else if reply {
             format!(
-                r#"<actions><input id="reply" type="text" placeHolderContent="Responder…"/><action content="Enviar" arguments="reply" hint-inputId="reply" activationType="foreground"/>{}</actions>"#,
-                if later { LATER } else { "" }
+                r#"<actions><input id="reply" type="text" placeHolderContent="{}"/><action content="{}" arguments="reply" hint-inputId="reply" activationType="foreground"/>{}</actions>"#,
+                escape(tr("Responder…")),
+                escape(tr("Enviar")),
+                if later { later_action.as_str() } else { "" }
             )
         } else if later {
-            format!("<actions>{LATER}</actions>")
+            format!("<actions>{later_action}</actions>")
         } else {
             String::new()
         };

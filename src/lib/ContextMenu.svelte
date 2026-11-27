@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import type { MenuItem } from "./api";
 
   let {
@@ -61,7 +62,7 @@
       }}
     >
       <item.icon size={16} />
-      {item.label}
+      {t(item.label)}
     </button>
   {/each}
 </div>

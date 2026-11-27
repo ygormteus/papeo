@@ -3,52 +3,12 @@
 
 use crate::state::{AppState, COMMAND_EVENT, UI_WEBVIEW};
 use crate::webviews::activate;
+use papeo_core::i18n::{tr, trf};
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    let item = |id: &str, label: &str, accel: &str| {
-        MenuItemBuilder::with_id(id, label)
-            .accelerator(accel)
-            .build(app)
-    };
-    let mut go = SubmenuBuilder::new(app, "Ir").item(&item("go:home", "Início", "CmdOrCtrl+0")?);
-    for i in 1..=9 {
-        go = go.item(&item(
-            &format!("go:{i}"),
-            &format!("Serviço {i}"),
-            &format!("CmdOrCtrl+{i}"),
-        )?);
-    }
-    let go = go
-        .item(&PredefinedMenuItem::separator(app)?)
-        .item(&item("go:reload", "Recarregar serviço", "CmdOrCtrl+R")?)
-        .item(&item("go:search", "Buscar serviço…", "CmdOrCtrl+K")?)
-        .item(&item(
-            "go:panel",
-            "Tarefas e anotações do contato",
-            "CmdOrCtrl+Shift+N",
-        )?)
-        .item(&MenuItemBuilder::with_id("go:tasks", "Tarefas").build(app)?)
-        .item(&item(
-            "go:mode",
-            "Alternar trabalho e pessoal",
-            "CmdOrCtrl+Shift+M",
-        )?)
-        .item(&item("go:settings", "Configurações…", "CmdOrCtrl+,")?)
-        .build()?;
-    let view = SubmenuBuilder::new(app, "Zoom")
-        .item(&item("zoom:in", "Aumentar", "CmdOrCtrl+=")?)
-        .item(&item("zoom:out", "Diminuir", "CmdOrCtrl+-")?)
-        .item(&item("zoom:reset", "Tamanho real", "CmdOrCtrl+Shift+0")?)
-        .build()?;
-
-    // O menu padrão traz Editar (copiar/colar), necessário dentro das webviews.
-    let menu = Menu::default(app)?;
-    let position = menu.items()?.len().saturating_sub(1);
-    menu.insert(&view, position)?;
-    menu.insert(&go, position)?;
-    app.set_menu(menu)?;
+    rebuild(app)?;
     app.on_menu_event(|app, event| {
         let id = event.id().as_ref().to_owned();
         if !(id.starts_with("go:") || id.starts_with("zoom:")) {
@@ -58,6 +18,58 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         // Fora da thread principal: criar webview bloqueia esperando por ela.
         tauri::async_runtime::spawn(async move { handle(&app, &id) });
     });
+    Ok(())
+}
+
+/// Monta o menu no idioma atual (na abertura e ao trocar o idioma).
+pub fn rebuild(app: &AppHandle) -> tauri::Result<()> {
+    let item = |id: &str, label: &str, accel: &str| {
+        MenuItemBuilder::with_id(id, label)
+            .accelerator(accel)
+            .build(app)
+    };
+    let mut go =
+        SubmenuBuilder::new(app, tr("Ir")).item(&item("go:home", tr("Início"), "CmdOrCtrl+0")?);
+    for i in 1..=9 {
+        go = go.item(&item(
+            &format!("go:{i}"),
+            &trf("Serviço {n}", &[("n", &i)]),
+            &format!("CmdOrCtrl+{i}"),
+        )?);
+    }
+    let go = go
+        .item(&PredefinedMenuItem::separator(app)?)
+        .item(&item("go:reload", tr("Recarregar serviço"), "CmdOrCtrl+R")?)
+        .item(&item("go:search", tr("Buscar serviço…"), "CmdOrCtrl+K")?)
+        .item(&item(
+            "go:panel",
+            tr("Tarefas e anotações do contato"),
+            "CmdOrCtrl+Shift+N",
+        )?)
+        .item(&MenuItemBuilder::with_id("go:tasks", tr("Tarefas")).build(app)?)
+        .item(&item(
+            "go:mode",
+            tr("Alternar trabalho e pessoal"),
+            "CmdOrCtrl+Shift+M",
+        )?)
+        .item(&item("go:settings", tr("Configurações…"), "CmdOrCtrl+,")?)
+        .build()?;
+    let view = SubmenuBuilder::new(app, tr("Zoom"))
+        .item(&item("zoom:in", tr("Aumentar"), "CmdOrCtrl+=")?)
+        .item(&item("zoom:out", tr("Diminuir"), "CmdOrCtrl+-")?)
+        .item(&item(
+            "zoom:reset",
+            tr("Tamanho real"),
+            "CmdOrCtrl+Shift+0",
+        )?)
+        .build()?;
+
+    // O menu padrão traz Editar (copiar/colar), necessário dentro das webviews.
+    let menu = Menu::default(app)?;
+    let position = menu.items()?.len().saturating_sub(1);
+    menu.insert(&view, position)?;
+    menu.insert(&go, position)?;
+    app.set_menu(menu)?;
     Ok(())
 }
 

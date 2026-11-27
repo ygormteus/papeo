@@ -63,7 +63,7 @@ fn window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     WebviewWindowBuilder::new(app, POPOVER, WebviewUrl::App(Default::default()))
         // A mesma interface, montando só a mini janela (`src/main.ts`).
-        .initialization_script("window.__PAPEO_VIEW = 'popover';")
+        .initialization_script(crate::lang::view_script("popover"))
         .title("Papeo")
         .inner_size(WIDTH, HEIGHT)
         .resizable(false)

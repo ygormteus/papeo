@@ -1,5 +1,6 @@
 //! Persistência em `services.json` e backup/restauração da configuração.
 
+use crate::i18n::{tr, trf};
 use crate::organizer::Organizer;
 use crate::service::{Service, ServiceKind};
 use crate::settings::Settings;
@@ -79,9 +80,9 @@ fn defaults() -> Config {
 /// Retorna também quantos serviços inválidos foram descartados.
 fn sanitize(file: StoreFile, strict: bool) -> Result<(Config, usize), String> {
     if file.version > STORE_VERSION {
-        return Err(format!(
-            "Arquivo de uma versão mais nova do Papeo (formato {}).",
-            file.version
+        return Err(trf(
+            "Arquivo de uma versão mais nova do Papeo (formato {versao}).",
+            &[("versao", &file.version)],
         ));
     }
     let mut ids = HashSet::new();
@@ -272,20 +273,22 @@ pub fn export_backup(path: &Path, config: &Config, organizer: &Organizer) -> Res
 
 /// Lê e valida um backup. Não altera nada no disco.
 pub fn read_backup(path: &Path, now_ms: u64) -> Result<Backup, String> {
-    let meta = fs::metadata(path).map_err(|e| format!("Não foi possível ler o arquivo: {e}"))?;
+    let meta = fs::metadata(path)
+        .map_err(|e| trf("Não foi possível ler o arquivo: {erro}", &[("erro", &e)]))?;
     if meta.len() > 64 * 1024 * 1024 {
-        return Err("Arquivo grande demais para ser um backup do Papeo.".into());
+        return Err(tr("Arquivo grande demais para ser um backup do Papeo.").into());
     }
-    let bytes = fs::read(path).map_err(|e| format!("Não foi possível ler o arquivo: {e}"))?;
+    let bytes = fs::read(path)
+        .map_err(|e| trf("Não foi possível ler o arquivo: {erro}", &[("erro", &e)]))?;
     let mut file: StoreFile = serde_json::from_slice(&bytes)
-        .map_err(|_| "Este arquivo não é um backup válido do Papeo.".to_owned())?;
+        .map_err(|_| tr("Este arquivo não é um backup válido do Papeo.").to_owned())?;
     if file.kind.as_deref() != Some(BACKUP_KIND) {
-        return Err("Este arquivo não é um backup do Papeo.".into());
+        return Err(tr("Este arquivo não é um backup do Papeo.").into());
     }
     let organizer = file.organizer.take().map(|o| o.sanitized(now_ms));
     sanitize(file, true)
         .map(|(config, _)| Backup { config, organizer })
-        .map_err(|e| format!("Backup inválido: {e}"))
+        .map_err(|e| trf("Backup inválido: {erro}", &[("erro", &e)]))
 }
 
 #[cfg(test)]

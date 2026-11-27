@@ -1,5 +1,6 @@
 <script lang="ts">
   import { MessageSquareText, Plus, Trash2 } from "@lucide/svelte";
+  import { t } from "./i18n.svelte";
   import { api, MAX_REPLY_CHARS, type QuickReply, type Snapshot } from "./api";
 
   // Respostas prontas (Configurações): atalho + texto, chamadas com "/" na
@@ -42,10 +43,9 @@
 </script>
 
 <section class="card" aria-labelledby="s-replies">
-  <h2 id="s-replies"><MessageSquareText size={18} /> Respostas prontas</h2>
+  <h2 id="s-replies"><MessageSquareText size={18} /> {t("Respostas prontas")}</h2>
   <p class="hint intro">
-    Ao responder pelo Início ou pela barra de menus, digite <kbd>/</kbd> e o atalho (ou parte do texto) para
-    escolher uma delas.
+    {t("Ao responder pelo Início ou pela barra de menus, digite")} <kbd>/</kbd> {t("e o atalho (ou parte do texto) para escolher uma delas.")}
   </p>
 
   {#each items as item, i (i)}
@@ -56,8 +56,8 @@
           bind:value={item.shortcut}
           onchange={() => changed(i)}
           maxlength="40"
-          placeholder="atalho"
-          aria-label="Atalho da resposta {i + 1}"
+          placeholder={t("atalho")}
+          aria-label={t("Atalho da resposta {n}", { n: i + 1 })}
         />
       </label>
       <textarea
@@ -65,9 +65,9 @@
         onchange={() => changed(i)}
         rows="2"
         maxlength={MAX_REPLY_CHARS}
-        aria-label="Texto da resposta {i + 1}"
+        aria-label={t("Texto da resposta {n}", { n: i + 1 })}
       ></textarea>
-      <button class="icon-btn ghost" onclick={() => remove(i)} title="Apagar" aria-label="Apagar a resposta {i + 1}">
+      <button class="icon-btn ghost" onclick={() => remove(i)} title={t("Apagar")} aria-label={t("Apagar a resposta {n}", { n: i + 1 })}>
         <Trash2 size={16} />
       </button>
     </div>
@@ -76,16 +76,16 @@
   <form class="item new" onsubmit={add}>
     <label class="shortcut">
       <span class="slash" aria-hidden="true">/</span>
-      <input bind:value={shortcut} maxlength="40" placeholder="orcamento" aria-label="Atalho da nova resposta" />
+      <input bind:value={shortcut} maxlength="40" placeholder={t("orcamento")} aria-label={t("Atalho da nova resposta")} />
     </label>
     <textarea
       bind:value={text}
       rows="2"
       maxlength={MAX_REPLY_CHARS}
-      placeholder="Segue o orçamento, qualquer dúvida é só chamar."
-      aria-label="Texto da nova resposta"
+      placeholder={t("Segue o orçamento, qualquer dúvida é só chamar.")}
+      aria-label={t("Texto da nova resposta")}
     ></textarea>
-    <button class="btn" type="submit" disabled={!text.trim()}><Plus size={16} /> Adicionar</button>
+    <button class="btn" type="submit" disabled={!text.trim()}><Plus size={16} /> {t("Adicionar")}</button>
   </form>
 </section>
 

@@ -2,6 +2,7 @@
   import { AlarmClock, Check, MessageCircle, Pencil, Repeat, Trash2 } from "@lucide/svelte";
   import { REPEAT_OPTIONS, type Contact, type ServiceView, type Task, type TaskFields } from "./api";
   import TaskForm from "./TaskForm.svelte";
+  import { t } from "./i18n.svelte";
   import { contactLabel, groupOf, quickTimes, whenLabel } from "./tasks";
 
   let {
@@ -45,7 +46,7 @@
 
   const service = $derived(contact ? services.find((s) => s.id === contact.serviceId) : undefined);
   const label = $derived(
-    contact ? contactLabel(contact, service?.name) + (service ? "" : " (conta removida)") : "",
+    contact ? contactLabel(contact, service?.name) + (service ? "" : " " + t("(conta removida)")) : "",
   );
   const when = $derived(whenLabel(task, now));
   const late = $derived(groupOf(task, now) === "overdue");
@@ -71,7 +72,7 @@
       class:on={task.done}
       onclick={toggle}
       disabled={busy}
-      aria-label={task.done ? `Reabrir: ${task.text}` : `Concluir: ${task.text}`}
+      aria-label={task.done ? t("Reabrir: {texto}", { texto: task.text }) : t("Concluir: {texto}", { texto: task.text })}
       aria-pressed={task.done}
     >
       {#if task.done}<Check size={13} />{/if}
@@ -83,18 +84,18 @@
           {#if when && !task.done}
             <span class="when" class:late>
               {#if task.remindAt}<AlarmClock size={12} />{/if}
-              {late ? "Atrasada · " : ""}{when}
+              {late ? t("Atrasada") + " · " : ""}{when}
             </span>
             {#if task.repeat}
               <span class="when">
                 <Repeat size={12} />
-                {REPEAT_OPTIONS.find((o) => o.value === task.repeat)?.label}
+                {t(REPEAT_OPTIONS.find((o) => o.value === task.repeat)?.label ?? "")}
               </span>
             {/if}
           {/if}
           {#if showContact && contact}
             {#if service && onopen}
-              <button class="contact" onclick={() => onopen(contact)} title="Abrir a conversa">
+              <button class="contact" onclick={() => onopen(contact)} title={t("Abrir a conversa")}>
                 <MessageCircle size={12} />
                 <span>{label}</span>
               </button>
@@ -115,20 +116,20 @@
               }}>{q.label}</button
             >
           {/each}
-          <button class="mini" onclick={() => (snoozing = false)}>Cancelar</button>
+          <button class="mini" onclick={() => (snoozing = false)}>{t("Cancelar")}</button>
         </span>
       {/if}
     </div>
     <div class="tools">
       {#if !task.done && task.remindAt}
-        <button class="tool" onclick={() => (snoozing = !snoozing)} title="Adiar" aria-label="Adiar {task.text}">
+        <button class="tool" onclick={() => (snoozing = !snoozing)} title={t("Adiar")} aria-label={t("Adiar {texto}", { texto: task.text })}>
           <AlarmClock size={15} />
         </button>
       {/if}
-      <button class="tool" onclick={() => (editing = true)} title="Editar" aria-label="Editar {task.text}">
+      <button class="tool" onclick={() => (editing = true)} title={t("Editar")} aria-label={t("Editar {texto}", { texto: task.text })}>
         <Pencil size={15} />
       </button>
-      <button class="tool danger" onclick={ondelete} title="Apagar" aria-label="Apagar {task.text}">
+      <button class="tool danger" onclick={ondelete} title={t("Apagar")} aria-label={t("Apagar {texto}", { texto: task.text })}>
         <Trash2 size={15} />
       </button>
     </div>

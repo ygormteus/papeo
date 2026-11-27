@@ -11,6 +11,7 @@ use std::sync::Arc;
 use mail_parser::{AddressList, MessageParser};
 use serde::Serialize;
 
+use crate::i18n::{tr, trf};
 use crate::mail::{clip, push_string, Imap, ImapError, ImapResult, Part, Response, Transport};
 
 /// Mensagens por página da lista.
@@ -1174,7 +1175,7 @@ impl<S: Transport> Reader<S> {
                 has_flag(flags, "\\Flagged"),
             ));
         }
-        Err(ImapError::Rejected("mensagem não encontrada".into()))
+        Err(ImapError::Rejected(tr("mensagem não encontrada").into()))
     }
 
     /// Liga ou desliga marcações (`\Seen`, `\Flagged`, `\Answered`).
@@ -1190,9 +1191,9 @@ impl<S: Transport> Reader<S> {
         }
         for flag in flags {
             if !matches!(*flag, "\\Seen" | "\\Flagged" | "\\Answered" | "\\Deleted") {
-                return Err(ImapError::Protocol(format!(
-                    "marcação inválida: {}",
-                    clip(flag)
+                return Err(ImapError::Protocol(trf(
+                    "marcação inválida: {marca}",
+                    &[("marca", &clip(flag))],
                 )));
             }
         }
@@ -1265,7 +1266,7 @@ impl<S: Transport> Reader<S> {
     fn with_message_id(&mut self, path: &str, message_id: &str) -> ImapResult<Vec<u32>> {
         if !searchable_id(message_id) {
             return Err(ImapError::Protocol(
-                "identificador do rascunho inválido".into(),
+                tr("identificador do rascunho inválido").into(),
             ));
         }
         self.ensure(path)?;
@@ -1366,7 +1367,7 @@ fn uid_set(uids: &[u32]) -> String {
 /// Nome de pasta vindo da tela: sem quebras de linha nem controles.
 fn check_path(path: &str) -> ImapResult<()> {
     if path.is_empty() || path.len() > 1000 || path.chars().any(char::is_control) {
-        return Err(ImapError::Protocol("pasta inválida".into()));
+        return Err(ImapError::Protocol(tr("pasta inválida").into()));
     }
     Ok(())
 }

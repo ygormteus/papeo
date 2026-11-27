@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t, locale } from "./i18n.svelte";
   import { onMount, tick } from "svelte";
   import { AlarmClock, Clock, SendHorizontal } from "@lucide/svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
@@ -66,7 +67,7 @@
     try {
       await onlater(c.serviceId, c.chat, at);
       const d = new Date(at * 1000);
-      laterDone[key] = `Lembrete: ${dayLabel(d, new Date())} ${timeLabel(d)}`;
+      laterDone[key] = t("Lembrete: {quando}", { quando: `${dayLabel(d, new Date())} ${timeLabel(d)}` });
       later = null;
     } catch (e) {
       laterError[key] = String(e);
@@ -226,20 +227,20 @@
 
   function ago(at: number, nowMs: number): string {
     const s = Math.max(0, nowMs / 1000 - at);
-    if (s < 60) return "agora";
-    if (s < 3600) return `${Math.floor(s / 60)} min`;
+    if (s < 60) return t("agora");
+    if (s < 3600) return t("{n} min", { n: Math.floor(s / 60) });
     const d = new Date(at * 1000);
     const today = new Date(nowMs).toDateString() === d.toDateString();
     return today
-      ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-      : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString(locale(), { day: "2-digit", month: "2-digit" });
   }
 
   // Tempo relativo atualizado sem depender de mensagens novas.
   let now = $state(Date.now());
   onMount(() => {
-    const t = setInterval(() => (now = Date.now()), 30000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => (now = Date.now()), 30000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -259,7 +260,7 @@
           </span>
           <span class="preview">
             {#if last?.mine}
-              <span class="you">Você:</span> {last.body}
+              <span class="you">{t("Você:")}</span> {last.body}
             {:else}
               {c.body || service.name}
             {/if}
@@ -280,8 +281,8 @@
           {/if}
           <p class="account" style:--acc={serviceColor(service)}>
             <span class="dot" aria-hidden="true"></span>
-            {c.canReply ? "Pela conta" : "Conta"} <strong>{service.name}</strong>
-            {#if service.context}<span class="ctx">{MODE_LABEL[service.context]}</span>{/if}
+            {c.canReply ? t("Pela conta") : t("Conta")} <strong>{service.name}</strong>
+            {#if service.context}<span class="ctx">{t(MODE_LABEL[service.context])}</span>{/if}
           </p>
 
           {#if c.canReply}
@@ -299,8 +300,8 @@
                 onkeydown={(e) => onInputKey(e, c)}
                 rows="1"
                 maxlength={MAX_REPLY_CHARS}
-                placeholder={twins.has(service.id) ? `Responder a ${c.title} pela conta ${service.name}…` : `Responder a ${c.title}…`}
-                aria-label="Responder a {c.title}"
+                placeholder={twins.has(service.id) ? t("Responder a {nome} pela conta {conta}…", { nome: c.title, conta: service.name }) : t("Responder a {nome}…", { nome: c.title })}
+                aria-label={t("Responder a {nome}", { nome: c.title })}
                 aria-autocomplete="list"
                 aria-controls="quick-replies"
                 disabled={sending[key]}
@@ -310,8 +311,8 @@
               <button
                 class="send"
                 type="submit"
-                title="Enviar (Enter)"
-                aria-label="Enviar"
+                title={t("Enviar (Enter)")}
+                aria-label={t("Enviar")}
                 disabled={sending[key] || !(drafts[key] ?? "").trim()}
               >
                 {#if sending[key]}
@@ -323,7 +324,7 @@
             </form>
           {/if}
           {#if c.canReply && matches.length}
-            <ul class="quick" id="quick-replies" role="listbox" aria-label="Respostas prontas">
+            <ul class="quick" id="quick-replies" role="listbox" aria-label={t("Respostas prontas")}>
               {#each matches as r, i (i)}
                 <li role="option" aria-selected={i === pick}>
                   <button
@@ -339,40 +340,40 @@
               {/each}
             </ul>
           {:else if c.canReply && quickReplies.length === 0 && (drafts[key] ?? "") === "/"}
-            <p class="quick-empty">Nenhuma resposta pronta ainda. Crie em Configurações → Respostas prontas.</p>
+            <p class="quick-empty">{t("Nenhuma resposta pronta ainda. Crie em Configurações → Respostas prontas.")}</p>
           {/if}
           <div class="status" aria-live="polite">
             {#if sending[key]}
-              <span class="muted">Enviando pelo {service.name}…</span>
+              <span class="muted">{t("Enviando pelo {conta}…", { conta: service.name })}</span>
             {:else if errors[key]}
               <span class="error">{errors[key]}</span>
             {:else if sent === key}
-              <span class="ok">Enviado ✓</span>
+              <span class="ok">{t("Enviado ✓")}</span>
             {:else if laterError[key]}
               <span class="error">{laterError[key]}</span>
             {:else if laterDone[key]}
               <span class="ok">{laterDone[key]}</span>
             {:else if c.canReply}
-              <span class="muted">Enter envia · Shift+Enter quebra a linha</span>
+              <span class="muted">{t("Enter envia · Shift+Enter quebra a linha")}</span>
             {/if}
             <span class="links">
               {#if oncreatetask && clock && c.chat}
                 <button class="link" aria-expanded={reminding === key} onclick={() => (reminding = reminding === key ? null : key)}>
-                  <AlarmClock size={12} /> Lembrar disso
+                  <AlarmClock size={12} /> {t("Lembrar disso")}
                 </button>
               {/if}
               {#if onlater && c.chat}
                 <button class="link" aria-expanded={later === key} onclick={() => (later = later === key ? null : key)}>
-                  <Clock size={12} /> Responder depois
+                  <Clock size={12} /> {t("Responder depois")}
                 </button>
               {/if}
-              <button class="link" onclick={() => onopen(c.serviceId, c.chat)}>Abrir conversa</button>
+              <button class="link" onclick={() => onopen(c.serviceId, c.chat)}>{t("Abrir conversa")}</button>
             </span>
           </div>
           {#if later === key && onlater}
-            <div class="later" role="group" aria-label="Lembrar de responder">
-              {#each laterOptions as t (t.at)}
-                <button class="chip" disabled={laterBusy} onclick={() => replyLater(c, t.at)}>{t.label}</button>
+            <div class="later" role="group" aria-label={t("Lembrar de responder")}>
+              {#each laterOptions as opt (opt.at)}
+                <button class="chip" disabled={laterBusy} onclick={() => replyLater(c, opt.at)}>{opt.label}</button>
               {/each}
             </div>
           {/if}
@@ -382,7 +383,7 @@
                 link={{ serviceId: c.serviceId, chat: c.chat }}
                 linkLabel="{c.title} · {service.name}"
                 initialText={lastIncoming(c)}
-                placeholder="Tarefa ou lembrete sobre {c.title}…"
+                placeholder={t("Tarefa ou lembrete sobre {nome}…", { nome: c.title })}
                 compact
                 now={clock}
                 onsave={async (fields) => {

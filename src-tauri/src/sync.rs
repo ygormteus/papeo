@@ -12,6 +12,7 @@ use crate::drive;
 use crate::state::{AppState, Inner};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use papeo_core::i18n::{tr, trf};
 use papeo_core::sync::{self as core, DeviceFile, Sealed, SyncKey, SyncMeta};
 use papeo_core::Organizer;
 use serde::{Deserialize, Serialize};
@@ -244,7 +245,7 @@ async fn access_token(app: &AppHandle) -> Result<String, String> {
     let refresh = lock(&rt.stored)
         .refresh_token
         .clone()
-        .ok_or("Entre na conta Google de novo.")?;
+        .ok_or(tr("Entre na conta Google de novo."))?;
     match drive::refresh(&refresh).await {
         Ok(t) => {
             let life = Duration::from_secs(t.expires_in.clamp(60, 3600).saturating_sub(60));
@@ -254,7 +255,7 @@ async fn access_token(app: &AppHandle) -> Result<String, String> {
         Err(e) if e == "REAUTH" => {
             lock(&rt.stored).refresh_token = None;
             let _ = save(app);
-            Err("O acesso ao Google Drive expirou ou foi removido. Conecte de novo.".into())
+            Err(tr("O acesso ao Google Drive expirou ou foi removido. Conecte de novo.").into())
         }
         Err(e) => Err(e),
     }
@@ -270,7 +271,7 @@ macro_rules! with_token {
                 let $t = access_token($app).await?;
                 $call.await.map_err(|e| {
                     if e == "REAUTH" {
-                        "O Google recusou o acesso. Conecte de novo.".to_owned()
+                        tr("O Google recusou o acesso. Conecte de novo.").to_owned()
                     } else {
                         e
                     }
@@ -313,7 +314,7 @@ async fn read_meta(
     }
     let bytes = with_token!(app, |t| drive::download(&t, &id))?;
     let meta: SyncMeta = serde_json::from_slice(&bytes)
-        .map_err(|_| String::from("Dados de sincronização inválidos no Google Drive."))?;
+        .map_err(|_| String::from(tr("Dados de sincronização inválidos no Google Drive.")))?;
     *lock(&rt(app).meta) = Some((id.clone(), modified, meta.clone()));
     Ok(Some((id, meta)))
 }
@@ -335,7 +336,7 @@ async fn delete_quietly(app: &AppHandle, id: &str) {
 
 fn friendly(e: String) -> String {
     if e == drive::NOT_FOUND {
-        "Um arquivo mudou no Google Drive durante a sincronização. Tentamos de novo em instantes."
+        tr("Um arquivo mudou no Google Drive durante a sincronização. Tentamos de novo em instantes.")
             .into()
     } else {
         e
@@ -396,7 +397,7 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
     let (key, device_id, device_name) = {
         let stored = lock(&rt.stored);
         (
-            key_of(&stored).ok_or("Falta a frase-senha.")?,
+            key_of(&stored).ok_or(tr("Falta a frase-senha."))?,
             stored.device_id.clone(),
             stored.device_name.clone(),
         )
@@ -420,10 +421,10 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
             forget_downloads(&rt);
             *lock(&rt.needs) = Some("enter".into());
             let _ = save(app);
-            return Err(
-                "A sincronização foi recomeçada em outro computador. Digite a nova frase-senha."
-                    .into(),
-            );
+            return Err(tr(
+                "A sincronização foi recomeçada em outro computador. Digite a nova frase-senha.",
+            )
+            .into());
         }
     }
     let now_ms = crate::organizer::now_ms();
@@ -607,7 +608,7 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
 
 fn ensure_unlocked(app: &AppHandle) -> Result<(), String> {
     if app.state::<AppState>().lock().locked {
-        Err("Desbloqueie o Papeo primeiro.".into())
+        Err(tr("Desbloqueie o Papeo primeiro.").into())
     } else {
         Ok(())
     }
@@ -638,7 +639,7 @@ pub async fn sync_connect(app: AppHandle) -> Result<SyncStatus, String> {
     let tokens = drive::exchange(code).await?;
     if !tokens.has_drive_scope() {
         return Err(
-            "O acesso à pasta do Papeo no Google Drive não foi marcado. Conecte de novo e marque essa permissão."
+            tr("O acesso à pasta do Papeo no Google Drive não foi marcado. Conecte de novo e marque essa permissão.")
                 .into(),
         );
     }
@@ -648,7 +649,7 @@ pub async fn sync_connect(app: AppHandle) -> Result<SyncStatus, String> {
     let refresh = tokens
         .refresh_token
         .clone()
-        .ok_or("O Google não liberou o acesso contínuo. Tente de novo.")?;
+        .ok_or(tr("O Google não liberou o acesso contínuo. Tente de novo."))?;
     {
         let mut stored = lock(&rt.stored);
         stored.refresh_token = Some(refresh);
@@ -707,7 +708,7 @@ async fn use_passphrase(app: &AppHandle, passphrase: String) -> Result<SyncStatu
                 Some((_, theirs)) => {
                     delete_quietly(app, &mine).await;
                     unlock(theirs, passphrase).await.map_err(|_| {
-                        "Outro computador criou a sincronização agora mesmo, com outra frase-senha. Digite a frase usada nele."
+                        tr("Outro computador criou a sincronização agora mesmo, com outra frase-senha. Digite a frase usada nele.")
                             .to_owned()
                     })?
                 }
@@ -751,9 +752,9 @@ pub async fn sync_now(app: AppHandle) -> Result<SyncStatus, String> {
 pub async fn sync_reset(app: AppHandle, passphrase: String) -> Result<SyncStatus, String> {
     ensure_unlocked(&app)?;
     if passphrase.chars().count() < core::PASSPHRASE_MIN {
-        return Err(format!(
-            "Use uma frase-senha com pelo menos {} caracteres.",
-            core::PASSPHRASE_MIN
+        return Err(trf(
+            "Use uma frase-senha com pelo menos {n} caracteres.",
+            &[("n", &core::PASSPHRASE_MIN)],
         ));
     }
     let rt = rt(&app);

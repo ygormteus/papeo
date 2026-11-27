@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setLang, t, locale } from "./lib/i18n.svelte";
   import { onMount } from "svelte";
   import {
     ArrowDown,
@@ -93,6 +94,7 @@
   type Toast = { text: string; action?: { label: string; run: () => void } };
 
   let snap = $state<Snapshot>(EMPTY_SNAPSHOT);
+  $effect(() => setLang(snap.lang));
   let ready = $state(false);
   let page = $state<"home" | "settings" | "tasks">("home");
   let org = $state<Organizer>(EMPTY_ORGANIZER);
@@ -300,7 +302,7 @@
   async function createTask(fields: TaskFields) {
     await orgRun(api.saveTask(null, fields));
     if (!fields.link && !fields.contactId && active) {
-      showToast({ text: "Tarefa criada sem conversa: está em Tarefas." });
+      showToast({ text: t("Tarefa criada sem conversa: está em Tarefas.") });
     }
   }
 
@@ -388,50 +390,73 @@
     const above = snap.services.map((s, i) => (i < index && shown(s) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
     const below = snap.services.findIndex((s, i) => i > index && shown(s));
     const items: MenuItem[] = [
-      { label: "Recarregar", icon: RotateCw, run: () => run(api.reload(service.id)) },
-      { label: "Hibernar agora", icon: Snowflake, run: () => run(api.hibernate(service.id)) },
+      { label: t("Recarregar"), icon: RotateCw, run: () => run(api.reload(service.id)) },
+      { label: t("Hibernar agora"), icon: Snowflake, run: () => run(api.hibernate(service.id)) },
     ];
     if (isMuted(service)) {
       items.push({
-        label: "Reativar notificações",
+        label: t("Reativar notificações"),
         icon: Bell,
         run: () => run(api.setNotifications(service.id, true)),
       });
     } else {
       items.push(
-        { label: "Silenciar por 1 hora", icon: BellOff, run: () => run(api.muteService(service.id, 60)) },
-        { label: "Silenciar por 8 horas", icon: BellOff, run: () => run(api.muteService(service.id, 480)) },
+        { label: t("Silenciar por 1 hora"), icon: BellOff, run: () => run(api.muteService(service.id, 60)) },
+        { label: t("Silenciar por 8 horas"), icon: BellOff, run: () => run(api.muteService(service.id, 480)) },
         {
-          label: "Silenciar sempre",
+          label: t("Silenciar sempre"),
           icon: BellOff,
           run: () => run(api.setNotifications(service.id, false)),
         },
       );
     }
     if (above >= 0) {
-      items.push({ label: "Mover para cima", icon: ArrowUp, run: () => run(api.moveService(service.id, above)) });
+      items.push({ label: t("Mover para cima"), icon: ArrowUp, run: () => run(api.moveService(service.id, above)) });
     }
     if (below >= 0) {
       items.push({
-        label: "Mover para baixo",
+        label: t("Mover para baixo"),
         icon: ArrowDown,
         run: () => run(api.moveService(service.id, below)),
       });
     }
     items.push(
       {
-        label: "Adicionar outra conta",
+        label: t("Adicionar outra conta"),
         icon: UserPlus,
         run: () => run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined)),
       },
-      { label: "Personalizar…", icon: Palette, run: () => (customizing = service) },
+      { label: t("Personalizar…"), icon: Palette, run: () => (customizing = service) },
       ...(supportsMailWatch(service.kind)
-        ? [{ label: "E-mail por IMAP…", icon: MailCheck, run: () => (mailingId = service.id) }]
+        ? [{ label: t("E-mail por IMAP…"), icon: MailCheck, run: () => (mailingId = service.id) }]
         : []),
-      { label: "Sair e apagar dados…", icon: LogOut, danger: true, run: () => (confirmClear = service) },
-      { label: "Remover…", icon: Trash2, danger: true, run: () => (confirmRemove = service) },
+      { label: t("Sair e apagar dados…"), icon: LogOut, danger: true, run: () => (confirmClear = service) },
+      { label: t("Remover…"), icon: Trash2, danger: true, run: () => (confirmRemove = service) },
     );
     return items;
+  }
+
+  function restoreMessage(backup: { services: string[]; tasks?: number | null; notes?: number | null }) {
+    const servicos = backup.services.join(", ") || t("nenhum serviço");
+    if (backup.tasks == null) {
+      return t(
+        "Os serviços atuais serão substituídos por: {servicos}. As tarefas atuais continuam (este backup não tem tarefas). Logins que já existem neste computador continuam; os outros pedem login de novo.",
+        { servicos },
+      );
+    }
+    const notes = backup.notes ?? 0;
+    return t(
+      "Os serviços atuais serão substituídos por: {servicos}. Tarefas e anotações também: {tarefas} e {anotacoes}. Logins que já existem neste computador continuam; os outros pedem login de novo.",
+      {
+        servicos,
+        tarefas:
+          backup.tasks === 1
+            ? t("{n} tarefa aberta", { n: backup.tasks })
+            : t("{n} tarefas abertas", { n: backup.tasks }),
+        anotacoes:
+          notes === 1 ? t("{n} anotação", { n: notes }) : t("{n} anotações", { n: notes }),
+      },
+    );
   }
 
   function openAdd() {
@@ -509,8 +534,10 @@
         const here = active?.id === o.id && active.reader;
         showToast(
           {
-            text: `Não deu para enviar o e-mail${account ? ` (${account.name})` : ""}. Ele volta ao editor da conta.`,
-            action: account && !here ? { label: "Abrir", run: () => run(api.activate(o.id)) } : undefined,
+            text: account
+              ? t("Não deu para enviar o e-mail ({conta}). Ele volta ao editor da conta.", { conta: account.name })
+              : t("Não deu para enviar o e-mail. Ele volta ao editor da conta."),
+            action: account && !here ? { label: t("Abrir"), run: () => run(api.activate(o.id)) } : undefined,
           },
           8000,
         );
@@ -520,10 +547,10 @@
         showToast(
           d.success
             ? {
-                text: `Download concluído: ${d.fileName}`,
-                action: { label: "Mostrar na pasta", run: () => run(api.revealDownload(d.id)) },
+                text: t("Download concluído: {nome}", { nome: d.fileName }),
+                action: { label: t("Mostrar na pasta"), run: () => run(api.revealDownload(d.id)) },
               }
-            : { text: `Download falhou: ${d.fileName}` },
+            : { text: t("Download falhou: {nome}", { nome: d.fileName }) },
           8000,
         ),
       ),
@@ -636,11 +663,11 @@
       {:else if active}
         <div class="placeholder">
           {#if menuCovers && !modalOpen}
-            {active.name} oculto enquanto o menu está aberto.
+            {t("{nome} oculto enquanto o menu está aberto.", { nome: active.name })}
           {:else if modalOpen}
-            {active.name} oculto enquanto a janela de diálogo está aberta.
+            {t("{nome} oculto enquanto a janela de diálogo está aberta.", { nome: active.name })}
           {:else}
-            Carregando {active.name}…
+            {t("Carregando {nome}…", { nome: active.name })}
           {/if}
         </div>
       {:else if page === "settings"}
@@ -685,8 +712,8 @@
     {#snippet todayCard()}
       <section class="card today" aria-labelledby="today-title">
         <div class="today-head">
-          <h2 id="today-title"><CalendarClock size={18} /> Para hoje</h2>
-          <button class="link-btn" onclick={openTasks}>Ver todas</button>
+          <h2 id="today-title"><CalendarClock size={18} /> {t("Para hoje")}</h2>
+          <button class="link-btn" onclick={openTasks}>{t("Ver todas")}</button>
         </div>
         <TaskList
           tasks={todayTasks.slice(0, 5)}
@@ -732,9 +759,9 @@
 {#if confirmRemove}
   {@const service = confirmRemove}
   <ConfirmDialog
-    title="Remover {service.name}?"
-    message="A sessão deste serviço será apagada. Para usá-lo de novo, será preciso fazer login outra vez. Tarefas e anotações ligadas a ele continuam em Tarefas."
-    confirmLabel="Remover"
+    title={t("Remover {nome}?", { nome: service.name })}
+    message={t("A sessão deste serviço será apagada. Para usá-lo de novo, será preciso fazer login outra vez. Tarefas e anotações ligadas a ele continuam em Tarefas.")}
+    confirmLabel={t("Remover")}
     onclose={() => (confirmRemove = null)}
     onconfirm={() => {
       // `{@const}` é derivado: lê o id antes de fechar o diálogo.
@@ -748,15 +775,15 @@
 {#if confirmClear}
   {@const service = confirmClear}
   <ConfirmDialog
-    title="Sair de {service.name} e apagar dados?"
-    message="Apaga deste computador os cookies, o cache e as conversas guardadas desta conta. O serviço continua na lista e pede login de novo."
-    confirmLabel="Sair e apagar"
+    title={t("Sair de {nome} e apagar dados?", { nome: service.name })}
+    message={t("Apaga deste computador os cookies, o cache e as conversas guardadas desta conta. O serviço continua na lista e pede login de novo.")}
+    confirmLabel={t("Sair e apagar")}
     onclose={() => (confirmClear = null)}
     onconfirm={async () => {
       const { id, name } = service;
       confirmClear = null;
       if (await run(api.clearServiceData(id))) {
-        showToast({ text: `Dados de ${name} apagados deste computador.` });
+        showToast({ text: t("Dados de {nome} apagados deste computador.", { nome: name }) });
       }
     }}
   />
@@ -765,20 +792,16 @@
 {#if restoring}
   {@const backup = restoring}
   <ConfirmDialog
-    title="Restaurar backup?"
-    message={`Os serviços atuais serão substituídos por: ${backup.services.join(", ") || "nenhum serviço"}. ${
-      backup.tasks != null
-        ? `Tarefas e anotações também: ${backup.tasks} ${backup.tasks === 1 ? "tarefa aberta" : "tarefas abertas"} e ${backup.notes ?? 0} ${backup.notes === 1 ? "anotação" : "anotações"}. `
-        : "As tarefas atuais continuam (este backup não tem tarefas). "
-    }Logins que já existem neste computador continuam; os outros pedem login de novo.`}
-    confirmLabel="Restaurar"
+    title={t("Restaurar backup?")}
+    message={restoreMessage(backup)}
+    confirmLabel={t("Restaurar")}
     onclose={() => (restoring = null)}
     onconfirm={async () => {
       const { path } = backup;
       restoring = null;
       if (await run(api.importConfig(path))) {
         page = "home";
-        showToast({ text: "Configuração restaurada." });
+        showToast({ text: t("Configuração restaurada.") });
       }
     }}
   />
@@ -819,10 +842,10 @@
 
 {#if updateNotice && !addOpen && !paletteOpen && !confirmRemove && !confirmClear && !customizing && !mailing && !restoring}
   <ConfirmDialog
-    title="Verificar atualizações?"
-    message="A cada 2 horas, o Papeo consulta o GitHub para saber se há versão nova. O GitHub vê o seu endereço IP; nada mais é enviado. A instalação só acontece quando você clica em Atualizar. Dá para mudar em Configurações → Sistema."
-    confirmLabel="Manter ligada"
-    cancelLabel="Desligar"
+    title={t("Verificar atualizações?")}
+    message={t("A cada 2 horas, o Papeo consulta o GitHub para saber se há versão nova. O GitHub vê o seu endereço IP; nada mais é enviado. A instalação só acontece quando você clica em Atualizar. Dá para mudar em Configurações → Sistema.")}
+    confirmLabel={t("Manter ligada")}
+    cancelLabel={t("Desligar")}
     danger={false}
     onclose={() => run(api.setUpdates(true))}
     oncancel={() => run(api.setUpdates(false))}

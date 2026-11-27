@@ -3,6 +3,7 @@
   import { REPEAT_OPTIONS, type ChatLink, type Repeat, type Task, type TaskFields } from "./api";
   import { dateKey, fromInputs, quickTimes, toTimeInput, whenLabel } from "./tasks";
   import { parseWhen } from "./when";
+  import { t } from "./i18n.svelte";
 
   let {
     link = null,
@@ -10,7 +11,7 @@
     task = null,
     keepContact = null,
     keepLabel = "",
-    placeholder = "Nova tarefa…",
+    placeholder,
     initialText = "",
     compact = false,
     now,
@@ -158,21 +159,21 @@
     class="text"
     bind:this={input}
     bind:value={text}
-    {placeholder}
+    placeholder={placeholder ?? t("Nova tarefa…")}
     onkeydown={keydown}
     maxlength="500"
-    aria-label="Texto da tarefa"
+    aria-label={t("Texto da tarefa")}
   />
   {#if parsed && parsedLabel}
     <div class="row">
-      <span class="chip set parsed" title="Lido do texto: “{parsed.match}”">
+      <span class="chip set parsed" title={t("Lido do texto: “{trecho}”", { trecho: parsed.match })}>
         <Sparkles size={13} />
         {parsedLabel}
-        <button type="button" class="x" onclick={() => (ignoredText = text)} aria-label="Não usar a data do texto">
+        <button type="button" class="x" onclick={() => (ignoredText = text)} aria-label={t("Não usar a data do texto")}>
           <X size={12} />
         </button>
       </span>
-      <span class="hint">“{parsed.match}” sai do texto</span>
+      <span class="hint">{t("“{trecho}” sai do texto", { trecho: parsed.match })}</span>
     </div>
   {/if}
   <div class="row">
@@ -180,7 +181,7 @@
       <span class="chip set">
         <AlarmClock size={13} />
         {when}
-        <button type="button" class="x" onclick={clearWhen} aria-label="Tirar a data">
+        <button type="button" class="x" onclick={clearWhen} aria-label={t("Tirar a data")}>
           <X size={12} />
         </button>
       </span>
@@ -190,25 +191,25 @@
       {/each}
     {/if}
     <button type="button" class="chip" class:on={picking} onclick={openPicker} aria-expanded={picking}>
-      <CalendarDays size={13} /> Escolher…
+      <CalendarDays size={13} /> {t("Escolher…")}
     </button>
   </div>
   {#if picking}
     <div class="row picker">
-      <input type="date" bind:value={pickDate} aria-label="Dia" />
-      <input type="time" bind:value={pickTime} aria-label="Hora (vazia: só o dia, sem aviso)" />
-      <button type="button" class="btn small" onclick={applyPicker}>Usar</button>
-      <span class="hint">Sem hora: vence no dia, sem aviso.</span>
+      <input type="date" bind:value={pickDate} aria-label={t("Dia")} />
+      <input type="time" bind:value={pickTime} aria-label={t("Hora (vazia: só o dia, sem aviso)")} />
+      <button type="button" class="btn small" onclick={applyPicker}>{t("Usar")}</button>
+      <span class="hint">{t("Sem hora: vence no dia, sem aviso.")}</span>
     </div>
   {/if}
   {#if dated}
     <div class="row">
       <label class="chip repeat" class:set={!!repeat}>
         <RepeatIcon size={13} />
-        <select bind:value={repeat} aria-label="Repetir">
-          <option value="">Não repete</option>
+        <select bind:value={repeat} aria-label={t("Repetir")}>
+          <option value="">{t("Não repete")}</option>
           {#each REPEAT_OPTIONS as o (o.value)}
-            <option value={o.value}>{o.label}</option>
+            <option value={o.value}>{t(o.label)}</option>
           {/each}
         </select>
       </label>
@@ -220,13 +221,13 @@
         <span class="chip set link">
           <Link2 size={13} />
           <span class="ellipsis">{label}</span>
-          <button type="button" class="x" onclick={() => (linked = false)} aria-label="Não ligar a {label}">
+          <button type="button" class="x" onclick={() => (linked = false)} aria-label={t("Não ligar a {nome}", { nome: label })}>
             <X size={12} />
           </button>
         </span>
       {:else}
         <button type="button" class="chip" onclick={() => (linked = true)}>
-          <Link2 size={13} /> Ligar a {label}
+          <Link2 size={13} /> {t("Ligar a {nome}", { nome: label })}
         </button>
       {/if}
     </div>
@@ -234,10 +235,10 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="row actions">
     {#if oncancel}
-      <button type="button" class="btn small" onclick={oncancel}>Cancelar</button>
+      <button type="button" class="btn small" onclick={oncancel}>{t("Cancelar")}</button>
     {/if}
     <button type="submit" class="btn btn-primary small" disabled={!text.trim() || busy}>
-      {task ? "Salvar" : remindAt ? "Criar lembrete" : "Criar tarefa"}
+      {task ? t("Salvar") : remindAt ? t("Criar lembrete") : t("Criar tarefa")}
     </button>
   </div>
 </form>

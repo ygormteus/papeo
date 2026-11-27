@@ -11,6 +11,7 @@
 //! só deste computador); na primeira vez, boa parte da tela.
 
 use crate::state::AppState;
+use papeo_core::i18n::tr;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -180,7 +181,7 @@ fn create(
 ) -> tauri::Result<()> {
     let (width, height) = initial_size(app);
     let builder = tauri::window::WindowBuilder::new(app, PREVIEW)
-        .title("Prévia")
+        .title(tr("Prévia"))
         .inner_size(width, height)
         .min_inner_size(MIN_WIDTH, MIN_HEIGHT)
         .center()
@@ -199,7 +200,7 @@ fn create(
     window.add_child(
         WebviewBuilder::new(BAR, WebviewUrl::App(Default::default()))
             // A mesma interface, montando só a barra da prévia (`src/main.ts`).
-            .initialization_script("window.__PAPEO_VIEW = 'preview';"),
+            .initialization_script(crate::lang::view_script("preview")),
         LogicalPosition::new(0.0, 0.0),
         LogicalSize::new(size.width, BAR_HEIGHT),
     )?;
@@ -312,7 +313,7 @@ pub async fn preview_open_browser(app: AppHandle) -> Result<(), String> {
                 .and_then(|i| Url::parse(&i.url).ok())
                 .filter(web)
         })
-        .ok_or("Nenhum link aberto na prévia.")?;
+        .ok_or(tr("Nenhum link aberto na prévia."))?;
     app.opener()
         .open_url(url.as_str(), None::<&str>)
         .map_err(|e| e.to_string())?;
@@ -323,4 +324,14 @@ pub async fn preview_open_browser(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn preview_close(app: AppHandle) {
     close(&app);
+}
+
+/// Troca de idioma com a janela aberta (spec 20): título e barra.
+pub fn relabel(app: &AppHandle) {
+    if let Some(window) = app.get_window(PREVIEW) {
+        let _ = window.set_title(tr("Prévia"));
+    }
+    if let Some(bar) = app.get_webview(BAR) {
+        let _ = bar.eval(crate::lang::set_script());
+    }
 }

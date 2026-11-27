@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t, tk } from "./i18n.svelte";
   import { CirclePlus, House, ListTodo, MessageCircle, NotebookPen, Search, Settings, SquareCheck } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
@@ -54,7 +55,7 @@
   const entries = $derived.by<Entry[]>(() => {
     const raw = query.trim();
     const q = normalize(raw);
-    const has = (...texts: string[]) => !q || texts.some((t) => normalize(t).includes(q));
+    const has = (...texts: string[]) => !q || texts.some((x) => normalize(x).includes(q));
     const byId = new Map(services.map((s) => [s.id, s]));
 
     const accounts: Entry[] = services
@@ -62,9 +63,9 @@
       .map((s) => ({
         key: `svc-${s.id}`,
         kind: "service",
-        group: "Contas",
+        group: tk("Contas"),
         label: s.name,
-        detail: s.unread ? `${s.unread} não lidas` : s.loaded ? "" : "dormindo",
+        detail: s.unread ? t("{n} não lidas", { n: s.unread }) : s.loaded ? "" : t("dormindo"),
         service: s,
         run: () => onselect(s.id),
       }));
@@ -77,7 +78,7 @@
         return {
           key: `chat-${i}`,
           kind: "chat",
-          group: "Conversas recentes",
+          group: tk("Conversas recentes"),
           label: m.title,
           detail: m.body ? `${service.name} · ${clip(m.body, 36)}` : service.name,
           service,
@@ -89,9 +90,9 @@
       ? services.filter(searchable).map((s) => ({
           key: `search-${s.id}`,
           kind: "search",
-          group: "Buscar contato ou grupo",
-          label: `Buscar “${clip(raw, 40)}” em ${s.name}`,
-          detail: s.loaded ? "" : "vai acordar",
+          group: tk("Buscar contato ou grupo"),
+          label: t("Buscar “{busca}” em {conta}", { busca: clip(raw, 40), conta: s.name }),
+          detail: s.loaded ? "" : t("vai acordar"),
           service: s,
           run: () => onchat(s.id, raw, false),
         }))
@@ -103,18 +104,18 @@
     const live = (c: Contact) => services.some((s) => s.id === c.serviceId);
     const tasks: Entry[] = raw
       ? org.tasks
-          .filter((t) => has(t.text))
+          .filter((k) => has(k.text))
           .sort((a, b) => Number(a.done) - Number(b.done))
           .slice(0, 5)
-          .map((t) => {
-            const c = contactOf(org, t);
-            const when = t.done ? "feita" : whenLabel(t, now);
+          .map((k) => {
+            const c = contactOf(org, k);
+            const when = k.done ? t("feita") : whenLabel(k, now);
             const who = c ? contactLabel(c, services.find((s) => s.id === c.serviceId)?.name) : "";
             return {
-              key: `task-${t.id}`,
+              key: `task-${k.id}`,
               kind: "task",
-              group: "Tarefas",
-              label: clip(t.text, 60),
+              group: tk("Tarefas"),
+              label: clip(k.text, 60),
               detail: [when, who].filter(Boolean).join(" · "),
               run: () => (c && live(c) ? oncontact(c) : ontasks()),
             };
@@ -129,7 +130,7 @@
             return {
               key: `note-${c.id}`,
               kind: "note",
-              group: "Anotações",
+              group: tk("Anotações"),
               label: contactLabel(c, services.find((s) => s.id === c.serviceId)?.name),
               detail: clip(line.trim(), 44),
               run: () => (live(c) ? oncontact(c) : ontasks()),
@@ -137,20 +138,20 @@
           })
       : [];
 
-    const settings: Entry[] = searchSettings(raw).map((e) => ({
+    const settings: Entry[] = searchSettings(raw, 5, t).map((e) => ({
       key: `setting-${e.label}`,
       kind: "setting",
-      group: "Configurações",
-      label: e.label,
-      detail: TAB_LABEL[e.tab],
+      group: tk("Configurações"),
+      label: t(e.label),
+      detail: t(TAB_LABEL[e.tab]),
       run: () => onsetting({ tab: e.tab, label: e.label }),
     }));
 
     const extras: Entry[] = [
-      { key: "home", kind: "home", group: "Papeo", label: "Início", run: () => onselect(null) },
-      { key: "tasks", kind: "tasks", group: "Papeo", label: "Tarefas", run: ontasks },
-      { key: "add", kind: "add", group: "Papeo", label: "Adicionar serviço", run: onadd },
-      { key: "settings", kind: "setting", group: "Papeo", label: "Configurações", run: () => onsetting() },
+      { key: "home", kind: "home", group: "Papeo", label: tk("Início"), run: () => onselect(null) },
+      { key: "tasks", kind: "tasks", group: "Papeo", label: tk("Tarefas"), run: ontasks },
+      { key: "add", kind: "add", group: "Papeo", label: tk("Adicionar serviço"), run: onadd },
+      { key: "settings", kind: "setting", group: "Papeo", label: tk("Configurações"), run: () => onsetting() },
     ];
     return [
       ...accounts,
@@ -159,7 +160,7 @@
       ...notes,
       ...settings,
       ...searches,
-      ...extras.filter((e) => has(e.label)),
+      ...extras.filter((e) => has(e.label, t(e.label))).map((e) => ({ ...e, label: t(e.label) })),
     ];
   });
 
@@ -180,14 +181,14 @@
   }
 </script>
 
-<Modal {onclose} label="Buscar" width={560} top>
+<Modal {onclose} label={t("Buscar")} width={560} top>
   <div class="search">
     <Search size={18} />
     <!-- svelte-ignore a11y_autofocus -->
     <input
       bind:value={query}
       onkeydown={keydown}
-      placeholder="Conta, contato, tarefa, anotação ou configuração…"
+      placeholder={t("Conta, contato, tarefa, anotação ou configuração…")}
       autofocus
       autocomplete="off"
       autocorrect="off"
@@ -199,10 +200,10 @@
       aria-activedescendant={entries[index] ? `palette-${entries[index].key}` : undefined}
     />
   </div>
-  <ul id="palette-list" role="listbox" aria-label="Resultados">
+  <ul id="palette-list" role="listbox" aria-label={t("Resultados")}>
     {#each entries as entry, i (entry.key)}
       {#if i === 0 || entries[i - 1].group !== entry.group}
-        <li class="group" role="presentation">{entry.group}</li>
+        <li class="group" role="presentation">{t(entry.group)}</li>
       {/if}
       <li
         id="palette-{entry.key}"
@@ -236,11 +237,11 @@
         {#if entry.detail}<span class="detail">{entry.detail}</span>{/if}
       </li>
     {:else}
-      <li class="none" role="presentation">Nada encontrado.</li>
+      <li class="none" role="presentation">{t("Nada encontrado.")}</li>
     {/each}
   </ul>
   {#if !query.trim() && services.some(searchable)}
-    <p class="tip">Digite um nome para procurar contatos e grupos no WhatsApp ou no Telegram.</p>
+    <p class="tip">{t("Digite um nome para procurar contatos e grupos no WhatsApp ou no Telegram.")}</p>
   {/if}
 </Modal>
 

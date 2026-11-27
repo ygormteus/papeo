@@ -9,6 +9,7 @@
 //! Tudo o que vai para a nuvem é cifrado com XChaCha20-Poly1305; a chave sai
 //! da frase-senha por Argon2id, com um sal comum à conta (`meta`).
 
+use crate::i18n::{tr, trf};
 use crate::organizer::{Contact, Organizer, Task};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as B64;
@@ -107,7 +108,7 @@ fn derive(
         || !(1..=4).contains(&passes)
         || !(1..=4).contains(&lanes)
     {
-        return Err("Parâmetros de criptografia inválidos.".into());
+        return Err(tr("Parâmetros de criptografia inválidos.").into());
     }
     let params = Params::new(memory, passes, lanes, Some(32)).map_err(|e| e.to_string())?;
     let mut key = [0u8; 32];
@@ -130,7 +131,7 @@ pub fn seal(key: &SyncKey, aad: &str, plain: &[u8]) -> Result<Sealed, String> {
                 aad: aad.as_bytes(),
             },
         )
-        .map_err(|_| "Falha ao cifrar.".to_owned())?;
+        .map_err(|_| tr("Falha ao cifrar.").to_owned())?;
     Ok(Sealed {
         nonce: B64.encode(nonce),
         data: B64.encode(data),
@@ -139,7 +140,8 @@ pub fn seal(key: &SyncKey, aad: &str, plain: &[u8]) -> Result<Sealed, String> {
 
 pub fn open(key: &SyncKey, aad: &str, sealed: &Sealed) -> Result<Vec<u8>, String> {
     let bad = || {
-        "Não foi possível abrir os dados: frase-senha diferente ou arquivo danificado.".to_owned()
+        tr("Não foi possível abrir os dados: frase-senha diferente ou arquivo danificado.")
+            .to_owned()
     };
     let nonce = B64.decode(&sealed.nonce).map_err(|_| bad())?;
     if nonce.len() != 24 {
@@ -160,8 +162,9 @@ pub fn open(key: &SyncKey, aad: &str, sealed: &Sealed) -> Result<Vec<u8>, String
 /// Primeira conexão da conta: sal novo e prova da frase-senha.
 pub fn new_meta(passphrase: &str) -> Result<(SyncMeta, SyncKey), String> {
     if passphrase.chars().count() < PASSPHRASE_MIN {
-        return Err(format!(
-            "Use uma frase-senha com pelo menos {PASSPHRASE_MIN} caracteres."
+        return Err(trf(
+            "Use uma frase-senha com pelo menos {n} caracteres.",
+            &[("n", &PASSPHRASE_MIN)],
         ));
     }
     let salt: [u8; 16] = random();
@@ -180,18 +183,18 @@ pub fn new_meta(passphrase: &str) -> Result<(SyncMeta, SyncKey), String> {
 /// Outro computador: deriva a chave e confere a frase-senha.
 pub fn unlock_meta(meta: &SyncMeta, passphrase: &str) -> Result<SyncKey, String> {
     if meta.version != 1 {
-        return Err("Sincronização criada por uma versão mais nova do Papeo.".into());
+        return Err(tr("Sincronização criada por uma versão mais nova do Papeo.").into());
     }
     let salt = B64
         .decode(&meta.salt)
-        .map_err(|_| "Dados de sincronização inválidos.".to_owned())?;
+        .map_err(|_| tr("Dados de sincronização inválidos.").to_owned())?;
     if !(16..=64).contains(&salt.len()) {
-        return Err("Dados de sincronização inválidos.".into());
+        return Err(tr("Dados de sincronização inválidos.").into());
     }
     let key = derive(passphrase, &salt, meta.memory_kib, meta.passes, meta.lanes)?;
     match open(&key, "meta", &meta.check) {
         Ok(text) if text == CHECK_TEXT => Ok(key),
-        _ => Err("Frase-senha incorreta.".into()),
+        _ => Err(tr("Frase-senha incorreta.").into()),
     }
 }
 
@@ -209,9 +212,9 @@ pub fn open_device(
 ) -> Result<DeviceFile, String> {
     let plain = open(key, &format!("device:{device}"), sealed)?;
     let mut file: DeviceFile = serde_json::from_slice(&plain)
-        .map_err(|_| "Arquivo de outro computador inválido.".to_owned())?;
+        .map_err(|_| tr("Arquivo de outro computador inválido.").to_owned())?;
     if file.device != device {
-        return Err("Arquivo de outro computador inválido.".into());
+        return Err(tr("Arquivo de outro computador inválido.").into());
     }
     file.organizer = file.organizer.sanitized(now_ms);
     Ok(file)

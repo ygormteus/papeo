@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { onMount } from "svelte";
   import { AppWindow, Check, Download, FileText, FolderOpen, X } from "@lucide/svelte";
   import { api, errorMessage, isMac, onAttachment, type AttachmentInfo } from "./api";
@@ -12,7 +13,7 @@
   let error = $state("");
   let busy = $state(false);
 
-  const name = $derived(info.fileName || "Anexo");
+  const name = $derived(info.fileName || t("Anexo"));
   const external = $derived(info.view === "external");
 
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -75,24 +76,24 @@
   <span class="title" data-tauri-drag-region title={name}>{name}</span>
   {#if error}<span class="error" role="alert" title={error}>{error}</span>{/if}
   {#if info.saved}
-    <span class="saved" role="status"><Check size={14} /> Salvo</span>
-    <button class="icon-btn ghost" onclick={reveal} disabled={busy} title="Mostrar na pasta" aria-label="Mostrar na pasta">
+    <span class="saved" role="status"><Check size={14} /> {t("Salvo")}</span>
+    <button class="icon-btn ghost" onclick={reveal} disabled={busy} title={t("Mostrar na pasta")} aria-label={t("Mostrar na pasta")}>
       <FolderOpen size={16} />
     </button>
   {:else}
-    <button class="btn small" onclick={save} disabled={busy} title="Salvar em Downloads ({isMac ? '⌘' : 'Ctrl+'}S)">
-      <Download size={15} /> Salvar
+    <button class="btn small" onclick={save} disabled={busy} title={t("Salvar em Downloads ({atalho}S)", { atalho: isMac ? "⌘" : "Ctrl+" })}>
+      <Download size={15} /> {t("Salvar")}
     </button>
   {/if}
   <button
     class="btn small"
     onclick={openApp}
     disabled={busy}
-    title="Salva em Downloads e abre no app padrão (Excel, Word, leitor de PDF…) para editar"
+    title={t("Salva em Downloads e abre no app padrão (Excel, Word, leitor de PDF…) para editar")}
   >
-    <AppWindow size={15} /> Abrir no app
+    <AppWindow size={15} /> {t("Abrir no app")}
   </button>
-  <button class="icon-btn ghost" onclick={close} title="Fechar (Esc)" aria-label="Fechar o anexo">
+  <button class="icon-btn ghost" onclick={close} title={t("Fechar (Esc)")} aria-label={t("Fechar o anexo")}>
     <X size={17} />
   </button>
 </header>
@@ -102,10 +103,9 @@
     <FileText size={40} strokeWidth={1.5} aria-hidden="true" />
     <p class="name">{name}</p>
     <p class="hint">
-      O Windows não mostra este tipo de arquivo sem o programa dele. Abra no app para ver e editar: o Papeo salva uma
-      cópia em Downloads antes, então nada do que você editar se perde.
+      {t("O Windows não mostra este tipo de arquivo sem o programa dele. Abra no app para ver e editar: o Papeo salva uma cópia em Downloads antes, então nada do que você editar se perde.")}
     </p>
-    <button class="btn btn-primary" onclick={openApp} disabled={busy}><AppWindow size={16} /> Abrir no app</button>
+    <button class="btn btn-primary" onclick={openApp} disabled={busy}><AppWindow size={16} /> {t("Abrir no app")}</button>
   </main>
 {/if}
 

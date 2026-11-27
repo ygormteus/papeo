@@ -4,6 +4,7 @@
 //! tem um `id` aleatório, `updatedAt` (milissegundos Unix) e `deleted`
 //! (apagar marca em vez de sumir, para que a remoção também viaje).
 
+use crate::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -296,7 +297,7 @@ impl Organizer {
         self.tasks
             .iter_mut()
             .find(|t| t.id == id && !t.deleted)
-            .ok_or_else(|| "Tarefa não encontrada.".to_owned())
+            .ok_or_else(|| tr("Tarefa não encontrada.").to_owned())
     }
 
     pub fn contact(&self, id: &str) -> Option<&Contact> {
@@ -306,7 +307,7 @@ impl Organizer {
     /// Contato da conversa (`service_id` + `chat`), criado se não existir.
     pub fn contact_for(&mut self, r: &ContactRef, now_ms: u64) -> Result<String, String> {
         if r.service_id.is_empty() || r.service_id.len() > 64 {
-            return Err("Conta inválida.".into());
+            return Err(tr("Conta inválida.").into());
         }
         let chat = clean_line(&r.chat, CHAT_MAX);
         let name = clean_line(&r.service_name, 80);
@@ -323,7 +324,7 @@ impl Organizer {
             return Ok(c.id.clone());
         }
         if self.contacts.iter().filter(|c| !c.deleted).count() >= MAX_CONTACTS {
-            return Err("Limite de contatos com anotações atingido.".into());
+            return Err(tr("Limite de contatos com anotações atingido.").into());
         }
         let id = new_item_id();
         self.contacts.push(Contact {
@@ -350,11 +351,11 @@ impl Organizer {
     fn apply(&mut self, input: &TaskInput, now_ms: u64) -> Result<Task, String> {
         let text = clean_line(&input.text, TASK_TEXT_MAX);
         if text.is_empty() {
-            return Err("Escreva a tarefa.".into());
+            return Err(tr("Escreva a tarefa.").into());
         }
         if let Some(due) = &input.due {
             if !is_date(due) {
-                return Err("Data inválida.".into());
+                return Err(tr("Data inválida.").into());
             }
         }
         let contact = match (&input.contact, &input.contact_id) {
@@ -362,7 +363,7 @@ impl Organizer {
             (None, Some(id)) => Some(
                 self.contact(id)
                     .map(|c| c.id.clone())
-                    .ok_or_else(|| "Contato não encontrado.".to_owned())?,
+                    .ok_or_else(|| tr("Contato não encontrado.").to_owned())?,
             ),
             (None, None) => None,
         };
@@ -387,7 +388,7 @@ impl Organizer {
 
     pub fn add_task(&mut self, input: &TaskInput, now_ms: u64) -> Result<String, String> {
         if self.tasks.iter().filter(|t| !t.deleted).count() >= MAX_TASKS {
-            return Err("Limite de tarefas atingido. Apague as já feitas.".into());
+            return Err(tr("Limite de tarefas atingido. Apague as já feitas.").into());
         }
         let mut task = self.apply(input, now_ms)?;
         task.id = new_item_id();
@@ -584,8 +585,9 @@ pub fn load_organizer(path: &Path, now_ms: u64) -> Result<Organizer, String> {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Organizer::default()),
         Err(err) => {
-            return Err(format!(
-                "Não foi possível ler as tarefas ({err}). Feche e abra o Papeo."
+            return Err(trf(
+                "Não foi possível ler as tarefas ({erro}). Feche e abra o Papeo.",
+                &[("erro", &err)],
             ))
         }
     };
@@ -597,9 +599,9 @@ pub fn load_organizer(path: &Path, now_ms: u64) -> Result<Organizer, String> {
     }
     if let Ok(v) = serde_json::from_slice::<VersionOnly>(&bytes) {
         if v.version > ORGANIZER_VERSION {
-            return Err(format!(
-                "As tarefas foram gravadas por uma versão mais nova do Papeo (formato {}). Atualize o app.",
-                v.version
+            return Err(trf(
+                "As tarefas foram gravadas por uma versão mais nova do Papeo (formato {versao}). Atualize o app.",
+                &[("versao", &v.version)],
             ));
         }
     }

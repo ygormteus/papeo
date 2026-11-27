@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t, tk } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { api, errorMessage, PIN_MAX, PIN_MIN, type Snapshot } from "./api";
 
@@ -13,8 +14,8 @@
     ondone: (snap: Snapshot) => void;
   } = $props();
 
-  const TITLE = { create: "Criar PIN do Papeo", change: "Trocar PIN", remove: "Remover PIN" };
-  const ACTION = { create: "Criar e bloquear", change: "Trocar", remove: "Remover" };
+  const TITLE = { create: tk("Criar PIN do Papeo"), change: tk("Trocar PIN"), remove: tk("Remover PIN") };
+  const ACTION = { create: tk("Criar e bloquear"), change: tk("Trocar"), remove: tk("Remover") };
 
   let current = $state("");
   let pin = $state("");
@@ -30,8 +31,8 @@
     if (busy) return;
     error = "";
     if (needsNew) {
-      if ([...pin].length < PIN_MIN) return void (error = `Use pelo menos ${PIN_MIN} caracteres.`);
-      if (pin !== confirm) return void (error = "Os dois PINs não são iguais.");
+      if ([...pin].length < PIN_MIN) return void (error = t("Use pelo menos {n} caracteres.", { n: PIN_MIN }));
+      if (pin !== confirm) return void (error = t("Os dois PINs não são iguais."));
     }
     busy = true;
     try {
@@ -45,22 +46,21 @@
 </script>
 
 <!-- Fechar no meio deixaria o pedido (e o Touch ID) correndo sem tela. -->
-<Modal onclose={() => !busy && onclose()} label={TITLE[mode]} width={400}>
+<Modal onclose={() => !busy && onclose()} label={t(TITLE[mode])} width={400}>
   <form onsubmit={submit}>
-    <h2>{TITLE[mode]}</h2>
+    <h2>{t(TITLE[mode])}</h2>
     <p class="muted">
       {#if mode === "create"}
-        Um PIN ou senha só do Papeo, pedido ao abrir o app e depois do tempo escolhido. Se você esquecer, o
-        Papeo sai de todas as contas e apaga as tarefas deste computador para desbloquear.
+        {t("Um PIN ou senha só do Papeo, pedido ao abrir o app e depois do tempo escolhido. Se você esquecer, o Papeo sai de todas as contas e apaga as tarefas deste computador para desbloquear.")}
       {:else if mode === "change"}
-        Digite o PIN atual e escolha um novo.
+        {t("Digite o PIN atual e escolha um novo.")}
       {:else}
-        Sem o PIN, o bloqueio volta a usar a autenticação do sistema, se houver; senão, é desligado.
+        {t("Sem o PIN, o bloqueio volta a usar a autenticação do sistema, se houver; senão, é desligado.")}
       {/if}
     </p>
     {#if needsCurrent}
       <div class="field">
-        <label for="pin-current">PIN atual</label>
+        <label for="pin-current">{t("PIN atual")}</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           id="pin-current"
@@ -76,7 +76,7 @@
     {/if}
     {#if needsNew}
       <div class="field">
-        <label for="pin-new">{mode === "change" ? "Novo PIN" : "PIN ou senha"}</label>
+        <label for="pin-new">{mode === "change" ? t("Novo PIN") : t("PIN ou senha")}</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           id="pin-new"
@@ -90,10 +90,10 @@
           required
           aria-describedby="pin-rule"
         />
-        <span id="pin-rule" class="rule">Pelo menos {PIN_MIN} caracteres; números ou letras.</span>
+        <span id="pin-rule" class="rule">{t("Pelo menos {n} caracteres; números ou letras.", { n: PIN_MIN })}</span>
       </div>
       <div class="field">
-        <label for="pin-confirm">Repita o PIN</label>
+        <label for="pin-confirm">{t("Repita o PIN")}</label>
         <input
           id="pin-confirm"
           class="input"
@@ -107,9 +107,9 @@
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions">
-      <button type="button" class="btn" onclick={onclose} disabled={busy}>Cancelar</button>
+      <button type="button" class="btn" onclick={onclose} disabled={busy}>{t("Cancelar")}</button>
       <button type="submit" class="btn btn-primary" class:danger={mode === "remove"} disabled={busy}>
-        {busy ? "Aguarde…" : ACTION[mode]}
+        {busy ? t("Aguarde…") : t(ACTION[mode])}
       </button>
     </div>
   </form>

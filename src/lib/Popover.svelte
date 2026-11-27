@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setLang, t } from "./i18n.svelte";
   import { onMount } from "svelte";
   import { AlarmClock, BellOff, Bell, ExternalLink, Lock, LockOpen } from "@lucide/svelte";
   import RecentChats from "./RecentChats.svelte";
@@ -21,6 +22,7 @@
   // recentes com resposta rápida. Some ao perder o foco (backend).
 
   let snap = $state<Snapshot>(EMPTY_SNAPSHOT);
+  $effect(() => setLang(snap.lang));
   let list = $state<ReturnType<typeof RecentChats>>();
 
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -106,35 +108,35 @@
       <img src="/favicon.svg" alt="" width="20" height="20" />
       <strong>Papeo</strong>
       {#if snap.totalUnread > 0 && !snap.locked}
-        <span class="count" aria-label="{snap.totalUnread} não lidas">{snap.totalUnread}</span>
+        <span class="count" aria-label={snap.totalUnread === 1 ? t("{n} não lida", { n: snap.totalUnread }) : t("{n} não lidas", { n: snap.totalUnread })}>{snap.totalUnread}</span>
       {/if}
     </div>
-    <button class="icon" title="Abrir o Papeo" aria-label="Abrir o Papeo" onclick={() => go()}>
+    <button class="icon" title={t("Abrir o Papeo")} aria-label={t("Abrir o Papeo")} onclick={() => go()}>
       <ExternalLink size={16} />
     </button>
   </header>
 
   {#if snap.dndActive && !snap.locked}
-    <p class="banner">Não perturbe ligado: as notificações estão em silêncio.</p>
+    <p class="banner">{t("Não perturbe ligado: as notificações estão em silêncio.")}</p>
   {/if}
 
   <main>
     {#if snap.locked}
       <div class="empty">
         <Lock size={28} strokeWidth={1.8} />
-        <p><strong>O Papeo está bloqueado</strong></p>
-        <p class="muted">As conversas aparecem depois de desbloquear.</p>
+        <p><strong>{t("O Papeo está bloqueado")}</strong></p>
+        <p class="muted">{t("As conversas aparecem depois de desbloquear.")}</p>
         <button class="btn btn-primary" onclick={() => go()}>
-          <LockOpen size={15} /> Desbloquear
+          <LockOpen size={15} /> {t("Desbloquear")}
         </button>
       </div>
     {:else if chats.length === 0}
       <div class="empty">
-        <p><strong>{hidden ? "Prévia desligada" : "Nenhuma mensagem nova"}</strong></p>
+        <p><strong>{hidden ? t("Prévia desligada") : t("Nenhuma mensagem nova")}</strong></p>
         <p class="muted">
           {hidden
-            ? "Em Configurações → Notificações, escolha mostrar a mensagem para ler e responder por aqui."
-            : "As conversas que chegarem como notificação aparecem aqui para ler e responder."}
+            ? t("Em Configurações → Notificações, escolha mostrar a mensagem para ler e responder por aqui.")
+            : t("As conversas que chegarem como notificação aparecem aqui para ler e responder.")}
         </p>
       </div>
     {:else}
@@ -154,20 +156,20 @@
     {/if}
 
     {#if !snap.locked && upcoming.length}
-      <section class="reminders" aria-label="Próximos lembretes">
-        <h2><AlarmClock size={13} /> Próximos lembretes</h2>
-        {#each upcoming as t (t.id)}
+      <section class="reminders" aria-label={t("Próximos lembretes")}>
+        <h2><AlarmClock size={13} /> {t("Próximos lembretes")}</h2>
+        {#each upcoming as task (task.id)}
           <div class="reminder">
             <button
               class="tick"
-              disabled={busy === t.id}
-              onclick={() => done(t)}
-              aria-label={hidden ? "Concluir lembrete" : `Concluir: ${t.text}`}
+              disabled={busy === task.id}
+              onclick={() => done(task)}
+              aria-label={hidden ? t("Concluir lembrete") : t("Concluir: {texto}", { texto: task.text })}
             ></button>
-            <button class="what" onclick={() => api.showTask(t.id).catch(() => {})} title="Abrir">
+            <button class="what" onclick={() => api.showTask(task.id).catch(() => {})} title={t("Abrir")}>
               <!-- Prévia oculta: só a hora, sem o texto (como as conversas). -->
-              <span class="text">{hidden ? "Lembrete" : t.text}</span>
-              <span class="when" class:late={groupOf(t, now) === "overdue"}>{whenLabel(t, now)}</span>
+              <span class="text">{hidden ? t("Lembrete") : task.text}</span>
+              <span class="when" class:late={groupOf(task, now) === "overdue"}>{whenLabel(task, now)}</span>
             </button>
           </div>
         {/each}
@@ -175,9 +177,9 @@
     {/if}
 
     {#if !snap.locked && withUnread.length}
-      <section class="accounts" aria-label="Contas com não lidas">
+      <section class="accounts" aria-label={t("Contas com não lidas")}>
         {#each withUnread as s (s.id)}
-          <button class="chip" onclick={() => go(s.id)} title="Abrir {s.name}">
+          <button class="chip" onclick={() => go(s.id)} title={t("Abrir {nome}", { nome: s.name })}>
             <ServiceAvatar service={s} size={16} />
             {s.name}
             <span class="n">{s.unread}</span>
@@ -191,17 +193,17 @@
     <footer>
       <button class="foot" onclick={toggleDnd} aria-pressed={snap.dndActive}>
         {#if snap.dndActive}
-          <Bell size={15} /> Reativar avisos
+          <Bell size={15} /> {t("Reativar avisos")}
         {:else}
-          <BellOff size={15} /> Silenciar 1 h
+          <BellOff size={15} /> {t("Silenciar 1 h")}
         {/if}
       </button>
       {#if snap.lockAvailable && snap.settings.lock.enabled}
-        <button class="foot" onclick={lockNow} title="Bloquear agora ({modKey} L)">
-          <Lock size={15} /> Bloquear
+        <button class="foot" onclick={lockNow} title={t("Bloquear agora ({tecla} L)", { tecla: modKey })}>
+          <Lock size={15} /> {t("Bloquear")}
         </button>
       {/if}
-      <button class="foot right" onclick={() => go()}>Abrir Papeo</button>
+      <button class="foot right" onclick={() => go()}>{t("Abrir Papeo")}</button>
     </footer>
   {/if}
 </div>

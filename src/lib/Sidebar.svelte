@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import {
     BellOff,
     Briefcase,
@@ -111,14 +112,20 @@
 
   /** Estado da conta no title: na barra recolhida é o único texto que sobra. */
   function stateNote(service: ServiceView): string {
-    if (service.status === "unresponsive") return " — não responde";
-    if (service.status === "loggedOut") return " — desconectado";
+    if (service.status === "unresponsive") return ` — ${t("não responde")}`;
+    if (service.status === "loggedOut") return ` — ${t("desconectado")}`;
     if (!service.loaded && service.mailStatus?.state === "ok") {
-      const count = service.unread === 1 ? ", 1 não lida" : service.unread > 1 ? `, ${service.unread} não lidas` : "";
-      return ` — hibernado, avisos por IMAP${count}`;
+      const n = service.unread;
+      const note =
+        n === 1
+          ? t("hibernado, avisos por IMAP, 1 não lida")
+          : n > 1
+            ? t("hibernado, avisos por IMAP, {n} não lidas", { n })
+            : t("hibernado, avisos por IMAP");
+      return ` — ${note}`;
     }
-    if (!service.loaded) return " — hibernado";
-    if (service.unread > 0) return ` — ${service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}`;
+    if (!service.loaded) return ` — ${t("hibernado")}`;
+    if (service.unread > 0) return ` — ${service.unread === 1 ? t("1 não lida") : t("{n} não lidas", { n: service.unread })}`;
     return "";
   }
 
@@ -148,22 +155,22 @@
   </div>
 
   <div class="create">
-    <button class="btn btn-primary create-btn" onclick={onadd} title="Adicionar serviço ({modKey}N)">
+    <button class="btn btn-primary create-btn" onclick={onadd} title={t("Adicionar serviço ({atalho}N)", { atalho: modKey })}>
       <CirclePlus size={17} />
-      {#if !collapsed}<span>Adicionar serviço</span>{/if}
+      {#if !collapsed}<span>{t("Adicionar serviço")}</span>{/if}
     </button>
   </div>
 
-  <nav class="nav" aria-label="Serviços">
+  <nav class="nav" aria-label={t("Serviços")}>
     <button
       class="item"
       class:active={snap.active === null && page === "home"}
       aria-current={snap.active === null && page === "home" ? "page" : undefined}
       onclick={() => onselect(null)}
-      title="Início ({modKey}0)"
+      title={t("Início ({atalho}0)", { atalho: modKey })}
     >
       <House size={18} />
-      {#if !collapsed}<span class="label">Início</span>{/if}
+      {#if !collapsed}<span class="label">{t("Início")}</span>{/if}
     </button>
     <button
       class="item"
@@ -171,10 +178,12 @@
       aria-current={snap.active === null && page === "tasks" ? "page" : undefined}
       onclick={ontasks}
       title={collapsed && snap.tasks.overdue > 0
-        ? `Tarefas — ${snap.tasks.overdue === 1 ? "1 atrasada" : `${snap.tasks.overdue} atrasadas`}`
+        ? snap.tasks.overdue === 1
+          ? t("Tarefas — 1 atrasada")
+          : t("Tarefas — {n} atrasadas", { n: snap.tasks.overdue })
         : collapsed && snap.tasks.today > 0
-          ? `Tarefas — ${snap.tasks.today} para hoje`
-          : "Tarefas e lembretes"}
+          ? t("Tarefas — {n} para hoje", { n: snap.tasks.today })
+          : t("Tarefas e lembretes")}
     >
       <span class="avatar-wrap">
         <ListTodo size={18} />
@@ -183,17 +192,17 @@
         {/if}
       </span>
       {#if !collapsed}
-        <span class="label">Tarefas</span>
+        <span class="label">{t("Tarefas")}</span>
         {#if snap.tasks.overdue > 0}
-          <span class="count count-danger" aria-label={snap.tasks.overdue === 1 ? "1 atrasada" : `${snap.tasks.overdue} atrasadas`}>{snap.tasks.overdue}</span>
+          <span class="count count-danger" aria-label={snap.tasks.overdue === 1 ? t("1 atrasada") : t("{n} atrasadas", { n: snap.tasks.overdue })}>{snap.tasks.overdue}</span>
         {:else if snap.tasks.today > 0}
-          <span class="count count-neutral" aria-label="{snap.tasks.today} para hoje">{snap.tasks.today}</span>
+          <span class="count count-neutral" aria-label={t("{n} para hoje", { n: snap.tasks.today })}>{snap.tasks.today}</span>
         {/if}
       {/if}
     </button>
 
     {#if modes && !collapsed}
-      <div class="modes" role="group" aria-label="Modo">
+      <div class="modes" role="group" aria-label={t("Modo")}>
         {#each ["work", "personal", "all"] as const as m (m)}
           {@const Icon = MODE_ICON[m]}
           <button
@@ -201,20 +210,20 @@
             class:on={snap.mode === m}
             aria-pressed={snap.mode === m}
             onclick={() => snap.mode !== m && onmode(m)}
-            title="{MODE_LABEL[m]} ({modKey}⇧M alterna)"
+            title={t("{modo} ({atalho}⇧M alterna)", { modo: t(MODE_LABEL[m]), atalho: modKey })}
           >
             <Icon size={14} />
-            {MODE_LABEL[m]}
+            {t(MODE_LABEL[m])}
           </button>
         {/each}
       </div>
       {#if snap.settings.mode === "auto"}
         <p class="mode-note">
           {#if snap.modeManual}
-            Até o expediente mudar ·
-            <button class="tip-link inline" onclick={onautomode}>voltar ao automático</button>
+            {t("Até o expediente mudar")} ·
+            <button class="tip-link inline" onclick={onautomode}>{t("voltar ao automático")}</button>
           {:else}
-            Automático pelo expediente
+            {t("Automático pelo expediente")}
           {/if}
         </p>
       {/if}
@@ -222,14 +231,14 @@
       <button
         class="item"
         onclick={() => onmode(nextMode(snap.mode))}
-        title="Modo: {MODE_LABEL[snap.mode]} — clique para alternar ({modKey}⇧M)"
-        aria-label="Modo {MODE_LABEL[snap.mode]}. Alternar"
+        title={t("Modo: {modo} — clique para alternar ({atalho}⇧M)", { modo: t(MODE_LABEL[snap.mode]), atalho: modKey })}
+        aria-label={t("Modo {modo}. Alternar", { modo: t(MODE_LABEL[snap.mode]) })}
       >
         <ModeIcon size={18} />
       </button>
     {/if}
 
-    {#if !collapsed}<div class="section">Mensageiros</div>{:else}<div class="sep"></div>{/if}
+    {#if !collapsed}<div class="section">{t("Mensageiros")}</div>{:else}<div class="sep"></div>{/if}
 
     {#each shown as service, i (service.id)}
       <button
@@ -263,19 +272,19 @@
           <span class="text">
             <span class="label">{service.name}</span>
             {#if service.status === "unresponsive"}
-              <span class="sub sub-danger">Não responde</span>
+              <span class="sub sub-danger">{t("Não responde")}</span>
             {:else if service.status === "loggedOut"}
-              <span class="sub sub-warn">Desconectado</span>
+              <span class="sub sub-warn">{t("Desconectado")}</span>
             {:else if !service.loaded}
               <!-- Site hibernado, mas o IMAP continua avisando. -->
-              <span class="sub">{service.mailStatus?.state === "ok" ? "Avisos por IMAP" : "Dormindo"}</span>
+              <span class="sub">{service.mailStatus?.state === "ok" ? t("Avisos por IMAP") : t("Dormindo")}</span>
             {/if}
           </span>
           {#if isMuted(service)}
-            <BellOff size={14} class="muted-icon" aria-label="Notificações silenciadas" />
+            <BellOff size={14} class="muted-icon" aria-label={t("Notificações silenciadas")} />
           {/if}
           {#if service.unread > 0}
-            <span class="count" aria-label={service.unread === 1 ? "1 não lida" : `${service.unread} não lidas`}>
+            <span class="count" aria-label={service.unread === 1 ? t("1 não lida") : t("{n} não lidas", { n: service.unread })}>
               {service.unread > 99 ? "99+" : service.unread}
             </span>
           {:else if service.loaded && (numberOf.get(service.id) ?? 99) <= 9}
@@ -286,10 +295,12 @@
     {/each}
 
     {#if snap.services.length === 0 && !collapsed}
-      <p class="empty">Nenhum serviço ainda.</p>
+      <p class="empty">{t("Nenhum serviço ainda.")}</p>
     {:else if hiddenCount > 0 && !collapsed}
       <p class="empty hidden-note">
-        {hiddenCount === 1 ? "1 conta fica" : `${hiddenCount} contas ficam`} fora do modo {MODE_LABEL[snap.mode]}.
+        {hiddenCount === 1
+          ? t("1 conta fica fora do modo {modo}.", { modo: t(MODE_LABEL[snap.mode]) })
+          : t("{n} contas ficam fora do modo {modo}.", { n: hiddenCount, modo: t(MODE_LABEL[snap.mode]) })}
       </p>
     {/if}
   </nav>
@@ -300,17 +311,17 @@
       class:active={snap.active === null && page === "settings"}
       aria-current={snap.active === null && page === "settings" ? "page" : undefined}
       onclick={onsettings}
-      title="Configurações ({modKey},)"
+      title={t("Configurações ({atalho},)", { atalho: modKey })}
     >
       <span class="avatar-wrap">
         <Settings size={18} />
         {#if collapsed && snap.update.state === "available"}
-          <span class="dot" aria-label="Atualização disponível"></span>
+          <span class="dot" aria-label={t("Atualização disponível")}></span>
         {/if}
       </span>
-      {#if !collapsed}<span class="label">Configurações</span>{/if}
+      {#if !collapsed}<span class="label">{t("Configurações")}</span>{/if}
       {#if snap.dndActive}
-        <BellOff size={14} class="muted-icon" aria-label="Não perturbe ativo" />
+        <BellOff size={14} class="muted-icon" aria-label={t("Não perturbe ativo")} />
       {/if}
     </button>
   </div>
@@ -318,23 +329,23 @@
   {#if !collapsed}
     <div class="tip card">
       {#if updating}
-        <div class="tip-title"><Download size={15} /> Atualização</div>
+        <div class="tip-title"><Download size={15} /> {t("Atualização")}</div>
         <p role="status">{updateLabel(snap.update)}</p>
         {#if snap.update.state === "available"}
-          <button class="btn btn-primary tip-action" onclick={onupdate}>Atualizar e reiniciar</button>
+          <button class="btn btn-primary tip-action" onclick={onupdate}>{t("Atualizar e reiniciar")}</button>
           {#if snap.update.notes}
-            <button class="tip-link" onclick={onnotes}>Ver o que mudou</button>
+            <button class="tip-link" onclick={onnotes}>{t("Ver o que mudou")}</button>
           {/if}
         {/if}
       {:else if snap.dndActive}
-        <div class="tip-title"><BellOff size={15} /> Não perturbe</div>
-        <p>Notificações silenciadas {untilLabel(snap.settings.dndUntil) || "pelo horário silencioso"}.</p>
+        <div class="tip-title"><BellOff size={15} /> {t("Não perturbe")}</div>
+        <p>{t("Notificações silenciadas {ate}.", { ate: untilLabel(snap.settings.dndUntil) || t("pelo horário silencioso") })}</p>
       {:else}
-        <div class="tip-title"><MemoryStick size={15} /> Memória</div>
+        <div class="tip-title"><MemoryStick size={15} /> {t("Memória")}</div>
         <p>
-          {loadedCount} de {snap.services.length}
-          {snap.services.length === 1 ? "serviço" : "serviços"} em memória. Clique com o botão direito num
-          serviço para hibernar e liberar RAM.
+          {snap.services.length === 1
+            ? t("{n} de {total} serviço em memória. Clique com o botão direito num serviço para hibernar e liberar RAM.", { n: loadedCount, total: snap.services.length })
+            : t("{n} de {total} serviços em memória. Clique com o botão direito num serviço para hibernar e liberar RAM.", { n: loadedCount, total: snap.services.length })}
         </p>
       {/if}
     </div>

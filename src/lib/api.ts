@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Component } from "svelte";
+import { locale, t, tk } from "./i18n.svelte";
+import { setTranslator } from "./tasks";
+
+// `tasks.ts` também roda no Node (testes): recebe o tradutor daqui.
+setTranslator(t, locale);
 
 export type ServiceKind =
   | "whatsapp"
@@ -80,19 +85,19 @@ export interface ProbeView {
 }
 
 export const PROBE_LABEL: Record<Probe, string> = {
-  list: "Lista de conversas",
-  search: "Busca",
-  header: "Nome da conversa aberta",
-  composer: "Campo de texto",
-  inbox: "Caixa de Entrada",
-  subject: "Assunto do e-mail aberto",
+  list: tk("Lista de conversas"),
+  search: tk("Busca"),
+  header: tk("Nome da conversa aberta"),
+  composer: tk("Campo de texto"),
+  inbox: tk("Caixa de Entrada"),
+  subject: tk("Assunto do e-mail aberto"),
 };
 
 export const PROBE_STATE_LABEL: Record<ProbeState, string> = {
-  found: "Encontrado",
-  missing: "Não encontrado",
-  broken: "Não encontrado há 10 min",
-  unknown: "Não avaliado",
+  found: tk("Encontrado"),
+  missing: tk("Não encontrado"),
+  broken: tk("Não encontrado há 10 min"),
+  unknown: tk("Não avaliado"),
 };
 
 /** A página da conta perdeu um ponto de apoio há tempo demais. */
@@ -100,14 +105,14 @@ export const hasBrokenProbe = (s: ServiceView) => !!s.probes?.some((p) => p.stat
 
 /** Relatório do diagnóstico sem nomes de contas, conversas ou endereços. */
 export function probeReport(version: string, services: ServiceView[]): string {
-  const lines = [`Papeo ${version} — diagnóstico dos sites`];
+  const lines = [t("Papeo {versao} — diagnóstico dos sites", { versao: version })];
   services
     .filter((s) => s.probes?.length)
     .forEach((s, i) => {
-      lines.push("", `${KIND_META[s.kind].label} (conta ${i + 1})`);
-      for (const p of s.probes!) lines.push(`- ${PROBE_LABEL[p.probe]}: ${PROBE_STATE_LABEL[p.state]}`);
+      lines.push("", t("{tipo} (conta {n})", { tipo: t(KIND_META[s.kind].label), n: i + 1 }));
+      for (const p of s.probes!) lines.push(`- ${t(PROBE_LABEL[p.probe])}: ${t(PROBE_STATE_LABEL[p.state])}`);
     });
-  if (lines.length === 1) lines.push("", "Nenhuma conta aberta com pontos verificáveis.");
+  if (lines.length === 1) lines.push("", t("Nenhuma conta aberta com pontos verificáveis."));
   return lines.join("\n");
 }
 
@@ -166,22 +171,22 @@ export const MAIL_PRESETS: MailPreset[] = [
     webmail: "https://webmail-seguro.com.br/",
     label: "Locaweb",
     host: "email-ssl.com.br",
-    note: "Use o e-mail completo como usuário.",
+    note: tk("Use o e-mail completo como usuário."),
   },
   {
     id: "kinghost",
     label: "KingHost",
     host: "imap.kinghost.net",
-    note: "Em domínio de revenda, o servidor é imap.uni5.net.",
+    note: tk("Em domínio de revenda, o servidor é imap.uni5.net."),
   },
   { id: "hostinger",
-    webmail: "https://mail.hostinger.com/", label: "Hostinger", host: "imap.hostinger.com", note: "Use o e-mail completo como usuário." },
+    webmail: "https://mail.hostinger.com/", label: "Hostinger", host: "imap.hostinger.com", note: tk("Use o e-mail completo como usuário.") },
   {
     id: "uol",
     webmail: "https://email.uol.com.br/",
     label: "UOL",
     host: "imap.uol.com.br",
-    note: "Ative o IMAP no webmail do UOL: Configurações → IMAP.",
+    note: tk("Ative o IMAP no webmail do UOL: Configurações → IMAP."),
     domains: ["uol.com.br"],
   },
   {
@@ -189,7 +194,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     webmail: "https://email.bol.uol.com.br/",
     label: "BOL",
     host: "imap.bol.com.br",
-    note: "O BOL só libera IMAP no plano pago.",
+    note: tk("O BOL só libera IMAP no plano pago."),
     domains: ["bol.com.br"],
   },
   { id: "terra",
@@ -199,7 +204,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     webmail: "https://mail.yahoo.com/",
     label: "Yahoo",
     host: "imap.mail.yahoo.com",
-    note: "O Yahoo pede uma senha de app, criada na segurança da conta.",
+    note: tk("O Yahoo pede uma senha de app, criada na segurança da conta."),
     domains: ["yahoo.com", "yahoo.com.br", "ymail.com"],
   },
   {
@@ -207,7 +212,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     webmail: "https://www.icloud.com/mail/",
     label: "iCloud",
     host: "imap.mail.me.com",
-    note: "O iCloud pede uma senha de app, criada em account.apple.com.",
+    note: tk("O iCloud pede uma senha de app, criada em account.apple.com."),
     domains: ["icloud.com", "me.com", "mac.com"],
   },
 ];
@@ -228,10 +233,10 @@ export function presetForAddress(address: string): MailPreset | undefined {
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
 
 export const REPEAT_OPTIONS: { value: Repeat; label: string }[] = [
-  { value: "daily", label: "Todo dia" },
-  { value: "weekdays", label: "Dias úteis" },
-  { value: "weekly", label: "Toda semana" },
-  { value: "monthly", label: "Todo mês" },
+  { value: "daily", label: tk("Todo dia") },
+  { value: "weekdays", label: tk("Dias úteis") },
+  { value: "weekly", label: tk("Toda semana") },
+  { value: "monthly", label: tk("Todo mês") },
 ];
 
 /** Tarefa; com `remindAt`, é um lembrete. */
@@ -342,7 +347,11 @@ export interface Settings {
   mailUndoSecs: number;
   /** Resumo do que chegou durante o não perturbe (spec 17). */
   silenceSummary: boolean;
+  /** Idioma: o do sistema, português ou inglês (spec 20). */
+  language: Language;
 }
+
+export type Language = "system" | "pt" | "en";
 
 /** O que uma conta recebeu durante o silêncio. */
 export interface SilencedAccount {
@@ -415,6 +424,8 @@ export interface Snapshot {
   modeManual: boolean;
   /** Versão do estado: um estado com versão menor que a atual chegou atrasado. */
   rev: number;
+  /** Idioma efetivo (spec 20); ausente no estado vazio de antes da carga. */
+  lang?: "pt" | "en";
 }
 
 export interface ChatMessage {
@@ -487,6 +498,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     diagnostics: false,
     mailUndoSecs: 5,
     silenceSummary: true,
+    language: "system",
   },
   dndActive: false,
   autostart: false,
@@ -612,6 +624,7 @@ export const api = {
         | "diagnostics"
         | "mailUndoSecs"
         | "silenceSummary"
+        | "language"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
@@ -736,13 +749,13 @@ export function onAttachment(cb: (a: AttachmentInfo) => void): Promise<UnlistenF
 }
 
 export const ATTACHMENT_OPTIONS: { value: AttachmentMode; label: string }[] = [
-  { value: "save", label: "Salvar na pasta" },
-  { value: "preview", label: "Visualizar antes" },
+  { value: "save", label: tk("Salvar na pasta") },
+  { value: "preview", label: tk("Visualizar antes") },
 ];
 
 export const LINK_OPTIONS: { value: LinkTarget; label: string }[] = [
-  { value: "browser", label: "No navegador" },
-  { value: "preview", label: "Na prévia do Papeo" },
+  { value: "browser", label: tk("No navegador") },
+  { value: "preview", label: tk("Na prévia do Papeo") },
 ];
 
 export type MailRole = "inbox" | "drafts" | "sent" | "archive" | "all" | "flagged" | "junk" | "trash";
@@ -903,15 +916,15 @@ export function onDownload(
 export function updateLabel(update: UpdateStatus): string {
   switch (update.state) {
     case "checking":
-      return "Verificando…";
+      return t("Verificando…");
     case "upToDate":
-      return "Você está na versão mais recente.";
+      return t("Você está na versão mais recente.");
     case "available":
-      return `Versão ${update.version} disponível.`;
+      return t("Versão {versao} disponível.", { versao: update.version });
     case "installing":
       return update.percent != null
-        ? `Baixando atualização… ${update.percent}%`
-        : "Baixando atualização…";
+        ? t("Baixando atualização… {pct}%", { pct: update.percent })
+        : t("Baixando atualização…");
     case "failed":
       return update.message;
     default:
@@ -931,30 +944,30 @@ export const VOICE_OPTIONS: { value: VoiceCapture; label: string; description: s
   ? [
       {
         value: "instant",
-        label: "Instantânea",
-        description: "Grava no toque, com o som do microfone como ele chega, sem tratamento.",
+        label: tk("Instantânea"),
+        description: tk("Grava no toque, com o som do microfone como ele chega, sem tratamento."),
       },
       {
         value: "enhanced",
-        label: "Instantânea com limpeza do Papeo",
-        description: "Grava no toque e tira o ruído de fundo (ventilador, teclado, rua), deixando a voz num volume constante.",
+        label: tk("Instantânea com limpeza do Papeo"),
+        description: tk("Grava no toque e tira o ruído de fundo (ventilador, teclado, rua), deixando a voz num volume constante."),
       },
       {
         value: "clean",
-        label: "Redução do macOS",
-        description: "O macOS tira eco e ruído, mas o começo da gravação pode atrasar cerca de 1 segundo.",
+        label: tk("Redução do macOS"),
+        description: tk("O macOS tira eco e ruído, mas o começo da gravação pode atrasar cerca de 1 segundo."),
       },
     ]
   : [
       {
         value: "instant",
-        label: "Padrão do Windows",
-        description: "Grava no toque, com a redução de eco e ruído de sempre do Windows.",
+        label: tk("Padrão do Windows"),
+        description: tk("Grava no toque, com a redução de eco e ruído de sempre do Windows."),
       },
       {
         value: "enhanced",
-        label: "Com limpeza do Papeo",
-        description: "Grava no toque e tira mais ruído de fundo (ventilador, teclado, rua), deixando a voz num volume constante.",
+        label: tk("Com limpeza do Papeo"),
+        description: tk("Grava no toque e tira mais ruído de fundo (ventilador, teclado, rua), deixando a voz num volume constante."),
       },
     ];
 
@@ -963,25 +976,25 @@ export const KIND_META: Record<ServiceKind, { label: string; color: string; hint
   telegram: { label: "Telegram", color: "#2aabee", hint: "web.telegram.org" },
   discord: { label: "Discord", color: "#5865f2", hint: "discord.com" },
   gmail: { label: "Gmail", color: "#ea4335", hint: "mail.google.com" },
-  outlook: { label: "Outlook", color: "#0a64b8", hint: "Pessoal ou Microsoft 365" },
-  email: { label: "Outro e-mail", color: "#0f766e", hint: "Webmail (Roundcube e outros)" },
-  custom: { label: "Outro site", color: "#8b5cf6", hint: "Qualquer endereço https" },
+  outlook: { label: "Outlook", color: "#0a64b8", hint: tk("Pessoal ou Microsoft 365") },
+  email: { label: tk("Outro e-mail"), color: "#0f766e", hint: tk("Webmail (Roundcube e outros)") },
+  custom: { label: tk("Outro site"), color: "#8b5cf6", hint: tk("Qualquer endereço https") },
   slack: { label: "Slack", color: "#611f69", hint: "app.slack.com" },
-  teams: { label: "Teams", color: "#4b53bc", hint: "Trabalho ou pessoal" },
+  teams: { label: "Teams", color: "#4b53bc", hint: tk("Trabalho ou pessoal") },
 };
 
 /** Paleta para diferenciar contas; tons escuros o bastante para ícone branco. */
 export const SERVICE_COLORS = [
-  { value: "#16a34a", label: "Verde" },
-  { value: "#0ea5e9", label: "Azul-claro" },
-  { value: "#2563eb", label: "Azul" },
-  { value: "#7c3aed", label: "Roxo" },
-  { value: "#db2777", label: "Rosa" },
-  { value: "#dc2626", label: "Vermelho" },
-  { value: "#ea580c", label: "Laranja" },
-  { value: "#ca8a04", label: "Amarelo" },
-  { value: "#0d9488", label: "Verde-água" },
-  { value: "#475569", label: "Cinza" },
+  { value: "#16a34a", label: tk("Verde") },
+  { value: "#0ea5e9", label: tk("Azul-claro") },
+  { value: "#2563eb", label: tk("Azul") },
+  { value: "#7c3aed", label: tk("Roxo") },
+  { value: "#db2777", label: tk("Rosa") },
+  { value: "#dc2626", label: tk("Vermelho") },
+  { value: "#ea580c", label: tk("Laranja") },
+  { value: "#ca8a04", label: tk("Amarelo") },
+  { value: "#0d9488", label: tk("Verde-água") },
+  { value: "#475569", label: tk("Cinza") },
 ];
 
 export const EMOJI_SUGGESTIONS = ["🏠", "💼", "❤️", "👨‍👩‍👧", "🎓", "🛒", "⭐", "🔒", "⚽", "🚀"];
@@ -1025,28 +1038,28 @@ export function keepsUrl(kind: ServiceKind): boolean {
 }
 
 export const MEDIA_OPTIONS: { value: MediaPolicy; label: string }[] = [
-  { value: "allow", label: "Permitir" },
-  { value: "ask", label: "Perguntar" },
-  { value: "block", label: "Bloquear" },
+  { value: "allow", label: tk("Permitir") },
+  { value: "ask", label: tk("Perguntar") },
+  { value: "block", label: tk("Bloquear") },
 ];
 
 export const MODE_LABEL: Record<Mode, string> = {
-  all: "Todas",
-  work: "Trabalho",
-  personal: "Pessoal",
+  all: tk("Todas"),
+  work: tk("Trabalho"),
+  personal: tk("Pessoal"),
 };
 
 export const CONTEXT_OPTIONS: { value: ServiceContext | null; label: string }[] = [
-  { value: "work", label: "Trabalho" },
-  { value: "personal", label: "Pessoal" },
-  { value: null, label: "Os dois" },
+  { value: "work", label: tk("Trabalho") },
+  { value: "personal", label: tk("Pessoal") },
+  { value: null, label: tk("Os dois") },
 ];
 
 export const MODE_CHOICE_OPTIONS: { value: ModeChoice; label: string }[] = [
-  { value: "all", label: "Todas as contas" },
-  { value: "work", label: "Só trabalho" },
-  { value: "personal", label: "Só pessoal" },
-  { value: "auto", label: "Pelo expediente" },
+  { value: "all", label: tk("Todas as contas") },
+  { value: "work", label: tk("Só trabalho") },
+  { value: "personal", label: tk("Só pessoal") },
+  { value: "auto", label: tk("Pelo expediente") },
 ];
 
 /** Separa trabalho e pessoal: alguma conta marcada ou modo escolhido. */
@@ -1060,24 +1073,24 @@ export function nextMode(mode: Mode): Mode {
 }
 
 export const THEME_OPTIONS: { value: Appearance; label: string }[] = [
-  { value: "system", label: "Sistema" },
-  { value: "light", label: "Claro" },
-  { value: "dark", label: "Escuro" },
+  { value: "system", label: tk("Sistema") },
+  { value: "light", label: tk("Claro") },
+  { value: "dark", label: tk("Escuro") },
   { value: "oled", label: "OLED" },
 ];
 
 export const PREVIEW_OPTIONS: { value: NotificationPreview; label: string }[] = [
-  { value: "full", label: "Completa" },
-  { value: "sender", label: "Só remetente" },
-  { value: "hidden", label: "Oculta" },
+  { value: "full", label: tk("Completa") },
+  { value: "sender", label: tk("Só remetente") },
+  { value: "hidden", label: tk("Oculta") },
 ];
 
 export const LOCK_OPTIONS = [
-  { minutes: 0, label: "Ao esconder a janela" },
-  { minutes: 1, label: "1 min sem usar" },
-  { minutes: 5, label: "5 min sem usar" },
-  { minutes: 15, label: "15 min sem usar" },
-  { minutes: 60, label: "1 hora sem usar" },
+  { minutes: 0, label: tk("Ao esconder a janela") },
+  { minutes: 1, label: tk("1 min sem usar") },
+  { minutes: 5, label: tk("5 min sem usar") },
+  { minutes: 15, label: tk("15 min sem usar") },
+  { minutes: 60, label: tk("1 hora sem usar") },
 ];
 
 /** Site personalizado sem criptografia (http). */
@@ -1099,27 +1112,27 @@ export const ABOUT = {
 };
 
 export const RELOAD_OPTIONS = [
-  { mb: 0, label: "Nunca" },
-  { mb: 1536, label: "Acima de 1,5 GB" },
-  { mb: 2048, label: "Acima de 2 GB" },
-  { mb: 3072, label: "Acima de 3 GB" },
-  { mb: 4096, label: "Acima de 4 GB" },
+  { mb: 0, label: tk("Nunca") },
+  { mb: 1536, label: tk("Acima de 1,5 GB") },
+  { mb: 2048, label: tk("Acima de 2 GB") },
+  { mb: 3072, label: tk("Acima de 3 GB") },
+  { mb: 4096, label: tk("Acima de 4 GB") },
 ];
 
 /** Espera para desfazer o envio de e-mail (spec 16). */
 export const UNDO_OPTIONS = [
-  { secs: 0, label: "Desligado" },
-  { secs: 5, label: "5 segundos" },
-  { secs: 10, label: "10 segundos" },
-  { secs: 20, label: "20 segundos" },
+  { secs: 0, label: tk("Desligado") },
+  { secs: 5, label: tk("5 segundos") },
+  { secs: 10, label: tk("10 segundos") },
+  { secs: 20, label: tk("20 segundos") },
 ];
 
 export const HIBERNATE_OPTIONS = [
-  { minutes: 0, label: "Nunca" },
-  { minutes: 15, label: "15 min" },
-  { minutes: 30, label: "30 min" },
-  { minutes: 60, label: "1 hora" },
-  { minutes: 120, label: "2 horas" },
+  { minutes: 0, label: tk("Nunca") },
+  { minutes: 15, label: tk("15 min") },
+  { minutes: 30, label: tk("30 min") },
+  { minutes: 60, label: tk("1 hora") },
+  { minutes: 120, label: tk("2 horas") },
 ];
 
 /** Notificações deste serviço estão silenciadas agora (toggle ou temporário). */
@@ -1128,7 +1141,10 @@ export function isMuted(service: Pick<ServiceView, "notifications" | "mutedUntil
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1).replace(".", ",")} GB`;
+  if (bytes >= 1024 ** 3) {
+    const gb = (bytes / 1024 ** 3).toFixed(1);
+    return `${locale() === "pt-BR" ? gb.replace(".", ",") : gb} GB`;
+  }
   return `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
@@ -1149,20 +1165,20 @@ export function parseClock(value: string): number | null {
 /** "até 14:30", "até reativar"… para o não perturbe e silêncio temporário. */
 export function untilLabel(untilSecs: number | null | undefined): string {
   if (!untilSecs) return "";
-  if (untilSecs >= Number.MAX_SAFE_INTEGER / 1000) return "até reativar";
+  if (untilSecs >= Number.MAX_SAFE_INTEGER / 1000) return t("até reativar");
   const d = new Date(untilSecs * 1000);
-  return `até ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return t("até {hora}", { hora: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` });
 }
 
 export const STATUS_LABEL: Record<ServiceStatus, string> = {
-  ok: "Em memória",
-  sleeping: "Dormindo",
-  loggedOut: "Desconectado",
-  unresponsive: "Não responde",
+  ok: tk("Em memória"),
+  sleeping: tk("Dormindo"),
+  loggedOut: tk("Desconectado"),
+  unresponsive: tk("Não responde"),
 };
 
 export function errorMessage(err: unknown): string {
-  return typeof err === "string" ? err : err instanceof Error ? err.message : "Algo deu errado.";
+  return typeof err === "string" ? err : err instanceof Error ? err.message : t("Algo deu errado.");
 }
 
 export type MenuItem = {

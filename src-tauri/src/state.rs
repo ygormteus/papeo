@@ -5,6 +5,7 @@
 //! com espera de resposta…). Callbacks da thread principal (título da
 //! página, permissões, downloads) também pegam este lock.
 
+use papeo_core::i18n::tr;
 use papeo_core::{Config, Mode, ModeChoice, ModeOverride, Organizer, Service, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -338,7 +339,7 @@ impl Inner {
             .services
             .iter()
             .find(|s| s.id == id)
-            .ok_or_else(|| "Serviço não encontrado.".to_owned())
+            .ok_or_else(|| tr("Serviço não encontrado.").to_owned())
     }
 
     pub fn service_mut(&mut self, id: &str) -> Result<&mut Service, String> {
@@ -346,7 +347,7 @@ impl Inner {
             .services
             .iter_mut()
             .find(|s| s.id == id)
-            .ok_or_else(|| "Serviço não encontrado.".to_owned())
+            .ok_or_else(|| tr("Serviço não encontrado.").to_owned())
     }
 
     /// Acrescenta uma mensagem à conversa (que sobe para o topo).
@@ -763,6 +764,8 @@ pub struct Snapshot {
     /// Versão do estado: sobe a cada mudança enviada. A interface ignora um
     /// estado mais velho que chegue depois (resposta de comando atrasada).
     pub rev: u64,
+    /// Idioma efetivo (spec 20).
+    pub lang: papeo_core::Lang,
 }
 
 /// Versão do último estado enviado (ver `Snapshot::rev`).
@@ -892,6 +895,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         tasks: crate::organizer::counts(&inner),
         mode,
         mode_manual: inner.mode_manual(),
+        lang: papeo_core::i18n::lang(),
         rev: REV.load(Ordering::SeqCst),
     }
 }

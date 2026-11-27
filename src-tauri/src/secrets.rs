@@ -8,6 +8,7 @@
 //! digitada: um backup ou arquivo editado que troque o servidor não faz o
 //! Papeo enviá-la a outro lugar.
 
+use papeo_core::i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -64,7 +65,7 @@ pub fn read(app: &AppHandle, id: &str) -> Option<Saved> {
 pub fn write(app: &AppHandle, id: &str, saved: &Saved) -> Result<(), String> {
     let store = app
         .try_state::<SecretStore>()
-        .ok_or("Cofre de senhas indisponível.")?;
+        .ok_or(tr("Cofre de senhas indisponível."))?;
     let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
     imp::store_one(&store, id, saved)
 }
@@ -75,7 +76,7 @@ pub fn write(app: &AppHandle, id: &str, saved: &Saved) -> Result<(), String> {
 pub fn replace(app: &AppHandle, id: &str, previous: &str, saved: &Saved) -> Result<bool, String> {
     let store = app
         .try_state::<SecretStore>()
-        .ok_or("Cofre de senhas indisponível.")?;
+        .ok_or(tr("Cofre de senhas indisponível."))?;
     let _guard = store.file.lock().unwrap_or_else(|e| e.into_inner());
     if imp::load_one(&store, id).is_none_or(|s| s.secret != previous) {
         return Ok(false);
@@ -240,7 +241,8 @@ mod imp {
             ..Default::default()
         };
         // SAFETY: os ponteiros apontam para buffers vivos até o fim da chamada.
-        unsafe { CredWriteW(&cred, 0) }.map_err(|e| format!("Não deu para guardar a senha: {e}"))
+        unsafe { CredWriteW(&cred, 0) }
+            .map_err(|e| trf("Não deu para guardar a senha: {erro}", &[("erro", &e)]))
     }
 
     fn delete_part(target: &str) -> bool {
@@ -278,7 +280,7 @@ mod imp {
         bytes.extend_from_slice(&body);
         let parts: Vec<&[u8]> = bytes.chunks(PART).collect();
         if parts.len() > PARTS_MAX {
-            return Err("Senha ou token grande demais para guardar.".into());
+            return Err(tr("Senha ou token grande demais para guardar.").into());
         }
         // Partes extras primeiro, a principal por último: até ela ser
         // trocada, o resumo antigo recusa a mistura (e pede login de novo).

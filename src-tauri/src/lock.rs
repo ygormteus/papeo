@@ -5,6 +5,7 @@
 //! `available`/`authenticate` bloqueiam a thread: chame via `spawn_blocking`.
 
 use crate::state::{AppState, LockMethod};
+use papeo_core::i18n::{tk, tr, trf};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
@@ -49,6 +50,7 @@ mod platform {
 mod platform {
     use super::AUTH_TIMEOUT;
     use crate::state::MAIN_WINDOW;
+    use papeo_core::i18n::tr;
     use tauri::{AppHandle, Manager};
     use windows::core::{factory, Interface, HSTRING};
     use windows::Security::Credentials::UI::{
@@ -69,7 +71,7 @@ mod platform {
             .get_window(MAIN_WINDOW)
             .and_then(|w| w.hwnd().ok())
             .map(|h| HWND(h.0))
-            .ok_or("Janela do Papeo indisponível.")?;
+            .ok_or(tr("Janela do Papeo indisponível."))?;
         let interop = factory::<UserConsentVerifier, IUserConsentVerifierInterop>()
             .map_err(|e| e.to_string())?;
         // Versão "ForWindow": o pedido do Windows Hello aparece sobre o Papeo.
@@ -95,13 +97,14 @@ mod platform {
             UserConsentVerificationResult::Verified => Ok(true),
             UserConsentVerificationResult::Canceled
             | UserConsentVerificationResult::RetriesExhausted => Ok(false),
-            _ => Err("Windows Hello indisponível ou não configurado.".into()),
+            _ => Err(tr("Windows Hello indisponível ou não configurado.").into()),
         }
     }
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod platform {
+    use papeo_core::i18n::tr;
     use tauri::AppHandle;
 
     pub fn available() -> bool {
@@ -109,7 +112,7 @@ mod platform {
     }
 
     pub fn authenticate(_app: &AppHandle, _reason: &str) -> Result<bool, String> {
-        Err("Bloqueio indisponível neste sistema.".into())
+        Err(tr("Bloqueio indisponível neste sistema.").into())
     }
 }
 
@@ -168,7 +171,7 @@ pub async fn confirm_identity(app: &AppHandle, reason: &'static str) -> Result<(
     {
         let mut inner = state.lock();
         if inner.authenticating {
-            return Err("Já há um pedido de autenticação aberto.".into());
+            return Err(tr("Já há um pedido de autenticação aberto.").into());
         }
         inner.authenticating = true;
     }
@@ -180,12 +183,12 @@ pub async fn confirm_identity(app: &AppHandle, reason: &'static str) -> Result<(
     state.lock().authenticating = false;
     match result {
         Ok(true) => Ok(()),
-        Ok(false) => Err("Autenticação cancelada.".into()),
+        Ok(false) => Err(tr("Autenticação cancelada.").into()),
         Err(e) => {
             // O sistema pode ter perdido a autenticação (Hello removido):
             // reavalia para não deixar a pessoa presa na tela de bloqueio.
             check_availability(app);
-            Err(format!("Não foi possível autenticar: {e}"))
+            Err(trf("Não foi possível autenticar: {erro}", &[("erro", &e)]))
         }
     }
 }
@@ -201,46 +204,47 @@ pub async fn confirm(
     match method {
         LockMethod::Pin => verify_pin(app, pin).await,
         LockMethod::System => confirm_identity(app, reason).await,
-        LockMethod::None => Err(NO_METHOD.into()),
+        LockMethod::None => Err(tr(NO_METHOD).into()),
     }
 }
 
-pub const NO_METHOD: &str =
-    "Este computador não tem Touch ID, senha do sistema nem Windows Hello. Crie um PIN do Papeo.";
+pub const NO_METHOD: &str = tk(
+    "Este computador não tem Touch ID, senha do sistema nem Windows Hello. Crie um PIN do Papeo.",
+);
 
 fn wait_text(secs: u64) -> String {
     if secs < 60 {
-        format!("{secs} s")
+        trf("{n} s", &[("n", &secs)])
     } else {
-        format!("{} min", secs.div_ceil(60))
+        trf("{n} min", &[("n", &secs.div_ceil(60))])
     }
 }
 
 /// Confere o PIN do Papeo. Depois de alguns erros seguidos, só aceita outra
 /// tentativa após uma espera crescente (que sobrevive a reabrir o app).
 pub async fn verify_pin(app: &AppHandle, pin: Option<String>) -> Result<(), String> {
-    let pin = pin.filter(|p| !p.is_empty()).ok_or("Digite o PIN.")?;
+    let pin = pin.filter(|p| !p.is_empty()).ok_or(tr("Digite o PIN."))?;
     let state = app.state::<AppState>();
     let stored = {
         let mut inner = state.lock();
         if inner.authenticating {
-            return Err("Já há um pedido de autenticação aberto.".into());
+            return Err(tr("Já há um pedido de autenticação aberto.").into());
         }
         let wait = inner
             .pin_retry_at
             .map(|t| t.saturating_duration_since(Instant::now()))
             .unwrap_or_default();
         if !wait.is_zero() {
-            return Err(format!(
-                "Muitas tentativas. Tente de novo em {}.",
-                wait_text(wait.as_secs() + 1)
+            return Err(trf(
+                "Muitas tentativas. Tente de novo em {tempo}.",
+                &[("tempo", &wait_text(wait.as_secs() + 1))],
             ));
         }
         let stored = inner
             .config
             .lock_pin
             .clone()
-            .ok_or("Nenhum PIN definido.")?;
+            .ok_or(tr("Nenhum PIN definido."))?;
         inner.authenticating = true;
         stored
     };
@@ -255,7 +259,7 @@ pub async fn verify_pin(app: &AppHandle, pin: Option<String>) -> Result<(), Stri
         let mut wait = 0;
         let changed = match inner.config.lock_pin.as_mut().filter(|p| p.hash == hash) {
             // PIN trocado ou removido durante a conferência: não conta.
-            None => return Err("O PIN mudou. Tente de novo.".into()),
+            None => return Err(tr("O PIN mudou. Tente de novo.").into()),
             Some(current) if ok => std::mem::take(&mut current.failures) > 0,
             Some(current) => {
                 current.failures = current.failures.saturating_add(1);
@@ -280,9 +284,12 @@ pub async fn verify_pin(app: &AppHandle, pin: Option<String>) -> Result<(), Stri
     }
     crate::state::publish(app);
     Err(if wait > 0 {
-        format!("PIN incorreto. Tente de novo em {}.", wait_text(wait))
+        trf(
+            "PIN incorreto. Tente de novo em {tempo}.",
+            &[("tempo", &wait_text(wait))],
+        )
     } else {
-        "PIN incorreto.".into()
+        tr("PIN incorreto.").into()
     })
 }
 
@@ -296,10 +303,10 @@ pub async fn forget_pin(app: &AppHandle) -> Result<(), String> {
     {
         let mut inner = state.lock();
         if !inner.locked || inner.lock_method() != LockMethod::Pin {
-            return Err("Não há PIN do Papeo para redefinir.".into());
+            return Err(tr("Não há PIN do Papeo para redefinir.").into());
         }
         if inner.authenticating {
-            return Err("Já há um pedido de autenticação aberto.".into());
+            return Err(tr("Já há um pedido de autenticação aberto.").into());
         }
         // Nenhum desbloqueio corre junto enquanto a limpeza acontece.
         inner.authenticating = true;

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { t } from "./i18n.svelte";
   import { Bell, FileDown, Layers, MemoryStick } from "@lucide/svelte";
   import { api, formatBytes, type Snapshot } from "./api";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -59,8 +60,8 @@
     {
       icon: Layers,
       value: String(snap.services.length),
-      label: snap.services.length === 1 ? "serviço" : "serviços",
-      title: `${loaded} em memória · ${snap.services.length - loaded} dormindo. Clique para ver os serviços.`,
+      label: snap.services.length === 1 ? t("serviço") : t("serviços"),
+      title: t("{n} em memória · {m} dormindo. Clique para ver os serviços.", { n: loaded, m: snap.services.length - loaded }),
       onclick: () => (home.servicesOpen = true),
       disabled: false,
       tone: "",
@@ -68,10 +69,12 @@
     {
       icon: Bell,
       value: String(snap.totalUnread),
-      label: snap.totalUnread === 1 ? "não lida" : "não lidas",
+      label: snap.totalUnread === 1 ? t("não lida") : t("não lidas"),
       title: mostUnread
-        ? `Em ${withUnread} ${withUnread === 1 ? "serviço" : "serviços"}. Clique para abrir ${mostUnread.name}.`
-        : "Tudo em dia.",
+        ? withUnread === 1
+          ? t("Em {n} serviço. Clique para abrir {nome}.", { n: withUnread, nome: mostUnread.name })
+          : t("Em {n} serviços. Clique para abrir {nome}.", { n: withUnread, nome: mostUnread.name })
+        : t("Tudo em dia."),
       onclick: () => mostUnread && onopen(mostUnread.id),
       disabled: !mostUnread,
       tone: snap.totalUnread > 0 ? "unread" : "",
@@ -79,12 +82,14 @@
     {
       icon: MemoryStick,
       value: bytes === null ? "—" : formatBytes(bytes),
-      label: freeing ? "liberando…" : "memória",
+      label: freeing ? t("liberando…") : t("memória"),
       title:
-        (home.memory ? `Contas: ${formatBytes(bytes ?? 0)} + ${formatBytes(home.memory.app)} do Papeo. ` : "") +
+        (home.memory
+          ? t("Contas: {contas} + {papeo} do Papeo. ", { contas: formatBytes(bytes ?? 0), papeo: formatBytes(home.memory.app) })
+          : "") +
         (heavy.length
-          ? "Clique para liberar memória (recarrega as contas paradas; as notificações continuam)."
-          : "Nenhuma conta pesada em segundo plano."),
+          ? t("Clique para liberar memória (recarrega as contas paradas; as notificações continuam).")
+          : t("Nenhuma conta pesada em segundo plano.")),
       onclick: askFree,
       disabled: freeing || heavy.length === 0,
       tone: heavy.length && !freeing ? "heavy" : "",
@@ -92,8 +97,8 @@
     {
       icon: FileDown,
       value: String(done),
-      label: downloading ? "baixando…" : done === 1 ? "download" : "downloads",
-      title: "Clique para abrir a pasta de downloads.",
+      label: downloading ? t("baixando…") : done === 1 ? t("download") : t("downloads"),
+      title: t("Clique para abrir a pasta de downloads."),
       onclick: () => run(api.openDownloadsDir()),
       disabled: false,
       tone: "",
@@ -101,7 +106,7 @@
   ]);
 </script>
 
-<div class="stats" role="group" aria-label="Resumo">
+<div class="stats" role="group" aria-label={t("Resumo")}>
   {#each items as item (item.icon)}
     <button
       class="chip {item.tone}"
@@ -119,16 +124,18 @@
 
 {#if pending}
   <ConfirmDialog
-    title="Liberar memória?"
-    message="{pending.length === 1 ? 'Esta conta parada será recarregada' : 'Estas contas paradas serão recarregadas'}: {pendingList}. O que não foi enviado nelas pode se perder; as notificações continuam."
-    confirmLabel="Liberar"
+    title={t("Liberar memória?")}
+    message={pending.length === 1
+      ? t("Esta conta parada será recarregada: {lista}. O que não foi enviado nelas pode se perder; as notificações continuam.", { lista: pendingList })
+      : t("Estas contas paradas serão recarregadas: {lista}. O que não foi enviado nelas pode se perder; as notificações continuam.", { lista: pendingList })}
+    confirmLabel={t("Liberar")}
     danger={false}
     onclose={() => (pending = null)}
     onconfirm={confirmFree}
   >
     <label class="dont-ask">
       <input type="checkbox" bind:checked={dontAsk} />
-      Não perguntar de novo
+      {t("Não perguntar de novo")}
     </label>
   </ConfirmDialog>
 {/if}

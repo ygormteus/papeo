@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { Lock } from "@lucide/svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { errorMessage, isMac, PIN_MAX, type LockMethod } from "./api";
@@ -57,9 +58,9 @@
 <div class="lock" role="dialog" aria-modal="true" aria-labelledby="lock-title" data-tauri-drag-region>
   <div class="panel">
     <span class="badge" aria-hidden="true"><Lock size={26} /></span>
-    <h1 id="lock-title">O Papeo está bloqueado</h1>
+    <h1 id="lock-title">{t("O Papeo está bloqueado")}</h1>
     {#if method === "pin"}
-      <p class="muted">Digite o PIN do Papeo para ver suas conversas.</p>
+      <p class="muted">{t("Digite o PIN do Papeo para ver suas conversas.")}</p>
       <form onsubmit={unlock}>
         <!-- svelte-ignore a11y_autofocus -->
         <input
@@ -68,37 +69,38 @@
           class="input"
           type="password"
           autocomplete="current-password"
-          aria-label="PIN do Papeo"
+          aria-label={t("PIN do Papeo")}
           maxlength={PIN_MAX}
           disabled={busy}
           autofocus
         />
         <button type="submit" class="btn btn-primary" disabled={busy || !pin}>
-          {forgetting ? "Saindo das contas…" : busy ? "Conferindo…" : "Desbloquear"}
+          {forgetting ? t("Saindo das contas…") : busy ? t("Conferindo…") : t("Desbloquear")}
         </button>
       </form>
     {:else}
       <p class="muted">
-        {isMac ? "Use o Touch ID ou a senha do Mac" : "Use o Windows Hello (rosto, digital ou PIN)"} para ver
-        suas conversas.
+        {isMac
+          ? t("Use o Touch ID ou a senha do Mac para ver suas conversas.")
+          : t("Use o Windows Hello (rosto, digital ou PIN) para ver suas conversas.")}
       </p>
       <!-- svelte-ignore a11y_autofocus -->
       <button class="btn btn-primary" onclick={() => unlock()} disabled={busy} autofocus>
-        {busy ? "Aguardando o sistema…" : "Desbloquear"}
+        {busy ? t("Aguardando o sistema…") : t("Desbloquear")}
       </button>
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if method === "pin"}
-      <button class="link" onclick={() => (confirmForget = true)} disabled={busy}>Esqueci o PIN</button>
+      <button class="link" onclick={() => (confirmForget = true)} disabled={busy}>{t("Esqueci o PIN")}</button>
     {/if}
   </div>
 </div>
 
 {#if confirmForget}
   <ConfirmDialog
-    title="Desbloquear sem o PIN?"
-    message="Para proteger suas conversas, o Papeo sai de todas as contas, apaga as tarefas e anotações deste computador e desliga a sincronização. Depois, entre em cada serviço de novo. Notificações já mostradas e arquivos baixados continuam no computador. Isso não pode ser desfeito."
-    confirmLabel="Sair de tudo e desbloquear"
+    title={t("Desbloquear sem o PIN?")}
+    message={t("Para proteger suas conversas, o Papeo sai de todas as contas, apaga as tarefas e anotações deste computador e desliga a sincronização. Depois, entre em cada serviço de novo. Notificações já mostradas e arquivos baixados continuam no computador. Isso não pode ser desfeito.")}
+    confirmLabel={t("Sair de tudo e desbloquear")}
     onclose={() => (confirmForget = false)}
     onconfirm={forget}
   />

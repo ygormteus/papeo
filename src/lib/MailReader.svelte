@@ -29,6 +29,7 @@
     Trash2,
     X,
   } from "@lucide/svelte";
+  import { locale, t } from "./i18n.svelte";
   import MailComposer, { type ComposeStart } from "./MailComposer.svelte";
   import { loadUnsent, outbox, releaseReturned, startOutbox, takeReturned, undoSend } from "./outbox.svelte";
   import {
@@ -192,7 +193,7 @@
     if (!done || done.n === sentSeen) return;
     sentSeen = done.n;
     if (done.id !== service.id) return;
-    ontoast("E-mail enviado.");
+    ontoast(t("E-mail enviado."));
     if (current?.role === "sent") void loadList(true);
   });
   const waiting = $derived(outbox.pending.filter((p) => p.id === service.id));
@@ -208,7 +209,7 @@
     if (undoing) return;
     undoing = holdId;
     try {
-      if (!(await undoSend(holdId))) ontoast("O e-mail já foi enviado.");
+      if (!(await undoSend(holdId))) ontoast(t("O e-mail já foi enviado."));
     } catch (err) {
       ontoast(errorMessage(err));
     } finally {
@@ -418,7 +419,7 @@
     void removeFromList(
       uid,
       () => api.mailDelete(service.id, folder, [uid]),
-      permanent ? "Excluída de vez." : "Movida para a Lixeira.",
+      permanent ? t("Excluída de vez.") : t("Movida para a Lixeira."),
     );
   }
 
@@ -450,7 +451,7 @@
     try {
       const path = await api.mailSaveAttachment(service.id, folder, message.uid, index);
       const name = path.split(/[\\/]/).pop() ?? path;
-      ontoast(`Anexo salvo: ${name}`, { label: "Mostrar na pasta", run: () => void api.mailRevealFile(path) });
+      ontoast(t("Anexo salvo: {nome}", { nome: name }), { label: t("Mostrar na pasta"), run: () => void api.mailRevealFile(path) });
     } catch (err) {
       ontoast(errorMessage(err));
     }
@@ -469,17 +470,18 @@
   }
 
   function quote(m: MailMessage) {
-    const who = m.from[0] ? addr(m.from[0]) : "alguém";
-    const when = m.date ? new Date(m.date * 1000).toLocaleString("pt-BR", { dateStyle: "long", timeStyle: "short" }) : "";
+    const who = m.from[0] ? addr(m.from[0]) : t("alguém");
+    const when = m.date ? new Date(m.date * 1000).toLocaleString(locale(), { dateStyle: "long", timeStyle: "short" }) : "";
     const text = (m.text || "").replace(/\r\n/g, "\n").trimEnd();
     const quoted = text
       .split("\n")
       .map((l) => (l.startsWith(">") ? `>${l}` : `> ${l}`))
       .join("\n");
-    return `\n\n${when ? `Em ${when}, ` : ""}${who} escreveu:\n${quoted}\n`;
+    const intro = when ? t("Em {data}, {nome} escreveu:", { data: when, nome: who }) : t("{nome} escreveu:", { nome: who });
+    return `\n\n${intro}\n${quoted}\n`;
   }
 
-  function prefixed(subject: string, prefix: "Re" | "Enc") {
+  function prefixed(subject: string, prefix: string) {
     const clean = subject.replace(/^((re|res|fw|fwd|enc|encaminhado)\s*:\s*)+/i, "");
     return `${prefix}: ${clean}`;
   }
@@ -510,15 +512,15 @@
     if (!message) return;
     const m = message;
     const head = [
-      "---------- Mensagem encaminhada ----------",
-      `De: ${m.from.map(addr).join(", ")}`,
-      m.date ? `Data: ${new Date(m.date * 1000).toLocaleString("pt-BR")}` : "",
-      `Assunto: ${m.subject}`,
-      `Para: ${m.to.map(addr).join(", ")}`,
+      t("---------- Mensagem encaminhada ----------"),
+      t("De: {valor}", { valor: m.from.map(addr).join(", ") }),
+      m.date ? t("Data: {valor}", { valor: new Date(m.date * 1000).toLocaleString(locale()) }) : "",
+      t("Assunto: {valor}", { valor: m.subject }),
+      t("Para: {valor}", { valor: m.to.map(addr).join(", ") }),
     ]
       .filter(Boolean)
       .join("\n");
-    composing = { subject: prefixed(m.subject, "Enc"), body: `${signature}\n\n${head}\n\n${m.text}` };
+    composing = { subject: prefixed(m.subject, t("Enc")), body: `${signature}\n\n${head}\n\n${m.text}` };
   }
 
   function compose(to = "") {
@@ -528,7 +530,7 @@
   function sent(queued: boolean) {
     composing = null;
     if (queued) return; // A barra de espera mostra; o aviso vem no fim.
-    ontoast("E-mail enviado.");
+    ontoast(t("E-mail enviado."));
     if (current?.role === "sent") void loadList(true);
   }
 
@@ -585,16 +587,16 @@
     const d = new Date(secs * 1000);
     const now = new Date();
     if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
     }
     if (d.getFullYear() === now.getFullYear()) {
-      return d.toLocaleDateString("pt-BR", { day: "numeric", month: "short" });
+      return d.toLocaleDateString(locale(), { day: "numeric", month: "short" });
     }
-    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+    return d.toLocaleDateString(locale(), { day: "2-digit", month: "2-digit", year: "2-digit" });
   }
 
   function who(a: MailAddr | undefined) {
-    return a?.name || a?.email || "(sem remetente)";
+    return a?.name || a?.email || t("(sem remetente)");
   }
 
   function size(n: number) {
@@ -626,29 +628,29 @@
     <div class="notice">
       <Mail size={26} />
       <p>
-        <strong>{service.name}</strong> pode abrir direto no leitor do Papeo, pelo IMAP: mais leve que o site,
-        que só carrega quando você pedir.
+        <strong>{service.name}</strong>
+        {t("pode abrir direto no leitor do Papeo, pelo IMAP: mais leve que o site, que só carrega quando você pedir.")}
       </p>
       <div class="actions">
         <button class="btn btn-primary" onclick={onconfigure}>
-          {service.kind === "outlook" ? "Entrar com a Microsoft" : "Configurar e-mail"}
+          {service.kind === "outlook" ? t("Entrar com a Microsoft") : t("Configurar e-mail")}
         </button>
-        <button class="btn" onclick={onsite}><Globe size={15} /> Usar o site</button>
+        <button class="btn" onclick={onsite}><Globe size={15} /> {t("Usar o site")}</button>
       </div>
     </div>
   {:else if noPassword}
     <div class="notice">
       <CircleAlert size={22} />
-      <p>A senha do e-mail de <strong>{service.name}</strong> não está salva neste computador.</p>
+      <p>{t("A senha do e-mail de")} <strong>{service.name}</strong> {t("não está salva neste computador.")}</p>
       <div class="actions">
-        <button class="btn btn-primary" onclick={onconfigure}>Configurar e-mail</button>
-        <button class="btn" onclick={onsite}><Globe size={15} /> Abrir no site</button>
+        <button class="btn btn-primary" onclick={onconfigure}>{t("Configurar e-mail")}</button>
+        <button class="btn" onclick={onsite}><Globe size={15} /> {t("Abrir no site")}</button>
       </div>
     </div>
   {:else}
-    <nav class="folders" aria-label="Pastas">
+    <nav class="folders" aria-label={t("Pastas")}>
       <button class="btn btn-primary compose" onclick={() => compose()}>
-        <PenLine size={15} /> Escrever
+        <PenLine size={15} /> {t("Escrever")}
       </button>
       <ul>
         {#each folders as f (f.path)}
@@ -671,28 +673,28 @@
       <div class="foot">
         {#if status === "offline" || status === "auth"}
           <p class="status" title={service.mailStatus && "detail" in service.mailStatus ? String(service.mailStatus.detail ?? "") : ""}>
-            <CircleAlert size={13} /> {status === "auth" ? "Login recusado" : "Sem conexão"}
+            <CircleAlert size={13} /> {status === "auth" ? t("Login recusado") : t("Sem conexão")}
           </p>
         {/if}
-        <button class="link-btn" onclick={onsite}><Globe size={13} /> Abrir no site</button>
+        <button class="link-btn" onclick={onsite}><Globe size={13} /> {t("Abrir no site")}</button>
       </div>
     </nav>
 
-    <section class="list" aria-label="Mensagens">
+    <section class="list" aria-label={t("Mensagens")}>
       <div class="narrow-bar">
-        <select value={folder} onchange={(e) => chooseFolder(e.currentTarget.value)} aria-label="Pasta">
+        <select value={folder} onchange={(e) => chooseFolder(e.currentTarget.value)} aria-label={t("Pasta")}>
           {#each folders as f (f.path)}<option value={f.path}>{"  ".repeat(Math.min(f.depth, 4))}{f.name}</option>{/each}
         </select>
-        <button class="icon-btn" onclick={() => compose()} aria-label="Escrever" title="Escrever"><PenLine size={15} /></button>
-        <button class="icon-btn" onclick={onsite} aria-label="Abrir no site" title="Abrir no site"><Globe size={15} /></button>
+        <button class="icon-btn" onclick={() => compose()} aria-label={t("Escrever")} title={t("Escrever")}><PenLine size={15} /></button>
+        <button class="icon-btn" onclick={onsite} aria-label={t("Abrir no site")} title={t("Abrir no site")}><Globe size={15} /></button>
       </div>
       <form class="search" onsubmit={search} role="search">
         <Search size={15} />
-        <input bind:value={query} placeholder="Buscar em {current?.name ?? 'e-mails'}" aria-label="Buscar e-mails" />
+        <input bind:value={query} placeholder={t("Buscar em {nome}", { nome: current?.name ?? t("e-mails") })} aria-label={t("Buscar e-mails")} />
         {#if searched}
-          <button type="button" class="icon-btn ghost" onclick={clearSearch} aria-label="Limpar a busca"><X size={14} /></button>
+          <button type="button" class="icon-btn ghost" onclick={clearSearch} aria-label={t("Limpar a busca")}><X size={14} /></button>
         {/if}
-        <button type="button" class="icon-btn ghost" onclick={() => loadFolders(true).then(() => loadList())} aria-label="Atualizar" title="Atualizar">
+        <button type="button" class="icon-btn ghost" onclick={() => loadFolders(true).then(() => loadList())} aria-label={t("Atualizar")} title={t("Atualizar")}>
           <RefreshCw size={15} class={loading ? "spin" : ""} />
         </button>
       </form>
@@ -702,28 +704,28 @@
         {#if error}
           <li class="empty error" role="alert">
             {error}
-            <button class="btn" onclick={() => loadList()}>Tentar de novo</button>
+            <button class="btn" onclick={() => loadList()}>{t("Tentar de novo")}</button>
           </li>
         {:else if !messages.length && !loading}
-          <li class="empty">{searched ? "Nada encontrado." : "Nenhuma mensagem."}</li>
+          <li class="empty">{searched ? t("Nada encontrado.") : t("Nenhuma mensagem.")}</li>
         {/if}
         {#each messages as m (m.uid)}
           <li>
             <button class="item" class:unread={!m.seen} class:on={m.uid === selected} onclick={() => openMessage(m.uid)}>
               <span class="line">
-                <span class="who">{current?.role === "sent" || current?.role === "drafts" ? `Para: ${who(m.to[0])}` : who(m.from)}</span>
+                <span class="who">{current?.role === "sent" || current?.role === "drafts" ? t("Para: {valor}", { valor: who(m.to[0]) }) : who(m.from)}</span>
                 {#if m.hasAttachments}<Paperclip size={12} />{/if}
                 {#if m.answered}<Reply size={12} />{/if}
                 <span class="date">{when(m.date)}</span>
               </span>
-              <span class="subject">{m.subject || "(sem assunto)"}</span>
+              <span class="subject">{m.subject || t("(sem assunto)")}</span>
               <span class="preview">{m.preview}</span>
             </button>
             <button
               class="star"
               class:on={m.flagged}
               onclick={() => toggle(m, "flagged")}
-              aria-label={m.flagged ? "Tirar a estrela" : "Marcar com estrela"}
+              aria-label={m.flagged ? t("Tirar a estrela") : t("Marcar com estrela")}
               aria-pressed={m.flagged}
             >
               <Star size={14} />
@@ -733,14 +735,14 @@
       </ul>
       {#if total > PAGE}
         <div class="pager">
-          <button class="icon-btn ghost" disabled={page === 0 || loading} onclick={() => goPage(page - 1)} aria-label="Mais novas"><ChevronLeft size={16} /></button>
-          <span>{page * PAGE + 1}–{Math.min(total, (page + 1) * PAGE)} de {total}</span>
-          <button class="icon-btn ghost" disabled={page >= pages - 1 || loading} onclick={() => goPage(page + 1)} aria-label="Mais antigas"><ChevronRight size={16} /></button>
+          <button class="icon-btn ghost" disabled={page === 0 || loading} onclick={() => goPage(page - 1)} aria-label={t("Mais novas")}><ChevronLeft size={16} /></button>
+          <span>{t("{de}–{ate} de {total}", { de: page * PAGE + 1, ate: Math.min(total, (page + 1) * PAGE), total })}</span>
+          <button class="icon-btn ghost" disabled={page >= pages - 1 || loading} onclick={() => goPage(page + 1)} aria-label={t("Mais antigas")}><ChevronRight size={16} /></button>
         </div>
       {/if}
     </section>
 
-    <section class="view" aria-label="Mensagem">
+    <section class="view" aria-label={t("Mensagem")}>
       {#if composing}
         <MailComposer
           {service}
@@ -757,10 +759,10 @@
         {#if s}
           <div class="scroll">
             <header class="head">
-              <h2>{s.subject || "(sem assunto)"}</h2>
+              <h2>{s.subject || t("(sem assunto)")}</h2>
               <div class="meta">
                 <span class="from"><strong>{who(s.from)}</strong></span>
-                <span class="date">{new Date(s.date * 1000).toLocaleString("pt-BR", { dateStyle: "medium", timeStyle: "short" })}</span>
+                <span class="date">{new Date(s.date * 1000).toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" })}</span>
               </div>
             </header>
             <div class="placeholder"><LoaderCircle size={18} class="spin" /></div>
@@ -773,30 +775,30 @@
       {:else if message}
         {@const m = message}
         <div class="toolbar">
-          <button class="icon-btn ghost back" onclick={closeMessage} aria-label="Voltar à lista"><ArrowLeft size={17} /></button>
-          <button class="btn" onclick={() => reply(false)}><Reply size={15} /> Responder</button>
-          <button class="icon-btn" onclick={() => reply(true)} title="Responder a todos" aria-label="Responder a todos"><ReplyAll size={16} /></button>
-          <button class="icon-btn" onclick={forward} title="Encaminhar" aria-label="Encaminhar"><Forward size={16} /></button>
+          <button class="icon-btn ghost back" onclick={closeMessage} aria-label={t("Voltar à lista")}><ArrowLeft size={17} /></button>
+          <button class="btn" onclick={() => reply(false)}><Reply size={15} /> {t("Responder")}</button>
+          <button class="icon-btn" onclick={() => reply(true)} title={t("Responder a todos")} aria-label={t("Responder a todos")}><ReplyAll size={16} /></button>
+          <button class="icon-btn" onclick={forward} title={t("Encaminhar")} aria-label={t("Encaminhar")}><Forward size={16} /></button>
           <span class="sep"></span>
           {#if hasArchive && current?.role !== "archive" && current?.role !== "all"}
-            <button class="icon-btn" onclick={() => moveTo(m.uid, "role:archive", "Arquivada.")} title="Arquivar" aria-label="Arquivar"><Archive size={16} /></button>
+            <button class="icon-btn" onclick={() => moveTo(m.uid, "role:archive", t("Arquivada."))} title={t("Arquivar")} aria-label={t("Arquivar")}><Archive size={16} /></button>
           {/if}
           {#if current?.role === "junk"}
-            <button class="icon-btn" onclick={() => moveTo(m.uid, "role:inbox", "Movida para a Caixa de Entrada.")} title="Não é spam" aria-label="Não é spam"><Inbox size={16} /></button>
+            <button class="icon-btn" onclick={() => moveTo(m.uid, "role:inbox", t("Movida para a Caixa de Entrada."))} title={t("Não é spam")} aria-label={t("Não é spam")}><Inbox size={16} /></button>
           {:else if hasJunk}
-            <button class="icon-btn" onclick={() => moveTo(m.uid, "role:junk", "Movida para o Spam.")} title="Spam" aria-label="Marcar como spam"><Ban size={16} /></button>
+            <button class="icon-btn" onclick={() => moveTo(m.uid, "role:junk", t("Movida para o Spam."))} title={t("Spam")} aria-label={t("Marcar como spam")}><Ban size={16} /></button>
           {/if}
           <button
             class="icon-btn"
             class:danger={confirmDelete}
             onclick={() => remove(m.uid)}
-            title={permanent ? (confirmDelete ? "Clique de novo para excluir de vez" : "Excluir de vez") : "Excluir"}
-            aria-label={permanent ? "Excluir de vez" : "Excluir"}
+            title={permanent ? (confirmDelete ? t("Clique de novo para excluir de vez") : t("Excluir de vez")) : t("Excluir")}
+            aria-label={permanent ? t("Excluir de vez") : t("Excluir")}
           >
             <Trash2 size={16} />
           </button>
-          {#if confirmDelete}<span class="confirm">Clique de novo para excluir de vez</span>{/if}
-          <button class="icon-btn" onclick={markUnread} title="Marcar como não lida" aria-label="Marcar como não lida"><MailOpen size={16} /></button>
+          {#if confirmDelete}<span class="confirm">{t("Clique de novo para excluir de vez")}</span>{/if}
+          <button class="icon-btn" onclick={markUnread} title={t("Marcar como não lida")} aria-label={t("Marcar como não lida")}><MailOpen size={16} /></button>
           <button
             class="icon-btn"
             class:pressed={m.flagged}
@@ -804,8 +806,8 @@
               const s = messages.find((x) => x.uid === m.uid);
               if (s) void toggle(s, "flagged");
             }}
-            title="Estrela"
-            aria-label="Estrela"
+            title={t("Estrela")}
+            aria-label={t("Estrela")}
             aria-pressed={m.flagged}
           >
             <Flag size={16} />
@@ -813,19 +815,19 @@
         </div>
         <div class="scroll">
           <header class="head">
-            <h2>{m.subject || "(sem assunto)"}</h2>
+            <h2>{m.subject || t("(sem assunto)")}</h2>
             <div class="meta">
               <span class="from"><strong>{who(m.from[0])}</strong>{#if m.from[0]?.name && m.from[0]?.email}<span class="email"> &lt;{m.from[0].email}&gt;</span>{/if}</span>
-              <span class="date">{m.date ? new Date(m.date * 1000).toLocaleString("pt-BR", { dateStyle: "medium", timeStyle: "short" }) : ""}</span>
+              <span class="date">{m.date ? new Date(m.date * 1000).toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" }) : ""}</span>
             </div>
-            {#if m.to.length}<div class="rcpt">Para: {m.to.map((a) => a.name || a.email).join(", ")}</div>{/if}
-            {#if m.cc.length}<div class="rcpt">Cc: {m.cc.map((a) => a.name || a.email).join(", ")}</div>{/if}
+            {#if m.to.length}<div class="rcpt">{t("Para: {valor}", { valor: m.to.map((a) => a.name || a.email).join(", ") })}</div>{/if}
+            {#if m.cc.length}<div class="rcpt">{t("Cc: {valor}", { valor: m.cc.map((a) => a.name || a.email).join(", ") })}</div>{/if}
           </header>
           {#if m.attachments.length}
             <ul class="attachments">
               {#each m.attachments as a (a.index)}
                 <li>
-                  <button class="attachment" onclick={() => saveAttachment(a.index)} title="Salvar em Downloads">
+                  <button class="attachment" onclick={() => saveAttachment(a.index)} title={t("Salvar em Downloads")}>
                     <Paperclip size={14} />
                     <span class="name">{a.name}</span>
                     <span class="size">{size(a.size)}</span>
@@ -838,15 +840,15 @@
           {#if m.html}
             {#if m.hasRemote && !showImages}
               <div class="images">
-                <Image size={15} /> Imagens de fora bloqueadas (protegem você de rastreamento).
-                <button class="link-btn" onclick={() => (showImages = true)}>Mostrar imagens</button>
+                <Image size={15} /> {t("Imagens de fora bloqueadas (protegem você de rastreamento).")}
+                <button class="link-btn" onclick={() => (showImages = true)}>{t("Mostrar imagens")}</button>
               </div>
             {/if}
             {#key srcdoc}
               <iframe
                 bind:this={frame}
                 class="body-frame"
-                title="Conteúdo do e-mail"
+                title={t("Conteúdo do e-mail")}
                 sandbox="allow-same-origin"
                 {srcdoc}
                 onload={frameLoaded}
@@ -861,19 +863,19 @@
       {:else}
         <div class="placeholder">
           <Mail size={28} />
-          <span>{total ? `${total} ${total === 1 ? "mensagem" : "mensagens"}` : ""}</span>
+          <span>{total ? (total === 1 ? t("{n} mensagem", { n: total }) : t("{n} mensagens", { n: total })) : ""}</span>
         </div>
       {/if}
     </section>
   {/if}
   {#if waiting.length}
-    <ul class="sending" aria-label="Envios em espera">
+    <ul class="sending" aria-label={t("Envios em espera")}>
       {#each waiting as p (p.holdId)}
         <li role="status">
           <Send size={14} />
-          <span class="what">Enviando <strong>{p.subject || "(sem assunto)"}</strong></span>
-          <span class="secs">em {Math.max(0, Math.ceil((p.until - now) / 1000))} s</span>
-          <button class="btn" onclick={() => undo(p.holdId)} disabled={undoing === p.holdId}>Desfazer</button>
+          <span class="what">{t("Enviando")} <strong>{p.subject || t("(sem assunto)")}</strong></span>
+          <span class="secs">{t("em {n} s", { n: Math.max(0, Math.ceil((p.until - now) / 1000)) })}</span>
+          <button class="btn" onclick={() => undo(p.holdId)} disabled={undoing === p.holdId}>{t("Desfazer")}</button>
         </li>
       {/each}
     </ul>

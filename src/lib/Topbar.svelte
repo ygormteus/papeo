@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import {
     Circle,
     Globe,
@@ -78,20 +79,20 @@
   const ZOOM_MAX = 2;
   const THEME_ICON = { system: Monitor, light: Sun, dark: Moon, oled: Circle };
   const ThemeIcon = $derived(THEME_ICON[appearance]);
-  const themeLabel = $derived(THEME_OPTIONS.find((o) => o.value === appearance)?.label ?? "");
+  const themeLabel = $derived(t(THEME_OPTIONS.find((o) => o.value === appearance)?.label ?? ""));
   const nextLabel = $derived(
-    THEME_OPTIONS[(THEME_OPTIONS.findIndex((o) => o.value === appearance) + 1) % THEME_OPTIONS.length].label,
+    t(THEME_OPTIONS[(THEME_OPTIONS.findIndex((o) => o.value === appearance) + 1) % THEME_OPTIONS.length].label),
   );
 </script>
 
 <header class="topbar" data-tauri-drag-region>
-  <button class="icon-btn ghost" onclick={ontogglesidebar} aria-label="Recolher ou expandir a barra lateral">
+  <button class="icon-btn ghost" onclick={ontogglesidebar} aria-label={t("Recolher ou expandir a barra lateral")}>
     <PanelLeft size={18} />
   </button>
   <span class="divider" aria-hidden="true"></span>
-  <button class="search" onclick={onsearch} aria-label="Buscar contas, contatos e configurações" title="Buscar ({modKey}K)">
+  <button class="search" onclick={onsearch} aria-label={t("Buscar contas, contatos e configurações")} title={t("Buscar ({atalho}K)", { atalho: modKey })}>
     <Search size={17} />
-    <span>Buscar</span>
+    <span>{t("Buscar")}</span>
     <kbd>{modKey} K</kbd>
   </button>
 
@@ -110,8 +111,8 @@
       >
         <ServiceAvatar service={active} size={20} />
         <span class="name" data-tauri-drag-region>{active.name}</span>
-        {#if active.context && MODE_LABEL[active.context].toLowerCase() !== active.name.trim().toLowerCase()}
-          <span class="ctx" data-tauri-drag-region>{MODE_LABEL[active.context]}</span>
+        {#if active.context && t(MODE_LABEL[active.context]).toLowerCase() !== active.name.trim().toLowerCase()}
+          <span class="ctx" data-tauri-drag-region>{t(MODE_LABEL[active.context])}</span>
         {/if}
       </span>
     {/key}
@@ -121,17 +122,17 @@
     <span
       class="alert"
       role="status"
-      title="Este site usa http: o que você envia e recebe pode ser lido por quem estiver na mesma rede."
+      title={t("Este site usa http: o que você envia e recebe pode ser lido por quem estiver na mesma rede.")}
     >
-      <LockOpen size={15} /> <span class="alert-text">Conexão não criptografada</span>
+      <LockOpen size={15} /> <span class="alert-text">{t("Conexão não criptografada")}</span>
     </span>
   {/if}
 
   {#if active?.status === "unresponsive" || active?.status === "loggedOut"}
     {@const message =
       active.status === "unresponsive"
-        ? `${active.name} não responde — recarregue a conta.`
-        : `${active.name} está desconectado — faça login de novo.`}
+        ? t("{nome} não responde — recarregue a conta.", { nome: active.name })
+        : t("{nome} está desconectado — faça login de novo.", { nome: active.name })}
     <span class="alert" class:danger={active.status === "unresponsive"} role="status" title={message}>
       <span class="alert-text">{message}</span>
     </span>
@@ -141,9 +142,9 @@
     <button
       class="alert alert-btn"
       onclick={ondiagnostics}
-      title="O Papeo não encontra mais parte do site desta conta; algum recurso pode não funcionar. Clique para ver o diagnóstico."
+      title={t("O Papeo não encontra mais parte do site desta conta; algum recurso pode não funcionar. Clique para ver o diagnóstico.")}
     >
-      <Activity size={15} /> <span class="alert-text">O site mudou</span>
+      <Activity size={15} /> <span class="alert-text">{t("O site mudou")}</span>
     </button>
   {/if}
 
@@ -154,18 +155,18 @@
     <button
       class="btn view-toggle"
       onclick={() => onsite(!!active.reader)}
-      title={active.reader ? "Abrir o site do e-mail (carrega a página)" : "Voltar ao leitor do Papeo (libera a memória do site)"}
+      title={active.reader ? t("Abrir o site do e-mail (carrega a página)") : t("Voltar ao leitor do Papeo (libera a memória do site)")}
     >
-      {#if active.reader}<Globe size={15} /> Abrir no site{:else}<Mail size={15} /> Voltar ao leitor{/if}
+      {#if active.reader}<Globe size={15} /> {t("Abrir no site")}{:else}<Mail size={15} /> {t("Voltar ao leitor")}{/if}
     </button>
   {/if}
   {#if active && !active.reader}
-    <div class="zoom" role="group" aria-label="Zoom de {active.name}">
+    <div class="zoom" role="group" aria-label={t("Zoom de {nome}", { nome: active.name })}>
       <button
         onclick={() => onzoom({ delta: -0.1 })}
         disabled={active.zoom <= ZOOM_MIN + 0.001}
-        title="Diminuir ({modKey}−)"
-        aria-label="Diminuir o zoom"
+        title={t("Diminuir ({atalho}−)", { atalho: modKey })}
+        aria-label={t("Diminuir o zoom")}
       >
         <Minus size={15} />
       </button>
@@ -173,16 +174,16 @@
         class="level"
         class:changed={Math.abs(active.zoom - 1) > 0.001}
         onclick={() => onzoom({ zoom: 1 })}
-        title="Voltar ao tamanho real ({modKey}⇧0)"
-        aria-label="Zoom em {Math.round(active.zoom * 100)}%. Voltar ao tamanho real"
+        title={t("Voltar ao tamanho real ({atalho}⇧0)", { atalho: modKey })}
+        aria-label={t("Zoom em {n}%. Voltar ao tamanho real", { n: Math.round(active.zoom * 100) })}
       >
         {Math.round(active.zoom * 100)}%
       </button>
       <button
         onclick={() => onzoom({ delta: 0.1 })}
         disabled={active.zoom >= ZOOM_MAX - 0.001}
-        title="Aumentar ({modKey}+)"
-        aria-label="Aumentar o zoom"
+        title={t("Aumentar ({atalho}+)", { atalho: modKey })}
+        aria-label={t("Aumentar o zoom")}
       >
         <Plus size={15} />
       </button>
@@ -191,8 +192,8 @@
       class="icon-btn"
       class:pressed={panelOpen}
       onclick={onpanel}
-      title="Tarefas e anotações ({modKey}⇧N)"
-      aria-label="Tarefas e anotações"
+      title={t("Tarefas e anotações ({atalho}⇧N)", { atalho: modKey })}
+      aria-label={t("Tarefas e anotações")}
       aria-pressed={panelOpen}
     >
       <NotebookPen size={17} />
@@ -202,25 +203,25 @@
       class="icon-btn"
       class:urgent={active.status === "unresponsive"}
       onclick={onreload}
-      title="Recarregar ({modKey}R)"
-      aria-label="Recarregar {active.name}"
+      title={t("Recarregar ({atalho}R)", { atalho: modKey })}
+      aria-label={t("Recarregar {nome}", { nome: active.name })}
     >
       <RotateCw size={17} />
     </button>
-    <button class="icon-btn" onclick={onhibernate} title="Hibernar e liberar memória" aria-label="Hibernar {active.name}">
+    <button class="icon-btn" onclick={onhibernate} title={t("Hibernar e liberar memória")} aria-label={t("Hibernar {nome}", { nome: active.name })}>
       <Snowflake size={17} />
     </button>
   {/if}
   {#if lockable}
-    <button class="icon-btn" onclick={onlock} title="Bloquear agora ({modKey}L)" aria-label="Bloquear o Papeo">
+    <button class="icon-btn" onclick={onlock} title={t("Bloquear agora ({atalho}L)", { atalho: modKey })} aria-label={t("Bloquear o Papeo")}>
       <Lock size={17} />
     </button>
   {/if}
   <button
     class="icon-btn ghost"
     onclick={ontheme}
-    title="Tema: {themeLabel} (clique para {nextLabel})"
-    aria-label="Tema: {themeLabel}. Mudar para {nextLabel}"
+    title={t("Tema: {atual} (clique para {proximo})", { atual: themeLabel, proximo: nextLabel })}
+    aria-label={t("Tema: {atual}. Mudar para {proximo}", { atual: themeLabel, proximo: nextLabel })}
   >
     <ThemeIcon size={17} fill={appearance === "oled" ? "currentColor" : "none"} />
   </button>

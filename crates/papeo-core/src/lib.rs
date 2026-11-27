@@ -2,6 +2,7 @@
 //! puras (não perturbe, nomes de arquivo, não lidas). Não depende do Tauri,
 //! para ser testado em qualquer máquina.
 
+pub mod i18n;
 pub mod mail;
 pub mod mailbox;
 mod organizer;
@@ -15,6 +16,7 @@ mod store;
 pub mod sync;
 mod util;
 
+pub use i18n::{tr, trf, Lang, Language};
 pub use organizer::{
     clean_chat, encode_organizer, is_date, is_item_id, load_organizer, new_item_id, save_organizer,
     Contact, ContactRef, Organizer, Repeat, Task, TaskInput, CHAT_MAX, NOTE_MAX, TASK_TEXT_MAX,

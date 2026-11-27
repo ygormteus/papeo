@@ -6,6 +6,7 @@ mod commands;
 mod downloads;
 mod drive;
 mod idle;
+mod lang;
 mod lock;
 mod mail;
 mod mailbox;
@@ -466,6 +467,7 @@ pub fn run() {
                 config.settings.start_hidden && std::env::args().any(|a| a == HIDDEN_ARG);
             let protected = config.settings.protect_screen;
             let appearance = config.settings.appearance;
+            lang::apply(config.settings.language);
             let organizer_path = config_dir.join("organizer.json");
             let organizer = papeo_core::load_organizer(&organizer_path, organizer::now_ms());
             let state = AppState {

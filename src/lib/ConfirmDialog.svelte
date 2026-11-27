@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
 
   let {
     title,
     message,
     confirmLabel,
-    cancelLabel = "Cancelar",
+    cancelLabel,
     danger = true,
     onclose,
     oncancel,
@@ -35,7 +36,7 @@
   {@render children?.()}
   <div class="actions">
     <!-- svelte-ignore a11y_autofocus -->
-    <button class="btn" onclick={oncancel ?? onclose} autofocus>{cancelLabel}</button>
+    <button class="btn" onclick={oncancel ?? onclose} autofocus>{cancelLabel ?? t("Cancelar")}</button>
     <button class="btn btn-primary" class:danger onclick={onconfirm}>{confirmLabel}</button>
   </div>
 </Modal>

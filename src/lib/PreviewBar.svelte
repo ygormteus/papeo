@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { onMount } from "svelte";
   import { Check, ExternalLink, Globe, Link, X } from "@lucide/svelte";
   import { api, errorMessage, isMac, onPreview, type PreviewInfo } from "./api";
@@ -16,7 +17,7 @@
       return "";
     }
   });
-  const title = $derived(info.title.trim() || host || "Prévia");
+  const title = $derived(info.title.trim() || host || t("Prévia"));
 
   // O tema da janela segue a aparência escolhida no app.
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -48,7 +49,7 @@
       clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => (copied = false), 1500);
     } catch {
-      error = "Não foi possível copiar o link.";
+      error = t("Não foi possível copiar o link.");
     }
   }
   const close = () => act(api.previewClose());
@@ -83,15 +84,15 @@
     class="icon-btn ghost"
     onclick={copyLink}
     disabled={!info.url}
-    title={copied ? "Link copiado" : "Copiar link"}
-    aria-label={copied ? "Link copiado" : "Copiar link"}
+    title={copied ? t("Link copiado") : t("Copiar link")}
+    aria-label={copied ? t("Link copiado") : t("Copiar link")}
   >
     {#if copied}<Check size={16} />{:else}<Link size={16} />{/if}
   </button>
-  <button class="btn small" onclick={openBrowser} title="Abrir no navegador ({isMac ? '⌘' : 'Ctrl+'}Enter)">
-    <ExternalLink size={15} /> Abrir no navegador
+  <button class="btn small" onclick={openBrowser} title={t("Abrir no navegador ({atalho}Enter)", { atalho: isMac ? "⌘" : "Ctrl+" })}>
+    <ExternalLink size={15} /> {t("Abrir no navegador")}
   </button>
-  <button class="icon-btn ghost" onclick={close} title="Fechar (Esc)" aria-label="Fechar a prévia">
+  <button class="icon-btn ghost" onclick={close} title={t("Fechar (Esc)")} aria-label={t("Fechar a prévia")}>
     <X size={17} />
   </button>
 </header>

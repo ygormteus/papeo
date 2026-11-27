@@ -1,6 +1,7 @@
 //! Regras de privacidade: origem dos sites, texto das notificações e
 //! identificadores de sessão.
 
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 
 /// Quanto do conteúdo aparece nas notificações do sistema (e na tela
@@ -34,8 +35,8 @@ pub fn notification_text(
     };
     match preview {
         NotificationPreview::Full => (with_title(), crate::clip(body, 240)),
-        NotificationPreview::Sender => (with_title(), "Nova mensagem".to_owned()),
-        NotificationPreview::Hidden => (service_name.to_owned(), "Nova mensagem".to_owned()),
+        NotificationPreview::Sender => (with_title(), tr("Nova mensagem").to_owned()),
+        NotificationPreview::Hidden => (service_name.to_owned(), tr("Nova mensagem").to_owned()),
     }
 }
 

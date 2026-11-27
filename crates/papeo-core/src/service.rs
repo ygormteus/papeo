@@ -1,5 +1,6 @@
 //! Modelo de um serviço (mensageiro) e validação dos campos editáveis.
 
+use crate::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
@@ -166,7 +167,7 @@ impl Service {
             Some(raw) => normalize_url(&raw)?,
             None => kind
                 .default_url()
-                .ok_or("Informe a URL do serviço.")?
+                .ok_or(tr("Informe a URL do serviço."))?
                 .to_owned(),
         };
         let name = name
@@ -227,12 +228,20 @@ impl Service {
     pub fn sanitized(mut self) -> Result<Self, String> {
         let hex = |s: &str, len: usize| s.len() == len && s.bytes().all(|b| b.is_ascii_hexdigit());
         if !hex(&self.session, 32) {
-            return Err(format!("sessão inválida em \"{}\"", self.name));
+            return Err(trf(
+                "sessão inválida em \"{nome}\"",
+                &[("nome", &self.name)],
+            ));
         }
         self.session.make_ascii_lowercase();
         match self.id.strip_prefix("svc-") {
             Some(rest) if hex(rest, 12) => self.id.make_ascii_lowercase(),
-            _ => return Err(format!("identificador inválido em \"{}\"", self.name)),
+            _ => {
+                return Err(trf(
+                    "identificador inválido em \"{nome}\"",
+                    &[("nome", &self.name)],
+                ))
+            }
         }
         // Nome longo/vazio é reparado (não invalida o arquivo inteiro).
         self.name = normalize_name(&self.name).unwrap_or_else(|_| {
@@ -268,10 +277,10 @@ impl Service {
 pub fn normalize_name(raw: &str) -> Result<String, String> {
     let name = raw.trim();
     if name.is_empty() {
-        return Err("O nome não pode ficar vazio.".into());
+        return Err(tr("O nome não pode ficar vazio.").into());
     }
     if name.chars().count() > NAME_MAX {
-        return Err("Use um nome com até 40 caracteres.".into());
+        return Err(tr("Use um nome com até 40 caracteres.").into());
     }
     Ok(name.to_owned())
 }
@@ -290,7 +299,7 @@ pub fn normalize_color(raw: Option<&str>) -> Result<Option<String>, String> {
     if full.len() == 6 && full.chars().all(|c| c.is_ascii_hexdigit()) {
         Ok(Some(format!("#{}", full.to_ascii_lowercase())))
     } else {
-        Err("Cor inválida; use o formato #rrggbb.".into())
+        Err(tr("Cor inválida; use o formato #rrggbb.").into())
     }
 }
 
@@ -307,7 +316,7 @@ pub fn normalize_emoji(raw: Option<&str>) -> Result<Option<String>, String> {
     if ok {
         Ok(Some(text.to_owned()))
     } else {
-        Err("Use um emoji ou até 2 letras.".into())
+        Err(tr("Use um emoji ou até 2 letras.").into())
     }
 }
 
@@ -354,10 +363,10 @@ pub(crate) fn normalize_url(raw: &str) -> Result<String, String> {
     } else {
         format!("https://{raw}")
     };
-    let url = url::Url::parse(&candidate).map_err(|_| "URL inválida.".to_owned())?;
+    let url = url::Url::parse(&candidate).map_err(|_| tr("URL inválida.").to_owned())?;
     match url.scheme() {
         "https" | "http" if url.host_str().is_some() => Ok(url.to_string()),
-        _ => Err("Use um endereço http(s) válido.".to_owned()),
+        _ => Err(tr("Use um endereço http(s) válido.").to_owned()),
     }
 }
 

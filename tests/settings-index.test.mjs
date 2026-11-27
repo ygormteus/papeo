@@ -13,8 +13,10 @@ const source = ["Settings", "SyncSettings", "QuickReplies"]
   .join("\n");
 
 for (const e of SETTINGS_INDEX) {
-  const asLabel = source.includes(`<span class="label">${e.label}</span>`);
-  const asHeading = new RegExp(`<h2[^>]*>(?:<[^>]+/>)?\\s*${e.label}</h2>`).test(source);
+  // Texto puro ou `{t("Rótulo")}` (interface traduzida).
+  const text = (l) => `(?:${l}|\\{t\\("${l}"\\)\\})`;
+  const asLabel = new RegExp(`<span class="label">${text(e.label)}</span>`).test(source);
+  const asHeading = new RegExp(`<h2[^>]*>(?:<[^>]+/>)?\\s*${text(e.label)}</h2>`).test(source);
   check(asLabel || asHeading, `rótulo não encontrado na tela: "${e.label}"`);
 }
 
@@ -22,6 +24,10 @@ check(searchSettings("escuro")[0]?.label === "Tema", "escuro → Tema");
 check(searchSettings("senha")[0]?.label === "Bloquear o Papeo", "senha → Bloquear o Papeo");
 check(searchSettings("NOTIFICAÇÃO").length > 0, "busca sem acento e maiúsculas");
 check(searchSettings("bandeja")[0]?.label === "Começar escondido na bandeja", "bandeja → rótulo primeiro");
+// Busca pelo texto traduzido (tradutor falso).
+const fake = (pt) => (pt === "Tema" ? "Theme" : pt);
+check(searchSettings("theme", 5, fake)[0]?.label === "Tema", "busca pelo rótulo traduzido");
+check(searchSettings("language")[0]?.label === "Idioma", "language → Idioma");
 check(searchSettings("").length === 0, "busca vazia não lista nada");
 check(searchSettings("xyzzy").length === 0, "sem resultado");
 

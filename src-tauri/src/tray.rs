@@ -2,6 +2,7 @@
 //! reabrir a janela.
 
 use crate::state::{now_secs, publish, snapshot, AppState, Snapshot, MAIN_WINDOW};
+use papeo_core::i18n::{tk, tr, trf};
 use papeo_core::{Mode, ModeChoice, DND_FOREVER};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -70,7 +71,8 @@ fn signature(snap: &Snapshot) -> String {
         .map(|m| format!("{}|{}|{}|{}", m.service_id, m.title, m.body, m.at))
         .collect();
     format!(
-        "{}#{:?}#{:?}#{}#{}#{}#{}#{}",
+        "{:?}#{}#{:?}#{:?}#{}#{}#{}#{}#{}",
+        snap.lang,
         snap.locked,
         snap.mode,
         snap.settings.mode,
@@ -96,12 +98,12 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
     let sep = || PredefinedMenuItem::separator(app);
 
     let header = if snap.locked {
-        "Papeo bloqueado".to_owned()
+        tr("Papeo bloqueado").to_owned()
     } else {
         match snap.total_unread {
-            0 => "Nenhuma mensagem nova".to_owned(),
-            1 => "1 mensagem não lida".to_owned(),
-            n => format!("{n} mensagens não lidas"),
+            0 => tr("Nenhuma mensagem nova").to_owned(),
+            1 => tr("1 mensagem não lida").to_owned(),
+            n => trf("{n} mensagens não lidas", &[("n", &n)]),
         }
     };
     items.push(Box::new(disabled(app, &header)?));
@@ -116,7 +118,7 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
     let mut chats = Vec::new();
     if !snap.recent.is_empty() {
         items.push(Box::new(sep()?));
-        items.push(Box::new(disabled(app, "Mensagens recentes")?));
+        items.push(Box::new(disabled(app, tr("Mensagens recentes"))?));
         let many = snap.services.len() > 1;
         for (i, m) in snap.recent.iter().take(MENU_RECENT).enumerate() {
             let mut label = format!("{}  {}", clock(m.at), m.title);
@@ -134,7 +136,7 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
 
     if snap.services.iter().any(|s| s.in_mode) {
         items.push(Box::new(sep()?));
-        items.push(Box::new(disabled(app, "Contas")?));
+        items.push(Box::new(disabled(app, tr("Contas"))?));
         for s in snap.services.iter().filter(|s| s.in_mode) {
             let mut label = match &s.service.emoji {
                 Some(emoji) => format!("{emoji}  {}", s.service.name),
@@ -143,7 +145,7 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
             if s.unread > 0 {
                 label.push_str(&format!(" — {}", s.unread));
             } else if !s.loaded {
-                label.push_str(" (dormindo)");
+                label.push_str(tr(" (dormindo)"));
             }
             items.push(Box::new(item(
                 app,
@@ -163,12 +165,12 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
             };
             item(app, &format!("tray:mode:{}", mode_id(mode)), &text)
         };
-        let mut title = format!("Modo: {}", mode_label(snap.mode));
+        let mut title = trf("Modo: {modo}", &[("modo", &tr(mode_label(snap.mode)))]);
         if snap.settings.mode == ModeChoice::Auto {
             title.push_str(if snap.mode_manual {
-                " (até o expediente mudar)"
+                tr(" (até o expediente mudar)")
             } else {
-                " (automático)"
+                tr(" (automático)")
             });
         }
         items.push(Box::new(Submenu::with_items(
@@ -176,9 +178,9 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
             &title,
             true,
             &[
-                &mark(Mode::Work, "Trabalho")?,
-                &mark(Mode::Personal, "Pessoal")?,
-                &mark(Mode::All, "Todas as contas")?,
+                &mark(Mode::Work, tr("Trabalho"))?,
+                &mark(Mode::Personal, tr("Pessoal"))?,
+                &mark(Mode::All, tr("Todas as contas"))?,
             ],
         )?));
     }
@@ -186,29 +188,29 @@ fn build_menu(app: &AppHandle, snap: &Snapshot) -> tauri::Result<(Menu<Wry>, Cha
     let dnd = if dnd_on {
         Submenu::with_items(
             app,
-            "Não perturbe (ligado)",
+            tr("Não perturbe (ligado)"),
             true,
-            &[&item(app, "tray:dndoff", "Desligar")?],
+            &[&item(app, "tray:dndoff", tr("Desligar"))?],
         )?
     } else {
         Submenu::with_items(
             app,
-            "Não perturbe",
+            tr("Não perturbe"),
             true,
             &[
-                &item(app, "tray:dnd1h", "Por 1 hora")?,
-                &item(app, "tray:dnd8h", "Por 8 horas")?,
-                &item(app, "tray:dndon", "Até eu reativar")?,
+                &item(app, "tray:dnd1h", tr("Por 1 hora"))?,
+                &item(app, "tray:dnd8h", tr("Por 8 horas"))?,
+                &item(app, "tray:dndon", tr("Até eu reativar"))?,
             ],
         )?
     };
     items.push(Box::new(dnd));
     if snap.settings.lock.enabled && !snap.locked {
-        items.push(Box::new(item(app, "tray:lock", "Bloquear agora")?));
+        items.push(Box::new(item(app, "tray:lock", tr("Bloquear agora"))?));
     }
     items.push(Box::new(sep()?));
-    items.push(Box::new(item(app, "tray:show", "Abrir o Papeo")?));
-    items.push(Box::new(item(app, "tray:quit", "Sair do Papeo")?));
+    items.push(Box::new(item(app, "tray:show", tr("Abrir o Papeo"))?));
+    items.push(Box::new(item(app, "tray:quit", tr("Sair do Papeo"))?));
 
     let refs: Vec<&dyn IsMenuItem<Wry>> = items.iter().map(|i| i.as_ref()).collect();
     Ok((Menu::with_items(app, &refs)?, chats))
@@ -230,9 +232,9 @@ fn mode_id(mode: Mode) -> &'static str {
 
 fn mode_label(mode: Mode) -> &'static str {
     match mode {
-        Mode::All => "todas as contas",
-        Mode::Work => "Trabalho",
-        Mode::Personal => "Pessoal",
+        Mode::All => tk("todas as contas"),
+        Mode::Work => tk("Trabalho"),
+        Mode::Personal => tk("Pessoal"),
     }
 }
 
@@ -358,14 +360,14 @@ pub fn refresh(app: &AppHandle, snap: &Snapshot) {
         return;
     };
     // Dica e número só quando o total muda (cada um espera a thread principal).
+    // O idioma entra no valor guardado: trocar o idioma refaz a dica.
     static SHOWN_UNREAD: AtomicU64 = AtomicU64::new(u64::MAX);
-    if SHOWN_UNREAD.swap(u64::from(snap.total_unread), Ordering::SeqCst)
-        != u64::from(snap.total_unread)
-    {
+    let shown = u64::from(snap.total_unread) | (u64::from(snap.lang == papeo_core::Lang::En) << 32);
+    if SHOWN_UNREAD.swap(shown, Ordering::SeqCst) != shown {
         let tooltip = match snap.total_unread {
             0 => "Papeo".to_owned(),
-            1 => "Papeo — 1 não lida".to_owned(),
-            n => format!("Papeo — {n} não lidas"),
+            1 => tr("Papeo — 1 não lida").to_owned(),
+            n => trf("Papeo — {n} não lidas", &[("n", &n)]),
         };
         let _ = tray.set_tooltip(Some(tooltip));
         #[cfg(target_os = "macos")]

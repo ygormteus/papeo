@@ -7,6 +7,7 @@
 
 use crate::secrets::{self, Saved};
 use crate::state::{publish, AppState, MailLive, MailStatus};
+use papeo_core::i18n::{tr, trf};
 use papeo_core::mail::{self as core, ImapError, MailAccount, MailAuth, NewMail};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -436,12 +437,12 @@ fn run(app: &AppHandle, id: &str, options: Options, saved: &Saved, control: &Arc
 pub(crate) fn describe(err: &ImapError) -> String {
     match err {
         ImapError::Io(e) if e.kind() == io::ErrorKind::Other && e.to_string().contains("TLS") => {
-            "Conexão segura recusada: confira o servidor e a porta.".into()
+            tr("Conexão segura recusada: confira o servidor e a porta.").into()
         }
-        ImapError::Io(_) => "Sem conexão com o servidor; tentando de novo.".into(),
-        ImapError::Auth(_) => "Usuário ou senha recusados.".into(),
+        ImapError::Io(_) => tr("Sem conexão com o servidor; tentando de novo.").into(),
+        ImapError::Auth(_) => tr("Usuário ou senha recusados.").into(),
         ImapError::Rejected(text) | ImapError::Protocol(text) => {
-            format!("O servidor respondeu: {text}")
+            trf("O servidor respondeu: {texto}", &[("texto", &text)])
         }
     }
 }
@@ -474,9 +475,9 @@ fn auth_failed(app: &AppHandle, id: &str, microsoft: bool) {
         remind_at: None,
     };
     let text = if microsoft {
-        "Avisos por IMAP: o login da Microsoft expirou. Entre de novo em Avisos por IMAP; até lá, os avisos vêm pelo site."
+        tr("Avisos por IMAP: o login da Microsoft expirou. Entre de novo em Avisos por IMAP; até lá, os avisos vêm pelo site.")
     } else {
-        "Avisos por IMAP: usuário ou senha recusados. Os avisos voltam pelo site até você corrigir."
+        tr("Avisos por IMAP: usuário ou senha recusados. Os avisos voltam pelo site até você corrigir.")
     };
     if allowed {
         let _ = crate::notifications::show(app, &name, text, None, target);
@@ -569,12 +570,12 @@ impl core::Sink for AppSink<'_> {
                 return;
             }
             let from = if mail.from.is_empty() {
-                "E-mail novo".to_owned()
+                tr("E-mail novo").to_owned()
             } else {
                 mail.from
             };
             let subject = if mail.subject.is_empty() {
-                "(sem assunto)".to_owned()
+                tr("(sem assunto)").to_owned()
             } else {
                 mail.subject
             };

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { CircleAlert, CircleCheck, KeyRound, LoaderCircle, LogIn, WifiOff } from "@lucide/svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import Switch from "./Switch.svelte";
   import {
@@ -157,7 +158,7 @@
     }
     const portNumber = Number(port);
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
-      error = "Porta inválida.";
+      error = t("Porta inválida.");
       return;
     }
     busy = true;
@@ -206,13 +207,12 @@
   }
 </script>
 
-<Modal {onclose} label="E-mail por IMAP de {service.name}" width={480}>
+<Modal {onclose} label={t("E-mail por IMAP de {nome}", { nome: service.name })} width={480}>
   <form onsubmit={submit}>
     <header>
-      <h2>E-mail por IMAP</h2>
+      <h2>{t("E-mail por IMAP")}</h2>
       <p class="lead">
-        O Papeo lê, envia e avisa dos e-mails de {service.name} direto do servidor, sem carregar o site (ele só abre
-        quando você pedir).
+        {t("O Papeo lê, envia e avisa dos e-mails de {nome} direto do servidor, sem carregar o site (ele só abre quando você pedir).", { nome: service.name })}
       </p>
     </header>
 
@@ -228,16 +228,16 @@
         {#if status.state === "ok"}
           <CircleCheck size={16} />
           <span>
-            Conectado.
+            {t("Conectado.")}
             {service.unread === 0
-              ? "Nenhum e-mail não lido."
+              ? t("Nenhum e-mail não lido.")
               : service.unread === 1
-                ? "1 e-mail não lido."
-                : `${service.unread} e-mails não lidos.`}
+                ? t("1 e-mail não lido.")
+                : t("{n} e-mails não lidos.", { n: service.unread })}
           </span>
         {:else if status.state === "connecting"}
           <LoaderCircle size={16} class="spin" />
-          <span>Conectando…</span>
+          <span>{t("Conectando…")}</span>
         {:else if status.state === "offline"}
           <WifiOff size={16} />
           <span>{status.detail}</span>
@@ -245,112 +245,110 @@
           <CircleAlert size={16} />
           <span>
             {#if microsoft}
-              O login da Microsoft expirou ou foi revogado. Entre de novo abaixo.
+              {t("O login da Microsoft expirou ou foi revogado. Entre de novo abaixo.")}
             {:else}
-              Usuário ou senha recusados. {gmail ? "Use uma senha de app (veja abaixo), não a senha do Google." : ""}
+              {t("Usuário ou senha recusados.")} {gmail ? t("Use uma senha de app (veja abaixo), não a senha do Google.") : ""}
             {/if}
-            Enquanto isso, os avisos vêm pelo site.
+            {t("Enquanto isso, os avisos vêm pelo site.")}
           </span>
         {:else}
           <KeyRound size={16} />
           <span>
             {microsoft
-              ? "Falta entrar com a Microsoft neste computador (o login não vai no backup)."
-              : "Falta a senha neste computador (ela não vai no backup)."}
+              ? t("Falta entrar com a Microsoft neste computador (o login não vai no backup).")
+              : t("Falta a senha neste computador (ela não vai no backup).")}
           </span>
         {/if}
       </div>
       {#if service.mailSmtp}
-        <p class="smtp">Envio pelo servidor {service.mailSmtp}, {microsoft ? "com o mesmo login" : "com a mesma senha"}.</p>
+        <p class="smtp">{microsoft ? t("Envio pelo servidor {servidor}, com o mesmo login.", { servidor: service.mailSmtp }) : t("Envio pelo servidor {servidor}, com a mesma senha.", { servidor: service.mailSmtp })}</p>
       {/if}
     {/if}
 
     {#if gmail}
       <div class="help">
         <p>
-          O Gmail pede uma <strong>senha de app</strong>, não a sua senha do Google. Ela exige a verificação em duas
-          etapas ligada. Nas contas do Google Workspace, o administrador precisa permitir.
+          {t("O Gmail pede uma")} <strong>{t("senha de app")}</strong>{t(", não a sua senha do Google. Ela exige a verificação em duas etapas ligada. Nas contas do Google Workspace, o administrador precisa permitir.")}
         </p>
         <button type="button" class="link" onclick={() => api.openUrl("https://myaccount.google.com/apppasswords")}>
-          Criar uma senha de app no Google
+          {t("Criar uma senha de app no Google")}
         </button>
       </div>
     {/if}
 
     {#if microsoft}
-      <section aria-label="Conta">
+      <section aria-label={t("Conta")}>
         <div class="signin">
           {#if configured}
-            <p>Conta: <strong>{service.mail?.user}</strong></p>
+            <p>{t("Conta:")} <strong>{service.mail?.user}</strong></p>
           {:else}
             <p>
-              Entre com a sua conta da Microsoft (Outlook.com, Hotmail ou Microsoft 365). A senha é digitada só no site
-              da Microsoft, no navegador.
+              {t("Entre com a sua conta da Microsoft (Outlook.com, Hotmail ou Microsoft 365). A senha é digitada só no site da Microsoft, no navegador.")}
             </p>
           {/if}
           <button type="button" class="btn" disabled={busy} onclick={signIn}>
             {#if signingIn}
-              <LoaderCircle size={15} class="spin" /> Esperando o navegador…
+              <LoaderCircle size={15} class="spin" /> {t("Esperando o navegador…")}
             {:else}
               <LogIn size={15} />
-              {configured ? "Entrar de novo ou trocar de conta" : "Entrar com a Microsoft"}
+              {configured ? t("Entrar de novo ou trocar de conta") : t("Entrar com a Microsoft")}
             {/if}
           </button>
           {#if signingIn}
-            <p class="note">Termine o login na janela do navegador que abriu.</p>
+            <p class="note">{t("Termine o login na janela do navegador que abriu.")}</p>
           {/if}
           <p class="note">
-            Contas de empresa podem precisar que o administrador do Microsoft 365 libere o Papeo e o IMAP.
+            {t("Contas de empresa podem precisar que o administrador do Microsoft 365 libere o Papeo e o IMAP.")}
           </p>
         </div>
       </section>
     {:else}
-    <section aria-label="Conta">
+    <section aria-label={t("Conta")}>
       {#if !gmail}
         <div class="field">
-          <label for="ml-preset">Provedor</label>
+          <label for="ml-preset">{t("Provedor")}</label>
           <select
             id="ml-preset"
             class="select"
             value={presetId}
             onchange={(e) => choosePreset(e.currentTarget.value)}
           >
-            <option value="">Outro (preencher à mão)</option>
+            <option value="">{t("Outro (preencher à mão)")}</option>
             {#each MAIL_PRESETS as p (p.id)}
               <option value={p.id}>{p.label}</option>
             {/each}
           </select>
-          {#if preset?.note}<p class="note">{preset.note}</p>{/if}
+          {#if preset?.note}<p class="note">{t(preset.note)}</p>{/if}
         </div>
       {/if}
       <div class="row">
         <div class="field grow">
-          <label for="ml-host">Servidor IMAP</label>
+          <label for="ml-host">{t("Servidor IMAP")}</label>
           <input
             id="ml-host"
             class="input"
             bind:value={host}
             oninput={() => (presetId = MAIL_PRESETS.find((p) => p.host === host.trim().toLowerCase())?.id ?? "")}
-            placeholder="imap.seuprovedor.com.br"
+            placeholder={t("imap.seuprovedor.com.br")}
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
           />
         </div>
         <div class="field port">
-          <label for="ml-port">Porta</label>
+          <label for="ml-port">{t("Porta")}</label>
           <input id="ml-port" class="input" bind:value={port} inputmode="numeric" maxlength="5" />
         </div>
       </div>
       <div class="field">
-        <label for="ml-user">Usuário</label>
+        <label for="ml-user">{t("Usuário")}</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           id="ml-user"
           class="input"
           bind:value={user}
           onblur={guessFromUser}
-          placeholder="voce@exemplo.com"
+          placeholder={t("voce@exemplo.com")}
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
@@ -358,33 +356,33 @@
         />
       </div>
       <div class="field">
-        <label for="ml-pass">{gmail ? "Senha de app" : "Senha"}</label>
+        <label for="ml-pass">{gmail ? t("Senha de app") : t("Senha")}</label>
         <input
           id="ml-pass"
           class="input"
           type="password"
           bind:value={password}
           autocomplete="off"
-          placeholder={needsPassword ? "" : "Guardada; digite só para trocar"}
+          placeholder={needsPassword ? "" : t("Guardada; digite só para trocar")}
         />
       </div>
       {#if !gmail}
         <fieldset>
-          <legend>Conexão segura</legend>
+          <legend>{t("Conexão segura")}</legend>
           <div class="segmented">
             <label class:selected={!starttls}>
               <input type="radio" name="ml-sec" checked={!starttls} onchange={() => chooseSecurity(false)} class="sr-only" />
-              TLS (porta 993)
+              {t("TLS (porta 993)")}
             </label>
             <label class:selected={starttls}>
               <input type="radio" name="ml-sec" checked={starttls} onchange={() => chooseSecurity(true)} class="sr-only" />
-              STARTTLS (porta 143)
+              {t("STARTTLS (porta 143)")}
             </label>
           </div>
           <p class="note">
             {starttls
-              ? "Para provedores sem TLS direto. Se o servidor não aceitar STARTTLS, o Papeo não conecta: a senha nunca vai sem criptografia."
-              : "O comum. Use os dados de IMAP do seu provedor."}
+              ? t("Para provedores sem TLS direto. Se o servidor não aceitar STARTTLS, o Papeo não conecta: a senha nunca vai sem criptografia.")
+              : t("O comum. Use os dados de IMAP do seu provedor.")}
           </p>
         </fieldset>
       {/if}
@@ -392,65 +390,64 @@
     {/if}
 
     {#if gmail}
-      <section aria-label="Contador">
+      <section aria-label={t("Contador")}>
         <div class="toggle">
           <div>
-            <span class="toggle-label">Contar a Caixa de Entrada inteira</span>
+            <span class="toggle-label">{t("Contar a Caixa de Entrada inteira")}</span>
             <p class="note">
               {wholeInbox
-                ? "Conta e avisa de tudo o que chega à Caixa de Entrada, inclusive Promoções e Social."
-                : "Desligado, conta e avisa só da aba Principal, como o site. Ligue se você não usa as abas do Gmail."}
+                ? t("Conta e avisa de tudo o que chega à Caixa de Entrada, inclusive Promoções e Social.")
+                : t("Desligado, conta e avisa só da aba Principal, como o site. Ligue se você não usa as abas do Gmail.")}
             </p>
           </div>
           <Switch
             checked={wholeInbox}
-            label="Contar a Caixa de Entrada inteira"
+            label={t("Contar a Caixa de Entrada inteira")}
             onchange={(v) => (wholeInbox = v)}
           />
         </div>
       </section>
     {/if}
 
-    <section aria-label="Site">
+    <section aria-label={t("Site")}>
       <div class="toggle">
         <div>
-          <span class="toggle-label">Hibernar o site enquanto o IMAP avisa</span>
+          <span class="toggle-label">{t("Hibernar o site enquanto o IMAP avisa")}</span>
           <p class="note">
-            Gasta bem menos memória. O site abre quando você clicar na conta ou num aviso. Se o IMAP cair, o site
-            volta a avisar.
+            {t("Gasta bem menos memória. O site abre quando você clicar na conta ou num aviso. Se o IMAP cair, o site volta a avisar.")}
           </p>
         </div>
-        <Switch checked={sleepSite} label="Hibernar o site enquanto o IMAP avisa" onchange={(v) => (sleepSite = v)} />
+        <Switch checked={sleepSite} label={t("Hibernar o site enquanto o IMAP avisa")} onchange={(v) => (sleepSite = v)} />
       </div>
     </section>
 
     {#if configured}
-      <section aria-label="Assinatura">
+      <section aria-label={t("Assinatura")}>
         <label class="signature">
-          <span class="toggle-label">Assinatura</span>
-          <textarea class="input" bind:value={signature} rows="3" maxlength="2000" placeholder="Ana Souza&#10;Loja Exemplo · (11) 0000-0000"></textarea>
-          <span class="note">Entra nas mensagens escritas no leitor do Papeo, acima do texto citado. Dá para apagar antes de enviar.</span>
+          <span class="toggle-label">{t("Assinatura")}</span>
+          <textarea class="input" bind:value={signature} rows="3" maxlength="2000" placeholder={t("Ana Souza\nLoja Exemplo · (11) 0000-0000")}></textarea>
+          <span class="note">{t("Entra nas mensagens escritas no leitor do Papeo, acima do texto citado. Dá para apagar antes de enviar.")}</span>
         </label>
       </section>
     {/if}
 
     <p class="privacy">
-      {microsoft ? "O acesso" : "A senha"} fica só neste computador, fora do backup e da sincronização. O Papeo lê só o
-      remetente e o assunto dos e-mails novos e não marca nada como lido.
+      {microsoft ? t("O acesso fica só neste computador, fora do backup e da sincronização.") : t("A senha fica só neste computador, fora do backup e da sincronização.")}
+      {t("O Papeo lê só o remetente e o assunto dos e-mails novos e não marca nada como lido.")}
     </p>
 
     <div class="footer">
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="actions">
         {#if configured}
-          <button type="button" class="btn danger-text" disabled={busy} onclick={turnOff}>Desligar</button>
+          <button type="button" class="btn danger-text" disabled={busy} onclick={turnOff}>{t("Desligar")}</button>
         {/if}
         <span class="spacer"></span>
-        <button type="button" class="btn" onclick={onclose}>{(microsoft ? !canSave : saved && !dirty) ? "Fechar" : "Cancelar"}</button>
+        <button type="button" class="btn" onclick={onclose}>{(microsoft ? !canSave : saved && !dirty) ? t("Fechar") : t("Cancelar")}</button>
         <!-- Outlook: o login já liga tudo; Salvar só para o site hibernado. -->
         {#if !microsoft || canSave}
           <button type="submit" class="btn btn-primary" disabled={!canSave}>
-            {busy && !signingIn ? "Salvando…" : configured ? "Salvar" : "Ligar"}
+            {busy && !signingIn ? t("Salvando…") : configured ? t("Salvar") : t("Ligar")}
           </button>
         {/if}
       </div>

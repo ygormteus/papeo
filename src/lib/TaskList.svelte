@@ -16,6 +16,7 @@
   import { ChevronDown, ChevronRight } from "@lucide/svelte";
   import type { Organizer, ServiceView } from "./api";
   import TaskItem from "./TaskItem.svelte";
+  import { t } from "./i18n.svelte";
   import { GROUP_LABEL, contactOf, groupTasks } from "./tasks";
 
   let {
@@ -26,7 +27,7 @@
     now,
     showContact = true,
     headings = true,
-    empty = "Nenhuma tarefa.",
+    empty,
   }: {
     tasks: Task[];
     org: Organizer;
@@ -43,18 +44,18 @@
 </script>
 
 {#if !groups.length}
-  <p class="empty">{empty}</p>
+  <p class="empty">{empty ?? t("Nenhuma tarefa.")}</p>
 {/if}
 {#each groups as g (g.group)}
   <section class="group">
     {#if g.group === "done"}
       <button class="heading toggle" onclick={() => (showDone = !showDone)} aria-expanded={showDone}>
         {#if showDone}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
-        {GROUP_LABEL.done} <span class="count">{g.tasks.length}</span>
+        {t(GROUP_LABEL.done)} <span class="count">{g.tasks.length}</span>
       </button>
     {:else if headings}
       <h3 class="heading" class:late={g.group === "overdue"}>
-        {GROUP_LABEL[g.group]} <span class="count">{g.tasks.length}</span>
+        {t(GROUP_LABEL[g.group])} <span class="count">{g.tasks.length}</span>
       </h3>
     {/if}
     {#if g.group !== "done" || showDone}

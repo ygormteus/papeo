@@ -2,6 +2,7 @@
   import { Check, CirclePlus, X } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
+  import { t } from "./i18n.svelte";
   import {
     KIND_META,
     MAIL_PRESETS,
@@ -55,12 +56,12 @@
     e.preventDefault();
     if (kind === "email") {
       if (!addressOk) {
-        error = "Informe o endereço de e-mail.";
+        error = t("Informe o endereço de e-mail.");
         return;
       }
       const site = url.trim() || webmailFor(address, preset);
       if (!site) {
-        error = "Informe o endereço do webmail.";
+        error = t("Informe o endereço do webmail.");
         return;
       }
       busy = true;
@@ -77,7 +78,7 @@
       return;
     }
     if (needsUrl(kind) && !url.trim()) {
-      error = "Informe o endereço do site.";
+      error = t("Informe o endereço do site.");
       return;
     }
     busy = true;
@@ -98,20 +99,20 @@
   }
 </script>
 
-<Modal {onclose} label="Adicionar serviço" width={600} flush>
+<Modal {onclose} label={t("Adicionar serviço")} width={600} flush>
   <form onsubmit={submit}>
     <header class="head">
       <span class="head-icon" aria-hidden="true"><CirclePlus size={20} /></span>
       <div class="head-text">
-        <h2>Adicionar serviço</h2>
-        <p>Cada serviço tem sessão própria: dá para ter duas contas do mesmo mensageiro.</p>
+        <h2>{t("Adicionar serviço")}</h2>
+        <p>{t("Cada serviço tem sessão própria: dá para ter duas contas do mesmo mensageiro.")}</p>
       </div>
-      <button type="button" class="close" onclick={onclose} aria-label="Fechar"><X size={18} /></button>
+      <button type="button" class="close" onclick={onclose} aria-label={t("Fechar")}><X size={18} /></button>
     </header>
 
     <div class="content">
     <fieldset class="kinds">
-      <legend class="sr-only">Tipo de serviço</legend>
+      <legend class="sr-only">{t("Tipo de serviço")}</legend>
       {#each kinds as k (k)}
         <label class="kind" class:selected={kind === k}>
           <!-- svelte-ignore a11y_autofocus -->
@@ -125,15 +126,15 @@
           />
           <ServiceAvatar service={{ kind: k }} size={30} />
           {#if kind === k}<span class="check" aria-hidden="true"><Check size={12} strokeWidth={3} /></span>{/if}
-          <span class="kind-label">{KIND_META[k].label}</span>
-          <span class="kind-hint">{KIND_META[k].hint}</span>
+          <span class="kind-label">{t(KIND_META[k].label)}</span>
+          <span class="kind-hint">{t(KIND_META[k].hint)}</span>
         </label>
       {/each}
     </fieldset>
 
     {#if kind === "email"}
       <div class="field">
-        <label for="svc-address">Seu e-mail</label>
+        <label for="svc-address">{t("Seu e-mail")}</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           id="svc-address"
@@ -141,28 +142,28 @@
           type="email"
           bind:value={address}
           oninput={guessPreset}
-          placeholder="voce@seudominio.com.br"
+          placeholder={t("voce@seudominio.com.br")}
           autocomplete="email"
           autofocus
         />
       </div>
       <div class="field">
-        <label for="svc-preset">Provedor</label>
+        <label for="svc-preset">{t("Provedor")}</label>
         <select
           id="svc-preset"
           class="input"
           bind:value={presetId}
           onchange={() => (presetTouched = true)}
         >
-          <option value="">Outro (informo o servidor IMAP)</option>
+          <option value="">{t("Outro (informo o servidor IMAP)")}</option>
           {#each MAIL_PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
         </select>
         <p class="note">
-          {preset?.note ?? "O Papeo lê e envia pelo IMAP, sem abrir o site. A senha vem no próximo passo."}
+          {preset?.note ? t(preset.note) : t("O Papeo lê e envia pelo IMAP, sem abrir o site. A senha vem no próximo passo.")}
         </p>
       </div>
       <div class="field">
-        <label for="svc-url">Webmail <span class="muted">(opcional, para abrir no site)</span></label>
+        <label for="svc-url">{t("Webmail")} <span class="muted">{t("(opcional, para abrir no site)")}</span></label>
         <input
           id="svc-url"
           class="input"
@@ -173,68 +174,65 @@
       </div>
     {:else if needsUrl(kind)}
       <div class="field">
-        <label for="svc-url">Endereço</label>
+        <label for="svc-url">{t("Endereço")}</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           id="svc-url"
           class="input"
           bind:value={url}
-          placeholder="app.exemplo.com"
+          placeholder={t("app.exemplo.com")}
           autofocus
         />
         {#if url.trim().toLowerCase().startsWith("http://")}
           <p class="warn" role="note">
-            Endereço sem criptografia (http): mensagens e senhas podem ser lidas por quem estiver na mesma
-            rede. Prefira https.
+            {t("Endereço sem criptografia (http): mensagens e senhas podem ser lidas por quem estiver na mesma rede. Prefira https.")}
           </p>
         {/if}
       </div>
     {:else if kind === "outlook"}
       <fieldset class="account">
-        <legend>Tipo de conta</legend>
+        <legend>{t("Tipo de conta")}</legend>
         <label class="choice">
           <input type="radio" name="outlook-account" value={false} bind:group={outlookWork} />
-          <span>Pessoal <span class="muted">(Outlook.com, Hotmail, Live)</span></span>
+          <span>{t("Pessoal")} <span class="muted">{t("(Outlook.com, Hotmail, Live)")}</span></span>
         </label>
         <label class="choice">
           <input type="radio" name="outlook-account" value={true} bind:group={outlookWork} />
-          <span>Trabalho ou escola <span class="muted">(Microsoft 365)</span></span>
+          <span>{t("Trabalho ou escola")} <span class="muted">{t("(Microsoft 365)")}</span></span>
         </label>
       </fieldset>
       <p class="note">
-        Para receber avisos de e-mails novos, ligue no Outlook: Configurações → Geral → Notificações →
-        Notificações da área de trabalho.
+        {t("Para receber avisos de e-mails novos, ligue no Outlook: Configurações → Geral → Notificações → Notificações da área de trabalho.")}
       </p>
     {:else if kind === "teams"}
       <fieldset class="account">
-        <legend>Tipo de conta</legend>
+        <legend>{t("Tipo de conta")}</legend>
         <label class="choice">
           <input type="radio" name="teams-account" value={false} bind:group={teamsPersonal} />
-          <span>Trabalho ou escola <span class="muted">(Microsoft 365)</span></span>
+          <span>{t("Trabalho ou escola")} <span class="muted">{t("(Microsoft 365)")}</span></span>
         </label>
         <label class="choice">
           <input type="radio" name="teams-account" value={true} bind:group={teamsPersonal} />
-          <span>Pessoal <span class="muted">(Teams gratuito)</span></span>
+          <span>{t("Pessoal")} <span class="muted">{t("(Teams gratuito)")}</span></span>
         </label>
       </fieldset>
     {:else if kind === "gmail"}
       <p class="note">
-        Para receber avisos de e-mails novos, ligue no Gmail: Configurações → Ver todas as configurações →
-        Notificações da área de trabalho.
+        {t("Para receber avisos de e-mails novos, ligue no Gmail: Configurações → Ver todas as configurações → Notificações da área de trabalho.")}
       </p>
     {/if}
 
     <div class="field">
-      <label for="svc-name">Nome <span class="muted">(opcional)</span></label>
+      <label for="svc-name">{t("Nome")} <span class="muted">{t("(opcional)")}</span></label>
       <input
         id="svc-name"
         class="input"
         bind:value={name}
         placeholder={kind === "custom"
-          ? "Ex.: Slack da empresa"
+          ? t("Ex.: Slack da empresa")
           : kind === "email"
-            ? "Ex.: E-mail da empresa"
-            : `Ex.: ${KIND_META[kind].label} trabalho`}
+            ? t("Ex.: E-mail da empresa")
+            : t("Ex.: {tipo} trabalho", { tipo: t(KIND_META[kind].label) })}
       />
     </div>
 
@@ -242,8 +240,8 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="btn" onclick={onclose}>Cancelar</button>
-      <button type="submit" class="btn btn-primary" disabled={busy}>{busy ? "Adicionando…" : "Adicionar"}</button>
+      <button type="button" class="btn" onclick={onclose}>{t("Cancelar")}</button>
+      <button type="submit" class="btn btn-primary" disabled={busy}>{busy ? t("Adicionando…") : t("Adicionar")}</button>
     </div>
   </form>
 </Modal>

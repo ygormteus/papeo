@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { locale, t } from "./i18n.svelte";
   import {
     X,
     LayoutList,
@@ -67,7 +68,7 @@
   const IDLE_MINUTES = 10;
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  const greeting = $derived(hour < 12 ? t("Bom dia") : hour < 18 ? t("Boa tarde") : t("Boa noite"));
 
   const memory = $derived(home.memory);
   const silence = $derived(snap.silenceSummary);
@@ -75,18 +76,18 @@
   function clockOf(unix: number) {
     const d = new Date(unix * 1000);
     const same = d.toDateString() === new Date().toDateString();
-    return d.toLocaleString("pt-BR", same ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleString(locale(), same ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
   }
 
   const servicesSummary = $derived.by(() => {
     const n = snap.services.length;
-    const parts = [`${n} ${n === 1 ? "conta" : "contas"}`];
+    const parts = [n === 1 ? t("{n} conta", { n }) : t("{n} contas", { n })];
     if (memory) {
       const total = Object.values(memory.services).reduce((a, b) => a + b, 0);
       if (total > 0) parts.push(formatBytes(total));
     }
     const unread = snap.services.reduce((a, s) => a + s.unread, 0);
-    if (unread > 0) parts.push(`${unread} ${unread === 1 ? "não lida" : "não lidas"}`);
+    if (unread > 0) parts.push(unread === 1 ? t("{n} não lida", { n: unread }) : t("{n} não lidas", { n: unread }));
     return parts.join(" · ");
   });
 
@@ -125,8 +126,10 @@
 
   /** "parado há 25 min", "parado há 3 h" ou, sem uso nesta sessão, "sem uso desde que o Papeo abriu". */
   function idleLabel(minutes: number | null | undefined): string {
-    if (minutes == null) return "sem uso desde que o Papeo abriu";
-    return minutes < 60 ? `parado há ${minutes} min` : `parado há ${Math.floor(minutes / 60)} h`;
+    if (minutes == null) return t("sem uso desde que o Papeo abriu");
+    return minutes < 60
+      ? t("parado há {n} min", { n: minutes })
+      : t("parado há {n} h", { n: Math.floor(minutes / 60) });
   }
 
   function suggestHibernate(service: ServiceView): boolean {
@@ -160,9 +163,9 @@
           key: `out-${s.id}`,
           tone: "warn",
           service: s,
-          title: `${s.name} saiu da conta`,
-          text: "as mensagens não chegam até você entrar de novo.",
-          action: "Entrar de novo",
+          title: t("{nome} saiu da conta", { nome: s.name }),
+          text: t("as mensagens não chegam até você entrar de novo."),
+          action: t("Entrar de novo"),
           icon: LogIn,
           onclick: () => onopen(s.id),
         });
@@ -171,9 +174,9 @@
           key: `stuck-${s.id}`,
           tone: "danger",
           service: s,
-          title: `${s.name} não está respondendo`,
-          text: "recarregar costuma resolver (o login continua).",
-          action: reloading[s.id] ? "Recarregando…" : "Recarregar",
+          title: t("{nome} não está respondendo", { nome: s.name }),
+          text: t("recarregar costuma resolver (o login continua)."),
+          action: reloading[s.id] ? t("Recarregando…") : t("Recarregar"),
           icon: RotateCw,
           busy: reloading[s.id],
           onclick: () => freeMemory([s.id]),
@@ -183,9 +186,9 @@
           key: `heavy-${s.id}`,
           tone: "info",
           service: s,
-          title: `${s.name} está usando ${formatBytes(memory?.services[s.id] ?? 0)}`,
-          text: `${idleLabel(s.idleMinutes)}; recarregar libera (as notificações continuam).`,
-          action: "Liberar memória",
+          title: t("{nome} está usando {memoria}", { nome: s.name, memoria: formatBytes(memory?.services[s.id] ?? 0) }),
+          text: t("{parado}; recarregar libera (as notificações continuam).", { parado: idleLabel(s.idleMinutes) }),
+          action: t("Liberar memória"),
           icon: RotateCw,
           onclick: () => freeMemory([s.id]),
         });
@@ -206,10 +209,11 @@
   const mailUnread = $derived(mailboxes.reduce((a, s) => a + s.unread, 0));
 
   function mailState(s: ServiceView): string {
-    if (s.status === "loggedOut") return "Desconectado: abra para entrar";
-    if (!s.loaded) return "Hibernado: abra para atualizar";
-    if (s.chat) return `Aberto: ${s.chat}`;
-    return s.unread ? `${s.unread} ${s.unread === 1 ? "não lida" : "não lidas"}` : "Nenhuma não lida";
+    if (s.status === "loggedOut") return t("Desconectado: abra para entrar");
+    if (!s.loaded) return t("Hibernado: abra para atualizar");
+    if (s.chat) return t("Aberto: {nome}", { nome: s.chat });
+    if (!s.unread) return t("Nenhuma não lida");
+    return s.unread === 1 ? t("{n} não lida", { n: s.unread }) : t("{n} não lidas", { n: s.unread });
   }
 
   const closeServices = () => (home.servicesOpen = false);
@@ -233,13 +237,13 @@
   <div class="head">
     <div>
       <h1>{greeting}!</h1>
-      <p class="sub">Seus mensageiros num só lugar, sem pesar no computador.</p>
+      <p class="sub">{t("Seus mensageiros num só lugar, sem pesar no computador.")}</p>
     </div>
-    <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> Adicionar serviço</button>
+    <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> {t("Adicionar serviço")}</button>
   </div>
 
   {#if alerts.length}
-    <section class="alerts" aria-label="Precisa de atenção">
+    <section class="alerts" aria-label={t("Precisa de atenção")}>
       {#each alerts as alert (alert.key)}
         <div class="alert {alert.tone}" role="status">
           <ServiceAvatar service={alert.service} size={20} />
@@ -258,13 +262,15 @@
   {#if silence}
     <section class="card block" aria-labelledby="silence-title">
       <div class="block-head">
-        <h2 id="silence-title"><MoonStar size={18} /> Enquanto você estava em silêncio</h2>
-        <button class="icon-btn ghost" onclick={() => run(api.dismissSilenceSummary())} aria-label="Fechar o resumo" title="Fechar">
+        <h2 id="silence-title"><MoonStar size={18} /> {t("Enquanto você estava em silêncio")}</h2>
+        <button class="icon-btn ghost" onclick={() => run(api.dismissSilenceSummary())} aria-label={t("Fechar o resumo")} title={t("Fechar")}>
           <X size={16} />
         </button>
       </div>
       <p class="silence-head">
-        {silence.total} {silence.total === 1 ? "mensagem" : "mensagens"} entre {clockOf(silence.since)} e {clockOf(silence.until)}
+        {silence.total === 1
+          ? t("{n} mensagem entre {de} e {ate}", { n: silence.total, de: clockOf(silence.since), ate: clockOf(silence.until) })
+          : t("{n} mensagens entre {de} e {ate}", { n: silence.total, de: clockOf(silence.since), ate: clockOf(silence.until) })}
       </p>
       <ul class="silenced">
         {#each silence.accounts as a (a.serviceId)}
@@ -273,12 +279,12 @@
             <li>
               <ServiceAvatar service={s} size={26} dimmed={!s.loaded} />
               <span class="silenced-text">
-                <span class="svc-name">{s.name} · {a.count} {a.count === 1 ? "mensagem" : "mensagens"}</span>
+                <span class="svc-name">{a.count === 1 ? t("{nome} · {n} mensagem", { nome: s.name, n: a.count }) : t("{nome} · {n} mensagens", { nome: s.name, n: a.count })}</span>
                 {#if a.chats.length}
                   <span class="chats">
                     {#each a.chats as chat (chat)}
                       {#if s.kind === "whatsapp" || s.kind === "telegram"}
-                        <button class="chip" onclick={() => onchat(s.id, chat)} title="Abrir {chat}">{chat}</button>
+                        <button class="chip" onclick={() => onchat(s.id, chat)} title={t("Abrir {nome}", { nome: chat })}>{chat}</button>
                       {:else}
                         <span class="chip plain">{chat}</span>
                       {/if}
@@ -286,7 +292,7 @@
                   </span>
                 {/if}
               </span>
-              <button class="btn small" onclick={() => onopen(s.id)} aria-label="Abrir {s.name}">Abrir</button>
+              <button class="btn small" onclick={() => onopen(s.id)} aria-label={t("Abrir {nome}", { nome: s.name })}>{t("Abrir")}</button>
             </li>
           {/if}
         {/each}
@@ -299,8 +305,8 @@
   {#if mailboxes.length}
     <section class="card block" aria-labelledby="mail-title">
       <div class="block-head">
-        <h2 id="mail-title"><Mail size={18} /> E-mail</h2>
-        {#if mailUnread}<span class="hint">{mailUnread} {mailUnread === 1 ? "não lida" : "não lidas"}</span>{/if}
+        <h2 id="mail-title"><Mail size={18} /> {t("E-mail")}</h2>
+        {#if mailUnread}<span class="hint">{mailUnread === 1 ? t("{n} não lida", { n: mailUnread }) : t("{n} não lidas", { n: mailUnread })}</span>{/if}
       </div>
       <ul class="mailboxes">
         {#each mailboxes as s (s.id)}
@@ -313,7 +319,7 @@
               </span>
             </span>
             {#if s.unread && s.loaded}<span class="count-badge" aria-hidden="true">{s.unread}</span>{/if}
-            <button class="btn small" onclick={() => onopen(s.id)} aria-label="Abrir {s.name}">Abrir</button>
+            <button class="btn small" onclick={() => onopen(s.id)} aria-label={t("Abrir {nome}", { nome: s.name })}>{t("Abrir")}</button>
           </li>
         {/each}
       </ul>
@@ -323,16 +329,16 @@
   {#if snap.recent.length}
     <section class="card block" aria-labelledby="recent-title">
       <div class="block-head">
-        <h2 id="recent-title"><MessagesSquare size={18} /> Conversas recentes</h2>
-        <div class="segmented" role="group" aria-label="Mostrar conversas">
-          <button aria-pressed={!unreadOnly} onclick={() => setUnreadOnly(false)}>Todas</button>
+        <h2 id="recent-title"><MessagesSquare size={18} /> {t("Conversas recentes")}</h2>
+        <div class="segmented" role="group" aria-label={t("Mostrar conversas")}>
+          <button aria-pressed={!unreadOnly} onclick={() => setUnreadOnly(false)}>{t("Todas")}</button>
           <button aria-pressed={unreadOnly} onclick={() => setUnreadOnly(true)}>
-            Não lidas{#if unreadChats.length}<span class="count">{unreadChats.length}</span>{/if}
+            {t("Não lidas")}{#if unreadChats.length}<span class="count">{unreadChats.length}</span>{/if}
           </button>
         </div>
       </div>
       {#if shownChats.length === 0}
-        <p class="empty-note">Nenhuma conversa não lida. Conversas lidas no WhatsApp, aqui ou no celular, saem desta lista.</p>
+        <p class="empty-note">{t("Nenhuma conversa não lida. Conversas lidas no WhatsApp, aqui ou no celular, saem desta lista.")}</p>
       {/if}
       <RecentChats
         chats={shownChats}
@@ -351,11 +357,11 @@
   {#if snap.services.length === 0}
     <section class="card block" aria-labelledby="services-title">
       <div class="block-head">
-        <h2 id="services-title">Serviços</h2>
+        <h2 id="services-title">{t("Serviços")}</h2>
       </div>
       <div class="empty">
-        <p>Nenhum serviço configurado.</p>
-        <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> Adicionar o primeiro</button>
+        <p>{t("Nenhum serviço configurado.")}</p>
+        <button class="btn btn-primary" onclick={onadd}><Plus size={16} /> {t("Adicionar o primeiro")}</button>
       </div>
     </section>
   {/if}
@@ -363,10 +369,10 @@
   {#if snap.downloads.length > 0}
     <section class="card block" aria-labelledby="dl-title">
       <div class="block-head">
-        <h2 id="dl-title">Downloads recentes</h2>
+        <h2 id="dl-title">{t("Downloads recentes")}</h2>
         <div class="head-actions">
-          <button class="btn small" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={15} /> Abrir pasta</button>
-          <button class="btn small" onclick={() => run(api.clearDownloads())}>Limpar lista</button>
+          <button class="btn small" onclick={() => run(api.openDownloadsDir())}><FolderOpen size={15} /> {t("Abrir pasta")}</button>
+          <button class="btn small" onclick={() => run(api.clearDownloads())}>{t("Limpar lista")}</button>
         </div>
       </div>
       <ul class="downloads">
@@ -376,11 +382,11 @@
             {#if svc}<ServiceAvatar service={svc} size={22} />{/if}
             <span class="file">{d.fileName}</span>
             {#if d.state === "downloading"}
-              <span class="pill">Baixando…</span>
+              <span class="pill">{t("Baixando…")}</span>
             {:else if d.state === "failed"}
-              <span class="pill pill-danger">Falhou</span>
+              <span class="pill pill-danger">{t("Falhou")}</span>
             {:else}
-              <button class="btn small" onclick={() => run(api.revealDownload(d.id))}>Mostrar na pasta</button>
+              <button class="btn small" onclick={() => run(api.revealDownload(d.id))}>{t("Mostrar na pasta")}</button>
             {/if}
           </li>
         {/each}
@@ -390,12 +396,12 @@
 </div>
 
 {#if home.servicesOpen && snap.services.length}
-  <Modal onclose={closeServices} label="Serviços" width={1040} flush>
+  <Modal onclose={closeServices} label={t("Serviços")} width={1040} flush>
     <div class="services">
       <header class="services-head">
         <span class="services-icon" aria-hidden="true"><LayoutList size={20} /></span>
         <div class="services-title">
-          <h2>Serviços</h2>
+          <h2>{t("Serviços")}</h2>
           <p>{servicesSummary}</p>
         </div>
         <button
@@ -405,21 +411,21 @@
             onadd();
           }}
         >
-          <Plus size={15} /> Adicionar serviço
+          <Plus size={15} /> {t("Adicionar serviço")}
         </button>
-        <button class="close" onclick={closeServices} aria-label="Fechar"><X size={18} /></button>
+        <button class="close" onclick={closeServices} aria-label={t("Fechar")}><X size={18} /></button>
       </header>
       <div class="table-wrap" id="services-body">
       <table>
         <thead>
           <tr>
-            <th>Serviço</th>
-            <th>Estado</th>
-            <th class="num">Memória</th>
-            <th class="num c-unread">Não lidas</th>
-            <th class="c-notif">Notificações</th>
-            <th class="c-hib">Hibernar após</th>
-            <th><span class="sr-only">Ações</span></th>
+            <th>{t("Serviço")}</th>
+            <th>{t("Estado")}</th>
+            <th class="num">{t("Memória")}</th>
+            <th class="num c-unread">{t("Não lidas")}</th>
+            <th class="c-notif">{t("Notificações")}</th>
+            <th class="c-hib">{t("Hibernar após")}</th>
+            <th><span class="sr-only">{t("Ações")}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -443,10 +449,10 @@
                   class:pill-warn={service.status === "loggedOut"}
                   class:pill-danger={service.status === "unresponsive"}
                 >
-                  {STATUS_LABEL[service.status]}
+                  {t(STATUS_LABEL[service.status])}
                 </span>
                 {#if service.mailStatus?.state === "ok"}
-                  <span class="suggest-note">Avisos por IMAP</span>
+                  <span class="suggest-note">{t("Avisos por IMAP")}</span>
                 {/if}
               </td>
               <td class="num">
@@ -463,30 +469,30 @@
               <td class="c-notif">
                 <Switch
                   checked={!isMuted(service)}
-                  label="Notificações de {service.name}"
+                  label={t("Notificações de {nome}", { nome: service.name })}
                   onchange={(enabled) => run(api.setNotifications(service.id, enabled))}
                 />
               </td>
               <td class="c-hib">
                 <select
                   class="select"
-                  aria-label="Hibernar {service.name} após"
+                  aria-label={t("Hibernar {nome} após", { nome: service.name })}
                   value={service.hibernateAfterMinutes}
                   onchange={(e) => run(api.setHibernation(service.id, Number(e.currentTarget.value)))}
                 >
                   {#each HIBERNATE_OPTIONS as opt (opt.minutes)}
-                    <option value={opt.minutes}>{opt.label}</option>
+                    <option value={opt.minutes}>{t(opt.label)}</option>
                   {/each}
                 </select>
               </td>
               <td>
                 <div class="actions">
-                  <button class="btn c-open" onclick={() => openFromList(service.id)}>Abrir</button>
+                  <button class="btn c-open" onclick={() => openFromList(service.id)}>{t("Abrir")}</button>
                   <button
                     class="icon-btn"
                     onclick={() => oncustomize(service)}
-                    title="Personalizar"
-                    aria-label="Personalizar {service.name}"
+                    title={t("Personalizar")}
+                    aria-label={t("Personalizar {nome}", { nome: service.name })}
                   >
                     <Palette size={16} />
                   </button>
@@ -495,16 +501,16 @@
                     class:attention={suggest}
                     disabled={!service.loaded}
                     onclick={() => run(api.hibernate(service.id))}
-                    title={suggest ? "Sugestão: hibernar para liberar memória" : "Hibernar agora"}
-                    aria-label="Hibernar {service.name} agora"
+                    title={suggest ? t("Sugestão: hibernar para liberar memória") : t("Hibernar agora")}
+                    aria-label={t("Hibernar {nome} agora", { nome: service.name })}
                   >
                     <Snowflake size={16} />
                   </button>
                   <button
                     class="icon-btn danger"
                     onclick={() => onremove(service)}
-                    title="Remover"
-                    aria-label="Remover {service.name}"
+                    title={t("Remover")}
+                    aria-label={t("Remover {nome}", { nome: service.name })}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -517,11 +523,11 @@
       </div>
       <footer class="services-foot">
         {#if snap.services.some(suggestHibernate)}
-          <p class="tip"><TriangleAlert size={15} /> Destacados: pesados e parados. Hiberne para liberar memória.</p>
+          <p class="tip"><TriangleAlert size={15} /> {t("Destacados: pesados e parados. Hiberne para liberar memória.")}</p>
         {:else}
-          <span>Clique no nome para abrir a conta.</span>
+          <span>{t("Clique no nome para abrir a conta.")}</span>
         {/if}
-        <span>Arraste na barra lateral para reordenar · botão direito para mais opções</span>
+        <span>{t("Arraste na barra lateral para reordenar · botão direito para mais opções")}</span>
       </footer>
     </div>
   </Modal>

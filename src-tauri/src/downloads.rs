@@ -3,6 +3,7 @@
 use crate::state::{
     now_secs, publish, AppState, DownloadEntry, DownloadState, DOWNLOAD_EVENT, UI_WEBVIEW,
 };
+use papeo_core::i18n::tr;
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::webview::DownloadEvent;
@@ -151,14 +152,14 @@ pub fn handle(webview: &Webview, event: DownloadEvent<'_>) -> bool {
                 let body = if show_name {
                     file_name
                 } else if success {
-                    "Arquivo salvo na pasta de downloads.".to_owned()
+                    tr("Arquivo salvo na pasta de downloads.").to_owned()
                 } else {
-                    "Não foi possível baixar o arquivo.".to_owned()
+                    tr("Não foi possível baixar o arquivo.").to_owned()
                 };
                 let title = if success {
-                    "Download concluído"
+                    tr("Download concluído")
                 } else {
-                    "Download falhou"
+                    tr("Download falhou")
                 };
                 let _ = app.notification().builder().title(title).body(body).show();
             }
@@ -177,5 +178,5 @@ pub fn path_of(app: &AppHandle, id: u64) -> Result<PathBuf, String> {
         .iter()
         .find(|d| d.id == id)
         .map(|d| d.path.clone())
-        .ok_or_else(|| "Download não encontrado.".to_owned())
+        .ok_or_else(|| tr("Download não encontrado.").to_owned())
 }

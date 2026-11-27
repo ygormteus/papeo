@@ -59,6 +59,8 @@ pub struct Settings {
     /// Resumo do que chegou durante o não perturbe ou o horário silencioso
     /// (spec 17).
     pub silence_summary: bool,
+    /// Idioma da interface (spec 20): o do sistema, português ou inglês.
+    pub language: crate::i18n::Language,
 }
 
 /// Esperas aceitas para desfazer o envio de e-mail, em segundos.
@@ -369,6 +371,7 @@ impl Default for Settings {
             diagnostics: false,
             mail_undo_secs: MAIL_UNDO_DEFAULT,
             silence_summary: true,
+            language: crate::i18n::Language::System,
         }
     }
 }
@@ -556,6 +559,7 @@ mod tests {
         assert!(!old.diagnostics);
         assert_eq!(old.mail_undo_secs, MAIL_UNDO_DEFAULT);
         assert!(old.silence_summary);
+        assert_eq!(old.language, crate::i18n::Language::System);
         let odd: Settings = serde_json::from_str(r#"{"mailUndoSecs":7}"#).unwrap();
         assert_eq!(odd.sanitized().mail_undo_secs, MAIL_UNDO_DEFAULT);
         let off: Settings = serde_json::from_str(r#"{"mailUndoSecs":0}"#).unwrap();

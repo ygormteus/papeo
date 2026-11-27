@@ -6,6 +6,7 @@
   import TaskList, { type TaskActions } from "./TaskList.svelte";
   import { contactFor, tasksFor } from "./tasks";
   import { isEmail, isMessenger } from "./api";
+  import { t } from "./i18n.svelte";
 
   let {
     service,
@@ -28,7 +29,7 @@
   const messenger = $derived(isMessenger(service));
   const email = $derived(isEmail(service));
   const chat = $derived(messenger || email ? (service.chat ?? "") : "");
-  const noneOpen = $derived(email ? "Nenhum e-mail aberto" : "Nenhuma conversa aberta");
+  const noneOpen = $derived(email ? t("Nenhum e-mail aberto") : t("Nenhuma conversa aberta"));
   const link = $derived<ChatLink>({ serviceId: service.id, chat });
   const key = $derived(`${service.id}\u0000${chat}`);
   const title = $derived(chat || service.name);
@@ -103,26 +104,26 @@
 <!-- Janela perdeu o foco (o bloqueio automático vem depois): grava já. -->
 <svelte:window onblur={flush} />
 
-<aside class="panel" aria-label="Tarefas e anotações de {title}">
+<aside class="panel" aria-label={t("Tarefas e anotações de {titulo}", { titulo: title })}>
   <header>
     <NotebookPen size={16} />
     <div class="titles">
       <strong title={title}>{title}</strong>
-      <span>{chat ? service.name : messenger || email ? noneOpen : "Conta inteira"}</span>
+      <span>{chat ? service.name : messenger || email ? noneOpen : t("Conta inteira")}</span>
     </div>
-    <button class="icon-btn ghost close" onclick={onclose} aria-label="Fechar o painel">
+    <button class="icon-btn ghost close" onclick={onclose} aria-label={t("Fechar o painel")}>
       <X size={16} />
     </button>
   </header>
 
   <div class="scroll">
     {#if messenger && !chat}
-      <p class="hint">Abra uma conversa para ligar tarefas e anotações a ela. Aqui ficam as da conta.</p>
+      <p class="hint">{t("Abra uma conversa para ligar tarefas e anotações a ela. Aqui ficam as da conta.")}</p>
     {:else if email && !chat}
       <p class="hint">
-        Abra um e-mail para ligar tarefas e anotações a ele{service.kind === "email"
-          ? " (no Roundcube; em outros webmails, ficam na conta)"
-          : ""}. Aqui ficam as da conta.
+        {service.kind === "email"
+          ? t("Abra um e-mail para ligar tarefas e anotações a ele (no Roundcube; em outros webmails, ficam na conta). Aqui ficam as da conta.")
+          : t("Abra um e-mail para ligar tarefas e anotações a ele. Aqui ficam as da conta.")}
       </p>
     {/if}
 
@@ -130,7 +131,7 @@
       <TaskForm
         {link}
         linkLabel={chat ? `${chat} · ${service.name}` : service.name}
-        placeholder={chat ? `Tarefa ou lembrete sobre ${chat}…` : "Nova tarefa…"}
+        placeholder={chat ? t("Tarefa ou lembrete sobre {chat}…", { chat }) : t("Nova tarefa…")}
         {now}
         onsave={oncreate}
       />
@@ -145,16 +146,18 @@
         {now}
         showContact={false}
         empty={chat
-          ? `Nenhuma tarefa ligada a ${email ? "este e-mail" : "esta conversa"}.`
-          : "Nenhuma tarefa ligada a esta conta."}
+          ? email
+            ? t("Nenhuma tarefa ligada a este e-mail.")
+            : t("Nenhuma tarefa ligada a esta conversa.")
+          : t("Nenhuma tarefa ligada a esta conta.")}
       />
     </div>
 
     <section class="notes">
       <div class="notes-head">
-        <h3>Anotações</h3>
+        <h3>{t("Anotações")}</h3>
         <span class="status" aria-live="polite">
-          {status === "saving" ? "Salvando…" : status === "saved" ? "Salvo" : status === "error" ? "Não salvou" : ""}
+          {status === "saving" ? t("Salvando…") : status === "saved" ? t("Salvo") : status === "error" ? t("Não salvou") : ""}
         </span>
       </div>
       <textarea
@@ -167,9 +170,9 @@
         }}
         maxlength="20000"
         placeholder={chat
-          ? `O que lembrar sobre ${chat}: preferências, combinados, histórico…`
-          : "Anotações sobre esta conta…"}
-        aria-label="Anotações sobre {title}"
+          ? t("O que lembrar sobre {chat}: preferências, combinados, histórico…", { chat })
+          : t("Anotações sobre esta conta…")}
+        aria-label={t("Anotações sobre {titulo}", { titulo: title })}
       ></textarea>
     </section>
   </div>

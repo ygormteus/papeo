@@ -51,6 +51,7 @@
 
 <script lang="ts">
   import { LoaderCircle, Paperclip, Send, Trash2, X } from "@lucide/svelte";
+  import { locale, t, tk } from "./i18n.svelte";
   import { api, errorMessage, type MailDraft, type ServiceView } from "./api";
   import { queueSend } from "./outbox.svelte";
 
@@ -108,7 +109,7 @@
   /** Atraso do salvamento automático depois da última mudança. */
   const AUTOSAVE_MS = 10_000;
   /** Erro do backend para conta sem pasta Rascunhos (`mailbox::NO_DRAFTS`). */
-  const NO_DRAFTS = "Esta conta não tem pasta Rascunhos no servidor.";
+  const NO_DRAFTS = tk("Esta conta não tem pasta Rascunhos no servidor.");
   /** Token nascido aqui: um salvamento que falha no meio não cria cópias
    * com tokens diferentes. */
   function newToken() {
@@ -178,7 +179,8 @@
       } catch (err) {
         const message = errorMessage(err);
         if (message === NO_DRAFTS) noDrafts = true;
-        draftError = `Rascunho não salvo: ${message}`;
+        // O backend manda o texto em português (é a chave da comparação).
+        draftError = t("Rascunho não salvo: {erro}", { erro: message === NO_DRAFTS ? t(NO_DRAFTS) : message });
         return false;
       } finally {
         saving = null;
@@ -241,7 +243,7 @@
       onclose();
     } catch (err) {
       finished = false;
-      draftError = `Não deu para apagar o rascunho: ${errorMessage(err)}`;
+      draftError = t("Não deu para apagar o rascunho: {erro}", { erro: errorMessage(err) });
     } finally {
       closing = false;
     }
@@ -278,14 +280,14 @@
     error = "";
     for (const file of Array.from(list)) {
       if (total + file.size > MAX_TOTAL) {
-        error = "Os anexos passam de 25 MB.";
+        error = t("Os anexos passam de 25 MB.");
         break;
       }
       try {
         const data = await readFile(file);
         files = [...files, { name: file.name, mime: file.type || "application/octet-stream", size: file.size, data }];
       } catch {
-        error = `Não deu para ler ${file.name}.`;
+        error = t("Não deu para ler {nome}.", { nome: file.name });
       }
     }
     if (picker) picker.value = "";
@@ -330,16 +332,16 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<form class="composer" onsubmit={send} onkeydown={keydown} aria-label="Escrever e-mail">
+<form class="composer" onsubmit={send} onkeydown={keydown} aria-label={t("Escrever e-mail")}>
   <header>
-    <h2>{start.inReplyTo ? "Responder" : "Nova mensagem"}</h2>
-    <span class="from">De {service.mail?.user}</span>
+    <h2>{start.inReplyTo ? t("Responder") : t("Nova mensagem")}</h2>
+    <span class="from">{t("De {conta}", { conta: service.mail?.user ?? "" })}</span>
     <button
       type="button"
       class="icon-btn ghost"
       onclick={close}
-      aria-label="Fechar"
-      title="Fechar e guardar nos Rascunhos (Esc)"
+      aria-label={t("Fechar")}
+      title={t("Fechar e guardar nos Rascunhos (Esc)")}
       disabled={sending || closing}
     >
       {#if closing}<LoaderCircle size={18} class="spin" />{:else}<X size={18} />{/if}
@@ -348,19 +350,19 @@
   {#if notice}<p class="notice" role="status">{notice}</p>{/if}
   <div class="fields">
     <label class="row">
-      <span>Para</span>
-      <input bind:this={toField} bind:value={to} autocomplete="off" spellcheck="false" placeholder="nome@exemplo.com" />
+      <span>{t("Para")}</span>
+      <input bind:this={toField} bind:value={to} autocomplete="off" spellcheck="false" placeholder={t("nome@exemplo.com")} />
       {#if !showCc}
-        <button type="button" class="link-btn" onclick={() => (showCc = true)}>Cc/Cco</button>
+        <button type="button" class="link-btn" onclick={() => (showCc = true)}>{t("Cc/Cco")}</button>
       {/if}
     </label>
     {#if showCc}
       <label class="row"><span>Cc</span><input bind:value={cc} autocomplete="off" spellcheck="false" /></label>
-      <label class="row"><span>Cco</span><input bind:value={bcc} autocomplete="off" spellcheck="false" /></label>
+      <label class="row"><span>{t("Cco")}</span><input bind:value={bcc} autocomplete="off" spellcheck="false" /></label>
     {/if}
-    <label class="row"><span>Assunto</span><input bind:value={subject} /></label>
+    <label class="row"><span>{t("Assunto")}</span><input bind:value={subject} /></label>
   </div>
-  <textarea bind:this={bodyField} bind:value={body} aria-label="Texto do e-mail"></textarea>
+  <textarea bind:this={bodyField} bind:value={body} aria-label={t("Texto do e-mail")}></textarea>
   {#if files.length}
     <ul class="files">
       {#each files as file, i (i)}
@@ -368,7 +370,7 @@
           <Paperclip size={13} />
           <span class="name">{file.name}</span>
           <span class="size">{size(file.size)}</span>
-          <button type="button" class="icon-btn ghost" aria-label="Tirar {file.name}" onclick={() => (files = files.filter((_, j) => j !== i))}>
+          <button type="button" class="icon-btn ghost" aria-label={t("Tirar {nome}", { nome: file.name })} onclick={() => (files = files.filter((_, j) => j !== i))}>
             <X size={14} />
           </button>
         </li>
@@ -379,18 +381,18 @@
   {#if draftError}<p class="error" role="alert">{draftError}</p>{/if}
   <footer>
     <button type="submit" class="btn btn-primary" disabled={sending || empty}>
-      {#if sending}<LoaderCircle size={15} class="spin" /> Enviando…{:else}<Send size={15} /> Enviar{/if}
+      {#if sending}<LoaderCircle size={15} class="spin" /> {t("Enviando…")}{:else}<Send size={15} /> {t("Enviar")}{/if}
     </button>
     <button type="button" class="btn" onclick={() => picker?.click()} disabled={sending}>
-      <Paperclip size={15} /> Anexar
+      <Paperclip size={15} /> {t("Anexar")}
     </button>
     <input bind:this={picker} type="file" multiple hidden onchange={(e) => addFiles(e.currentTarget.files)} />
     <button type="button" class="btn ghost-danger" onclick={discard} disabled={sending || closing}>
-      <Trash2 size={15} /> Descartar
+      <Trash2 size={15} /> {t("Descartar")}
     </button>
     <span class="hint">
-      {#if savedAt && !dirty}Rascunho salvo às {savedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ·
-      {/if}{navigator.platform.startsWith("Mac") ? "⌘" : "Ctrl"} Enter envia
+      {#if savedAt && !dirty}{t("Rascunho salvo às {hora}", { hora: savedAt.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })} ·
+      {/if}{t("{tecla} Enter envia", { tecla: navigator.platform.startsWith("Mac") ? "⌘" : "Ctrl" })}
     </span>
   </footer>
 </form>

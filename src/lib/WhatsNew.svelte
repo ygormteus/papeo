@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ExternalLink, ListChecks, Sparkles, TrendingUp, Wrench, X } from "@lucide/svelte";
+  import { t, tk } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { parseNotes, type NoteKind } from "./notes";
   import { notesHistory } from "./bundledNotes";
@@ -27,10 +28,10 @@
   type Entry = { version: string; notes: string | null | undefined; badge?: string };
 
   const entries = $derived.by<Entry[]>(() => {
-    const out: Entry[] = [{ version, notes, badge: mode === "available" ? "Nova" : "Atual" }];
+    const out: Entry[] = [{ version, notes, badge: mode === "available" ? tk("Nova") : tk("Atual") }];
     for (const n of notesHistory(current)) {
       if (n.version === version) continue;
-      out.push({ version: n.version, notes: n.notes, badge: n.version === current ? "Atual" : undefined });
+      out.push({ version: n.version, notes: n.notes, badge: n.version === current ? tk("Atual") : undefined });
     }
     return out;
   });
@@ -42,10 +43,10 @@
   const count = (e: Entry) => parseNotes(e.notes).reduce((n, s) => n + s.items.length, 0);
 
   const META: Record<NoteKind, { icon: typeof Sparkles; label: string }> = {
-    new: { icon: Sparkles, label: "Novidades" },
-    improved: { icon: TrendingUp, label: "Melhorias" },
-    fixed: { icon: Wrench, label: "Correções" },
-    other: { icon: ListChecks, label: "Outras mudanças" },
+    new: { icon: Sparkles, label: tk("Novidades") },
+    improved: { icon: TrendingUp, label: tk("Melhorias") },
+    fixed: { icon: Wrench, label: tk("Correções") },
+    other: { icon: ListChecks, label: tk("Outras mudanças") },
   };
 
   let notesEl = $state<HTMLElement>();
@@ -76,28 +77,28 @@
   }
 </script>
 
-<Modal {onclose} label="O que mudou no Papeo" width={entries.length > 1 ? 760 : 560} flush>
+<Modal {onclose} label={t("O que mudou no Papeo")} width={entries.length > 1 ? 760 : 560} flush>
   <header class="hero">
     <img src="/favicon.svg" alt="" width="44" height="44" />
     <div class="hero-text">
       <span class="eyebrow" class:fresh={mode === "available"}>
-        {mode === "available" ? "Nova versão disponível" : "Atualizado"}
+        {mode === "available" ? t("Nova versão disponível") : t("Atualizado")}
       </span>
-      <h2>O que mudou no Papeo</h2>
+      <h2>{t("O que mudou no Papeo")}</h2>
       <p>
         {#if mode === "available"}
-          A versão {version} está pronta para instalar. Você está na {current}.
+          {t("A versão {versao} está pronta para instalar. Você está na {atual}.", { versao: version, atual: current })}
         {:else}
-          Você está na versão {current}.
+          {t("Você está na versão {atual}.", { atual: current })}
         {/if}
       </p>
     </div>
-    <button class="close" onclick={onclose} aria-label="Fechar"><X size={18} /></button>
+    <button class="close" onclick={onclose} aria-label={t("Fechar")}><X size={18} /></button>
   </header>
 
   <div class="layout" class:single={entries.length === 1}>
     {#if entries.length > 1}
-      <div class="versions" role="tablist" aria-label="Versões" aria-orientation="vertical">
+      <div class="versions" role="tablist" aria-label={t("Versões")} aria-orientation="vertical">
         {#each entries as e (e.version)}
           <button
             id="ver-{e.version}"
@@ -111,9 +112,9 @@
           >
             <span class="v">{e.version}</span>
             {#if e.badge}
-              <span class="badge" class:fresh={e.badge === "Nova"}>{e.badge}</span>
+              <span class="badge" class:fresh={e.badge === "Nova"}>{t(e.badge)}</span>
             {:else}
-              <span class="n" aria-label="{count(e)} mudanças">{count(e)}</span>
+              <span class="n" aria-label={count(e) === 1 ? t("{n} mudança", { n: count(e) }) : t("{n} mudanças", { n: count(e) })}>{count(e)}</span>
             {/if}
           </button>
         {/each}
@@ -127,20 +128,20 @@
       id="ver-panel"
       role={entries.length > 1 ? "tabpanel" : "region"}
       aria-labelledby={entries.length > 1 ? `ver-${entry.version}` : undefined}
-      aria-label={entries.length > 1 ? undefined : `Versão ${entry.version}`}
+      aria-label={entries.length > 1 ? undefined : t("Versão {versao}", { versao: entry.version })}
       tabindex="0"
       bind:this={notesEl}
     >
       <h3 class="title">
-        Versão {entry.version}
-        {#if entry.badge}<span class="badge" class:fresh={entry.badge === "Nova"}>{entry.badge}</span>{/if}
+        {t("Versão {versao}", { versao: entry.version })}
+        {#if entry.badge}<span class="badge" class:fresh={entry.badge === "Nova"}>{t(entry.badge)}</span>{/if}
       </h3>
       {#each sections as section, i (i)}
         {@const meta = META[section.kind]}
         <section class="section {section.kind}">
           <h4>
             <span class="icon"><meta.icon size={14} strokeWidth={2.4} /></span>
-            {section.title || meta.label}
+            {section.title || t(meta.label)}
             <span class="count">{section.items.length}</span>
           </h4>
           <ul>
@@ -154,7 +155,7 @@
           </ul>
         </section>
       {:else}
-        <p class="muted">Esta versão traz ajustes e correções internas.</p>
+        <p class="muted">{t("Esta versão traz ajustes e correções internas.")}</p>
       {/each}
     </div>
   </div>
@@ -164,15 +165,15 @@
       class="link"
       onclick={() => api.openUrl(`${ABOUT.repo}/releases/tag/v${entry.version}`).catch(() => {})}
     >
-      <ExternalLink size={14} /> Ver {entry.version} no GitHub
+      <ExternalLink size={14} /> {t("Ver {versao} no GitHub", { versao: entry.version })}
     </button>
     {#if mode === "available"}
-      <button class="btn" onclick={onclose}>Depois</button>
+      <button class="btn" onclick={onclose}>{t("Depois")}</button>
       <!-- svelte-ignore a11y_autofocus -->
-      <button class="btn btn-primary" onclick={onupdate} autofocus>Atualizar e reiniciar</button>
+      <button class="btn btn-primary" onclick={onupdate} autofocus>{t("Atualizar e reiniciar")}</button>
     {:else}
       <!-- svelte-ignore a11y_autofocus -->
-      <button class="btn btn-primary" onclick={onclose} autofocus>Entendi</button>
+      <button class="btn btn-primary" onclick={onclose} autofocus>{t("Entendi")}</button>
     {/if}
   </footer>
 </Modal>

@@ -12,6 +12,7 @@
 
 use crate::mailbox::{self, Draft};
 use crate::state::{AppState, UI_WEBVIEW};
+use papeo_core::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -180,7 +181,7 @@ pub fn init(app: &AppHandle, local_data: &Path) {
 
 fn outbox(app: &AppHandle) -> Result<tauri::State<'_, Outbox>, String> {
     app.try_state::<Outbox>()
-        .ok_or_else(|| "Fila de envio indisponível.".to_owned())
+        .ok_or_else(|| tr("Fila de envio indisponível.").to_owned())
 }
 
 /// Conta de envio como está agora (`None`: sem a conta ou sem o IMAP).
@@ -200,7 +201,8 @@ pub fn hold(app: &AppHandle, id: String, draft: Draft) -> Result<Hold, String> {
         .config
         .settings
         .mail_undo_secs;
-    let from = fingerprint(app, &id).ok_or("Esta conta não tem o e-mail por IMAP configurado.")?;
+    let from =
+        fingerprint(app, &id).ok_or(tr("Esta conta não tem o e-mail por IMAP configurado."))?;
     let outbox = outbox(app)?;
     let hold_id = new_id();
     let held = Held {
@@ -275,10 +277,13 @@ async fn fire(app: AppHandle, hold_id: String) {
         error,
     };
     let result = if fingerprint(&app, &id).as_deref() != Some(from.as_str()) {
-        Err("A conta de e-mail mudou durante a espera. Confira antes de enviar.".to_owned())
+        Err(tr("A conta de e-mail mudou durante a espera. Confira antes de enviar.").to_owned())
     } else if let Err(err) = write(&dir, &hold_id, &held(true, None)) {
         // Sem a marca, um fechamento no meio do envio viraria "não enviado".
-        Err(format!("Não deu para preparar o envio: {err}"))
+        Err(trf(
+            "Não deu para preparar o envio: {erro}",
+            &[("erro", &err)],
+        ))
     } else {
         mailbox::send(app.clone(), id.clone(), draft.clone()).await
     };

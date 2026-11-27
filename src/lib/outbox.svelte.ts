@@ -3,6 +3,7 @@
 // O backend guarda o e-mail no disco até ele voltar ao editor
 // (`mailUnsentTaken`), então um e-mail devolvido não se perde se o app
 // fechar antes de a conta abrir.
+import { t } from "./i18n.svelte";
 import { api, onMailSend, type MailDraft } from "./api";
 
 export interface Pending {
@@ -90,8 +91,8 @@ export async function loadUnsent(id: string) {
       id,
       draft: u.draft,
       notice: u.maybeSent
-        ? "O app fechou durante o envio deste e-mail. Confira em Enviados antes de mandar de novo."
-        : (u.error ?? "Este e-mail não foi enviado."),
+        ? t("O app fechou durante o envio deste e-mail. Confira em Enviados antes de mandar de novo.")
+        : (u.error ?? t("Este e-mail não foi enviado.")),
       error: !u.maybeSent && !!u.error,
     });
   }

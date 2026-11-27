@@ -6,6 +6,7 @@
 //! e-mail como lido: a caixa é aberta com `EXAMINE` (só leitura) e os
 //! cabeçalhos vêm com `BODY.PEEK`.
 
+use crate::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::time::Duration;
@@ -116,25 +117,25 @@ impl MailAccount {
     pub fn sanitized(mut self) -> Result<Self, String> {
         self.host = normalize_host(&self.host)?;
         if self.port == 0 {
-            return Err("Porta inválida.".into());
+            return Err(tr("Porta inválida.").into());
         }
         // Na 993 o servidor espera TLS desde o começo: STARTTLS só travaria.
         if self.starttls && self.port == IMAPS_PORT {
-            return Err("STARTTLS usa a porta 143; a 993 é para TLS direto.".into());
+            return Err(tr("STARTTLS usa a porta 143; a 993 é para TLS direto.").into());
         }
         let user = self.user.trim();
         if user.is_empty() {
-            return Err("Informe o usuário (normalmente, o endereço de e-mail).".into());
+            return Err(tr("Informe o usuário (normalmente, o endereço de e-mail).").into());
         }
         if user.chars().count() > USER_MAX || user.chars().any(char::is_control) {
-            return Err("Usuário inválido.".into());
+            return Err(tr("Usuário inválido.").into());
         }
         self.user = user.to_owned();
         // Login da Microsoft: o token só vai para o servidor da Microsoft.
         if self.auth == MailAuth::Microsoft
             && (self.host != OUTLOOK_HOST || self.port != IMAPS_PORT || self.starttls)
         {
-            return Err("O login da Microsoft só vale para o servidor do Outlook.".into());
+            return Err(tr("O login da Microsoft só vale para o servidor do Outlook.").into());
         }
         // A opção do contador só existe no Gmail.
         if !self.is_gmail() {
@@ -235,17 +236,17 @@ fn normalize_host(raw: &str) -> Result<String, String> {
     if ok {
         Ok(host)
     } else {
-        Err("Servidor inválido; use algo como imap.exemplo.com.br.".into())
+        Err(tr("Servidor inválido; use algo como imap.exemplo.com.br.").into())
     }
 }
 
 /// Confere a senha antes de guardar.
 pub fn check_secret(secret: &str) -> Result<(), String> {
     if secret.is_empty() {
-        return Err("Informe a senha.".into());
+        return Err(tr("Informe a senha.").into());
     }
     if secret.len() > SECRET_MAX || secret.chars().any(char::is_control) {
-        return Err("Senha inválida.".into());
+        return Err(tr("Senha inválida.").into());
     }
     Ok(())
 }
@@ -459,9 +460,11 @@ impl From<io::Error> for ImapError {
 impl std::fmt::Display for ImapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImapError::Io(e) => write!(f, "rede: {e}"),
-            ImapError::Auth(m) => write!(f, "senha recusada: {m}"),
-            ImapError::Rejected(m) | ImapError::Protocol(m) => write!(f, "servidor: {m}"),
+            ImapError::Io(e) => f.write_str(&trf("rede: {erro}", &[("erro", e)])),
+            ImapError::Auth(m) => f.write_str(&trf("senha recusada: {erro}", &[("erro", m)])),
+            ImapError::Rejected(m) | ImapError::Protocol(m) => {
+                f.write_str(&trf("servidor: {erro}", &[("erro", m)]))
+            }
         }
     }
 }
@@ -598,13 +601,13 @@ impl<S: Transport> Imap<S> {
         if read == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "conexão encerrada",
+                tr("conexão encerrada"),
             ));
         }
         if !out.ends_with(b"\n") {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "linha longa demais",
+                tr("linha longa demais"),
             ));
         }
         out.truncate(out.len() - 1);
@@ -614,7 +617,7 @@ impl<S: Transport> Imap<S> {
         if out.len() - start > LINE_MAX {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "linha longa demais",
+                tr("linha longa demais"),
             ));
         }
         Ok(())
@@ -746,7 +749,7 @@ impl<S: Transport> Imap<S> {
         }
         let bad = |s: &str| s.is_empty() || s.chars().any(|c| c.is_control() || c.is_whitespace());
         if bad(user) || bad(token) {
-            return Err(ImapError::Auth("usuário ou token inválido".into()));
+            return Err(ImapError::Auth(tr("usuário ou token inválido").into()));
         }
         use base64::Engine;
         let encoded = base64::engine::general_purpose::STANDARD
@@ -932,7 +935,7 @@ fn read_raw_line<S: Read>(stream: &mut S) -> io::Result<String> {
         if stream.read(&mut byte)? == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "conexão encerrada",
+                tr("conexão encerrada"),
             ));
         }
         if byte[0] == b'\n' {
@@ -942,7 +945,7 @@ fn read_raw_line<S: Read>(stream: &mut S) -> io::Result<String> {
         if line.len() > 8192 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "linha longa demais",
+                tr("linha longa demais"),
             ));
         }
     }

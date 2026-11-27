@@ -5,6 +5,7 @@
   import TaskList, { type TaskActions } from "./TaskList.svelte";
   import { GROUP_LABEL, contactLabel, groupOf, type Group } from "./tasks";
   import ServiceAvatar from "./ServiceAvatar.svelte";
+  import { t } from "./i18n.svelte";
 
   let {
     org,
@@ -72,14 +73,14 @@
 <div class="page">
   <div class="head">
     <div>
-      <h1>Tarefas</h1>
-      <p class="sub">Lembretes e tarefas, soltos ou ligados a uma conversa.</p>
+      <h1>{t("Tarefas")}</h1>
+      <p class="sub">{t("Lembretes e tarefas, soltos ou ligados a uma conversa.")}</p>
     </div>
     <label class="filter">
-      <span>Mostrar</span>
+      <span>{t("Mostrar")}</span>
       <select class="select" bind:value={filter}>
-        <option value="all">Todas</option>
-        <option value="loose">Sem conversa</option>
+        <option value="all">{t("Todas")}</option>
+        <option value="loose">{t("Sem conversa")}</option>
         {#each services as s (s.id)}
           <option value={s.id}>{s.name}</option>
         {/each}
@@ -88,18 +89,18 @@
   </div>
 
   {#if summary.open}
-    <div class="stats" aria-label="Resumo">
+    <div class="stats" aria-label={t("Resumo")}>
       {#if summary.overdue}
-        <span class="stat late"><strong>{summary.overdue}</strong> {summary.overdue === 1 ? "atrasada" : "atrasadas"}</span>
+        <span class="stat late"><strong>{summary.overdue}</strong> {summary.overdue === 1 ? t("atrasada") : t("atrasadas")}</span>
       {/if}
-      <span class="stat"><strong>{summary.today}</strong> para hoje</span>
-      <span class="stat"><strong>{summary.open}</strong> {summary.open === 1 ? "aberta" : "abertas"}</span>
+      <span class="stat"><strong>{summary.today}</strong> {t("para hoje")}</span>
+      <span class="stat"><strong>{summary.open}</strong> {summary.open === 1 ? t("aberta") : t("abertas")}</span>
     </div>
   {/if}
 
   <div class="layout">
     <div class="main-col">
-      <TaskForm placeholder="Nova tarefa ou lembrete…" {now} onsave={oncreate} />
+      <TaskForm placeholder={t("Nova tarefa ou lembrete…")} {now} onsave={oncreate} />
 
       <section class="card block">
         <TaskList
@@ -109,19 +110,19 @@
           {actions}
           {now}
           empty={filter === "all"
-            ? "Nada por aqui. Crie uma tarefa acima ou, numa conversa, pelo painel do contato."
-            : "Nenhuma tarefa neste filtro."}
+            ? t("Nada por aqui. Crie uma tarefa acima ou, numa conversa, pelo painel do contato.")
+            : t("Nenhuma tarefa neste filtro.")}
         />
       </section>
     </div>
 
-    <aside class="side" aria-label="Resumo das tarefas">
+    <aside class="side" aria-label={t("Resumo das tarefas")}>
       <section class="card side-card">
-        <h2><ChartNoAxesColumn size={16} /> Resumo</h2>
+        <h2><ChartNoAxesColumn size={16} /> {t("Resumo")}</h2>
         <ul class="tally">
           {#each GROUPS as g (g)}
             <li class:late={g === "overdue" && byGroup.overdue > 0} class:zero={byGroup[g] === 0}>
-              <span>{GROUP_LABEL[g]}</span>
+              <span>{t(GROUP_LABEL[g])}</span>
               <strong>{byGroup[g]}</strong>
             </li>
           {/each}
@@ -130,7 +131,7 @@
 
       {#if perAccount.services.length || perAccount.loose}
         <section class="card side-card">
-          <h2><Users size={16} /> Por conta</h2>
+          <h2><Users size={16} /> {t("Por conta")}</h2>
           <ul class="accounts">
             {#each perAccount.services as { service, n } (service.id)}
               <li>
@@ -138,7 +139,7 @@
                   class="account"
                   aria-pressed={filter === service.id}
                   onclick={() => toggleFilter(service.id)}
-                  title={filter === service.id ? "Mostrar todas" : `Só ${service.name}`}
+                  title={filter === service.id ? t("Mostrar todas") : t("Só {nome}", { nome: service.name })}
                 >
                   <ServiceAvatar {service} size={22} />
                   <span class="acc-name">{service.name}</span>
@@ -152,10 +153,10 @@
                   class="account"
                   aria-pressed={filter === "loose"}
                   onclick={() => toggleFilter("loose")}
-                  title={filter === "loose" ? "Mostrar todas" : "Só as sem conversa"}
+                  title={filter === "loose" ? t("Mostrar todas") : t("Só as sem conversa")}
                 >
                   <span class="loose-icon"><Inbox size={14} /></span>
-                  <span class="acc-name">Sem conversa</span>
+                  <span class="acc-name">{t("Sem conversa")}</span>
                   <span class="acc-n">{perAccount.loose}</span>
                 </button>
               </li>
@@ -166,14 +167,14 @@
 
       {#if notes.length}
         <section class="card side-card notes-card">
-          <h2><NotebookPen size={16} /> Anotações <span class="count">{notes.length}</span></h2>
+          <h2><NotebookPen size={16} /> {t("Anotações")} <span class="count">{notes.length}</span></h2>
           <ul class="notes">
             {#each notes as c (c.id)}
               {@const service = serviceOf(c)}
               <li>
                 <button class="note" disabled={!service} onclick={() => actions.open(c)}>
                   <MessageCircle size={14} />
-                  <span class="who">{contactLabel(c, service?.name)}{service ? "" : " (conta removida)"}</span>
+                  <span class="who">{contactLabel(c, service?.name)}{service ? "" : " " + t("(conta removida)")}</span>
                   <span class="line">{firstLine(c.note)}</span>
                 </button>
               </li>

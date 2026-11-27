@@ -5,6 +5,7 @@
 //! `verify` leva dezenas de milissegundos de propósito: chame fora da thread
 //! principal e sem segurar o lock do estado.
 
+use crate::i18n::{tr, trf};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD_NO_PAD as B64;
 use base64::Engine;
@@ -39,13 +40,13 @@ pub struct LockPin {
 pub fn check_pin(pin: &str) -> Result<(), String> {
     let count = pin.chars().count();
     if count < PIN_MIN {
-        return Err(format!("Use pelo menos {PIN_MIN} caracteres."));
+        return Err(trf("Use pelo menos {n} caracteres.", &[("n", &PIN_MIN)]));
     }
     if count > PIN_MAX {
-        return Err(format!("Use no máximo {PIN_MAX} caracteres."));
+        return Err(trf("Use no máximo {n} caracteres.", &[("n", &PIN_MAX)]));
     }
     if pin.chars().any(char::is_control) || pin.trim().is_empty() {
-        return Err("O PIN tem caracteres inválidos.".into());
+        return Err(tr("O PIN tem caracteres inválidos.").into());
     }
     Ok(())
 }
@@ -109,7 +110,7 @@ impl LockPin {
         let mut salt = [0u8; 16];
         getrandom::fill(&mut salt).map_err(|e| e.to_string())?;
         let hash = derive(pin, &salt, MEMORY_KIB, PASSES, LANES)
-            .ok_or("Não foi possível proteger o PIN.")?;
+            .ok_or(tr("Não foi possível proteger o PIN."))?;
         Ok(Self {
             hash: format!(
                 "{PREFIX}${MEMORY_KIB}${PASSES}${LANES}${}${}",

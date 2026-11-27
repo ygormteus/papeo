@@ -131,6 +131,7 @@ voz do WhatsApp).
 | `mail.rs` | Vigia IMAP por conta (IDLE, avisos, contador, site hibernado) |
 | `mailbox.rs` | Leitor de e-mail (conexão de leitura por conta) e envio por SMTP (lettre) |
 | `silence.rs` | Saída do não perturbe/horário silencioso: resumo e notificação (spec 17) |
+| `lang.rs` | Idioma (spec 20): escolha + idioma do sistema (`sys-locale`), script `__PAPEO_LANG` das janelas auxiliares |
 | `outbox.rs` | Envios de e-mail em espera para desfazer (spec 16): fila na memória e em `outbox/` |
 | `microsoft.rs`, `drive.rs` | OAuth de app de computador (PKCE, loopback): Microsoft (IMAP/SMTP) e Google (Drive) |
 | `secrets.rs` | Senhas IMAP: arquivo 0600 (macOS) ou Gerenciador de Credenciais (Windows) |
@@ -153,6 +154,7 @@ voz do WhatsApp).
 | `mailbox.rs` | Leitor: pastas (mUTF-7, RFC 6154), páginas, busca, marcações, mover, `APPEND`, `MessageView` com HTML limpo (ammonia) |
 | `pin.rs` | PIN com Argon2id e espera crescente |
 | `privacy.rs` | Texto das notificações conforme a prévia, `same_site`, ids de sessão |
+| `i18n/` | Idioma das mensagens do Rust (spec 20): `Language`, `Lang`, `tr`/`trf`/`tk`; catálogo inglês em `en_app.rs` e `en_core.rs` (frase em português como chave) |
 | `util.rs` | `parse_unread`, `safe_file_name`, `unique_path`, `attachment_view`, `clip` |
 
 O núcleo não tem TLS: recebe um transporte `Read + Write` e o app entra
@@ -180,6 +182,15 @@ módulos TypeScript puros (`when.ts`, `tasks.ts`, `quickReplies.ts`,
 
 `api.ts` é a única porta para o backend: um envoltório `invoke` por
 comando, os tipos do `Snapshot` e as assinaturas de eventos.
+
+Idioma (spec 20): `i18n.svelte.ts` (`t`, `tk`, `locale`, `setLang`) com o
+catálogo inglês em `i18n/en/*.ts`, um arquivo por área, a frase em
+português como chave. `App` e `Popover` seguem `Snapshot.lang`; as barras
+de prévia e de anexo leem `window.__PAPEO_LANG` ao abrir.
+`tests/i18n.test.mjs` confere que toda frase marcada (interface e Rust)
+tem inglês. Trocar o idioma (`set_preferences` com `language`) aplica o
+idioma ao processo, refaz o menu do macOS na thread principal (fora do lock)
+e a bandeja no `publish`.
 `devMock.ts` simula o backend com `mockIPC` para `pnpm dev` no navegador. Os
 parâmetros `?demo`, `?modos`, `?alertas`, `?semhello`, `?update`,
 `?semsync`, `?windows` e `?outro` montam cenários.
@@ -209,7 +220,8 @@ notificações, proteção de tela, bloqueio, aparência, atualizações, recarg
 por memória, links, anexos, captura de voz, respostas prontas, modo e
 expediente, hibernar fora do modo, moldura da conta, modo de diagnóstico e
 espera para desfazer o envio de e-mail (`mail_undo_secs`: 0, 5, 10 ou 20)
-e resumo ao sair do silêncio (`silence_summary`).
+resumo ao sair do silêncio (`silence_summary`) e idioma (`language`:
+`system`, `pt` ou `en`; arquivo antigo lê `system`).
 
 ### 5.3 Organizador
 
@@ -483,6 +495,9 @@ Outlook, a página de login da Microsoft (`login.microsoftonline.com`,
   `downloads.rs`.
 - Formato persistido: `crates/papeo-core/src/store.rs`, `service.rs`,
   `settings.rs`, `organizer.rs`, `sync.rs`.
+- Idioma: frases marcadas com `t`/`tr` são chaves dos catálogos
+  (`src/lib/i18n/en/`, `crates/papeo-core/src/i18n/en_*.rs`); mudar a
+  frase em português exige mudar a chave no catálogo.
 - Script injetado: `notification_shim.js` (e os testes
   `tests/*-shim.test.mjs`).
 
@@ -501,6 +516,7 @@ Resumo; os detalhes e o histórico ficam nas especificações.
 | Atualização só com clique | A pessoa escolhe a hora de reiniciar | Atualização silenciosa |
 | NSIS só (sem MSI) no Windows | O atualizador não mistura formatos | MSI + NSIS |
 | `papeo-core` sem Tauri | Testes rodam em qualquer máquina | Tudo no crate do app |
+| Tradução estilo gettext (frase em português como chave) | Sem inventar nomes de chave para ~1500 frases; sem tradução, mostra o português | Chaves abstratas (`settings.theme.label`), biblioteca de i18n |
 
 ## 14. Riscos e dívida técnica
 

@@ -15,6 +15,7 @@
 //! fechar a janela e a cada abertura do Papeo.
 
 use crate::state::{now_secs, publish, AppState, DownloadEntry, DownloadState};
+use papeo_core::i18n::{tr, trf};
 use papeo_core::{AttachmentMode, AttachmentView};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -172,8 +173,8 @@ pub fn finished(
         let _ = app
             .notification()
             .builder()
-            .title("Anexo")
-            .body("Não foi possível abrir o anexo.")
+            .title(tr("Anexo"))
+            .body(tr("Não foi possível abrir o anexo."))
             .show();
     }
     true
@@ -291,7 +292,7 @@ fn create(
 ) -> tauri::Result<tauri::Window> {
     let (width, height) = crate::preview::initial_size(app);
     let builder = tauri::window::WindowBuilder::new(app, ATTACHMENT)
-        .title("Anexo")
+        .title(tr("Anexo"))
         .inner_size(width, height)
         .min_inner_size(420.0, 320.0)
         .center()
@@ -309,7 +310,7 @@ fn create(
     window.add_child(
         tauri::webview::WebviewBuilder::new(BAR, tauri::WebviewUrl::App(Default::default()))
             // A mesma interface, montando só a barra do anexo (`src/main.ts`).
-            .initialization_script("window.__PAPEO_VIEW = 'attachment';"),
+            .initialization_script(crate::lang::view_script("attachment")),
         LogicalPosition::new(0.0, 0.0),
         LogicalSize::new(size.width, BAR_HEIGHT),
     )?;
@@ -543,7 +544,7 @@ fn save_to_downloads(
         }
     }
     publish(app);
-    copied.map_err(|e| format!("Não foi possível salvar: {e}"))?;
+    copied.map_err(|e| trf("Não foi possível salvar: {erro}", &[("erro", &e)]))?;
     Ok(path)
 }
 
@@ -551,16 +552,16 @@ fn save_to_downloads(
 /// downloads recentes. Devolve o caminho salvo.
 fn save(app: &AppHandle) -> Result<PathBuf, String> {
     if app.state::<AppState>().lock().locked {
-        return Err("O Papeo está bloqueado.".to_owned());
+        return Err(tr("O Papeo está bloqueado.").to_owned());
     }
     let (temp, service_id, file_name) = {
         let mut cur = current();
-        let c = cur.as_mut().ok_or("Nenhum anexo aberto.")?;
+        let c = cur.as_mut().ok_or(tr("Nenhum anexo aberto."))?;
         if let Some(path) = c.saved.clone().filter(|p| p.is_file()) {
             return Ok(path);
         }
         if c.saving {
-            return Err("Ainda salvando o anexo.".to_owned());
+            return Err(tr("Ainda salvando o anexo.").to_owned());
         }
         c.saving = true;
         (
@@ -784,5 +785,15 @@ mod quick_look {
         let _: () = msg_send![&*view, setAutoresizingMask: RESIZE_WITH_WINDOW];
         let _: () = msg_send![content, addSubview: &*view];
         Some(view)
+    }
+}
+
+/// Troca de idioma com a janela aberta (spec 20): título e barra.
+pub fn relabel(app: &AppHandle) {
+    if let Some(window) = app.get_window(ATTACHMENT) {
+        let _ = window.set_title(tr("Anexo"));
+    }
+    if let Some(bar) = app.get_webview(BAR) {
+        let _ = bar.eval(crate::lang::set_script());
     }
 }

@@ -2,6 +2,7 @@
   import { Ban, Check } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import ServiceAvatar from "./ServiceAvatar.svelte";
+  import { t } from "./i18n.svelte";
   import {
     CONTEXT_OPTIONS,
     EMOJI_SUGGESTIONS,
@@ -48,13 +49,13 @@
   const preview = $derived({ kind: service.kind, color: color ?? undefined, emoji: emoji.trim() || undefined });
   const defaultColor = $derived(KIND_META[service.kind].color);
   const contextLabel = $derived(
-    context === "work" ? "Trabalho" : context === "personal" ? "Pessoal" : "Todos os modos",
+    context === "work" ? t("Trabalho") : context === "personal" ? t("Pessoal") : t("Todos os modos"),
   );
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     if (!name.trim()) {
-      error = "O nome não pode ficar vazio.";
+      error = t("O nome não pode ficar vazio.");
       return;
     }
     busy = true;
@@ -68,76 +69,76 @@
   }
 </script>
 
-<Modal {onclose} label="Personalizar {service.name}" width={460}>
+<Modal {onclose} label={t("Personalizar {nome}", { nome: service.name })} width={460}>
   <form onsubmit={submit}>
-    <h2>Personalizar conta</h2>
+    <h2>{t("Personalizar conta")}</h2>
 
     <!-- Prévia ao vivo: como a conta aparece na barra lateral. -->
     <div class="preview" style:--c={color ?? defaultColor}>
       <ServiceAvatar service={preview} size={48} />
       <div class="preview-text">
-        <span class="preview-name">{name.trim() || "Sem nome"}</span>
-        <span class="preview-meta">{KIND_META[service.kind].label} · {contextLabel}</span>
+        <span class="preview-name">{name.trim() || t("Sem nome")}</span>
+        <span class="preview-meta">{t(KIND_META[service.kind].label)} · {contextLabel}</span>
       </div>
     </div>
 
-    <section aria-label="Identificação">
+    <section aria-label={t("Identificação")}>
       <div class="field">
-        <label for="cz-name">Nome</label>
+        <label for="cz-name">{t("Nome")}</label>
         <!-- svelte-ignore a11y_autofocus -->
-        <input id="cz-name" class="input" bind:value={name} maxlength="40" placeholder="Ex.: Pessoal" autofocus />
+        <input id="cz-name" class="input" bind:value={name} maxlength="40" placeholder={t("Ex.: Pessoal")} autofocus />
       </div>
 
       <fieldset>
-        <legend>Esta conta é de</legend>
+        <legend>{t("Esta conta é de")}</legend>
         <div class="segmented">
           {#each CONTEXT_OPTIONS as opt (opt.label)}
             <label class:selected={context === opt.value}>
               <input type="radio" name="cz-context" value={opt.value} bind:group={context} class="sr-only" />
-              {opt.label}
+              {t(opt.label)}
             </label>
           {/each}
         </div>
         <p class="note">
           {context === "work"
-            ? "Aparece e notifica no modo Trabalho; some no modo Pessoal."
+            ? t("Aparece e notifica no modo Trabalho; some no modo Pessoal.")
             : context === "personal"
-              ? "Aparece e notifica no modo Pessoal; some no modo Trabalho."
-              : "Aparece em todos os modos."}
+              ? t("Aparece e notifica no modo Pessoal; some no modo Trabalho.")
+              : t("Aparece em todos os modos.")}
         </p>
       </fieldset>
     </section>
 
-    <section aria-label="Aparência">
+    <section aria-label={t("Aparência")}>
       <fieldset>
-        <legend>Cor</legend>
+        <legend>{t("Cor")}</legend>
         <div class="swatches">
-          <label class="swatch auto" style:--c={defaultColor} title="Padrão do {KIND_META[service.kind].label}">
+          <label class="swatch auto" style:--c={defaultColor} title={t("Padrão do {tipo}", { tipo: t(KIND_META[service.kind].label) })}>
             <input type="radio" name="cz-color" value={null} bind:group={color} class="sr-only" />
-            <span class="sr-only">Padrão do {KIND_META[service.kind].label}</span>
+            <span class="sr-only">{t("Padrão do {tipo}", { tipo: t(KIND_META[service.kind].label) })}</span>
             {#if color === null}<Check size={14} strokeWidth={3} />{/if}
           </label>
           {#each SERVICE_COLORS as c (c.value)}
-            <label class="swatch" style:--c={c.value} title={c.label}>
+            <label class="swatch" style:--c={c.value} title={t(c.label)}>
               <input type="radio" name="cz-color" value={c.value} bind:group={color} class="sr-only" />
-              <span class="sr-only">{c.label}</span>
+              <span class="sr-only">{t(c.label)}</span>
               {#if color === c.value}<Check size={14} strokeWidth={3} />{/if}
             </label>
           {/each}
         </div>
-        <p class="note">O primeiro círculo é a cor do {KIND_META[service.kind].label}.</p>
+        <p class="note">{t("O primeiro círculo é a cor do {tipo}.", { tipo: t(KIND_META[service.kind].label) })}</p>
       </fieldset>
 
       <fieldset>
-        <legend>Emoji <span class="hint">opcional, no lugar do ícone</span></legend>
+        <legend>{t("Emoji")} <span class="hint">{t("opcional, no lugar do ícone")}</span></legend>
         <div class="emojis">
           <button
             type="button"
             class="emoji-btn"
             class:selected={!emoji.trim()}
             aria-pressed={!emoji.trim()}
-            aria-label="Sem emoji (usar o ícone do serviço)"
-            title="Sem emoji"
+            aria-label={t("Sem emoji (usar o ícone do serviço)")}
+            title={t("Sem emoji")}
             onclick={() => (emoji = "")}
           >
             <Ban size={16} />
@@ -148,7 +149,7 @@
               class="emoji-btn"
               class:selected={emoji.trim() === e}
               aria-pressed={emoji.trim() === e}
-              aria-label="Usar {e}"
+              aria-label={t("Usar {emoji}", { emoji: e })}
               onclick={() => (emoji = e)}
             >
               {e}
@@ -159,29 +160,29 @@
           class="input emoji-input"
           bind:value={emoji}
           maxlength="24"
-          placeholder="Outro: cole um emoji ou digite até 2 letras"
-          aria-label="Emoji personalizado"
+          placeholder={t("Outro: cole um emoji ou digite até 2 letras")}
+          aria-label={t("Emoji personalizado")}
         />
       </fieldset>
     </section>
 
-    <section aria-label="Permissões">
+    <section aria-label={t("Permissões")}>
       <fieldset>
-        <legend>Microfone e câmera <span class="hint">mensagens de voz e chamadas</span></legend>
+        <legend>{t("Microfone e câmera")} <span class="hint">{t("mensagens de voz e chamadas")}</span></legend>
         <div class="segmented">
           {#each MEDIA_OPTIONS as opt (opt.value)}
             <label class:selected={media === opt.value}>
               <input type="radio" name="cz-media" value={opt.value} bind:group={media} class="sr-only" />
-              {opt.label}
+              {t(opt.label)}
             </label>
           {/each}
         </div>
         <p class="note">
           {media === "allow"
-            ? "O site usa o microfone sem perguntar de novo (o sistema pode pedir autorização uma vez)."
+            ? t("O site usa o microfone sem perguntar de novo (o sistema pode pedir autorização uma vez).")
             : media === "ask"
-              ? "O site pede permissão a cada uso."
-              : "Mensagens de voz e chamadas ficam bloqueadas neste serviço."}
+              ? t("O site pede permissão a cada uso.")
+              : t("Mensagens de voz e chamadas ficam bloqueadas neste serviço.")}
         </p>
       </fieldset>
     </section>
@@ -191,9 +192,9 @@
     <div class="footer">
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="actions">
-        <button type="button" class="btn" onclick={onclose}>Cancelar</button>
+        <button type="button" class="btn" onclick={onclose}>{t("Cancelar")}</button>
         <button type="submit" class="btn btn-primary" disabled={busy || !name.trim()}>
-          {busy ? "Salvando…" : "Salvar"}
+          {busy ? t("Salvando…") : t("Salvar")}
         </button>
       </div>
     </div>

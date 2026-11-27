@@ -6,6 +6,7 @@
 use crate::drive::{form, http, random_text, wait_for_redirect, Texts};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use base64::Engine;
+use papeo_core::i18n::{tr, trf};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::net::TcpListener;
@@ -73,7 +74,7 @@ impl From<TokenError> for String {
     fn from(err: TokenError) -> Self {
         match err {
             TokenError::Network(text) | TokenError::Refused(text) => text,
-            TokenError::Reauth => "O login da Microsoft não foi aceito. Tente de novo.".into(),
+            TokenError::Reauth => tr("O login da Microsoft não foi aceito. Tente de novo.").into(),
         }
     }
 }
@@ -119,8 +120,8 @@ pub fn login(open_browser: impl FnOnce(&str) -> Result<(), String>) -> Result<Lo
         &listeners,
         &state,
         &Texts {
-            done: "Papeo conectado à sua conta Microsoft. Pode fechar esta aba.",
-            timeout: "O login na Microsoft não foi concluído a tempo.",
+            done: tr("Papeo conectado à sua conta Microsoft. Pode fechar esta aba."),
+            timeout: tr("O login na Microsoft não foi concluído a tempo."),
         },
         Some(&CANCEL),
     )?;
@@ -134,7 +135,7 @@ pub fn login(open_browser: impl FnOnce(&str) -> Result<(), String>) -> Result<Lo
     let code = params
         .get("code")
         .cloned()
-        .ok_or("Resposta de login inválida.")?;
+        .ok_or(tr("Resposta de login inválida."))?;
     Ok(LoginCode {
         code,
         verifier,
@@ -156,7 +157,7 @@ fn listen_localhost() -> Result<(Vec<TcpListener>, u16), String> {
             Err(_) => return Ok((vec![v4], port)),
         }
     }
-    Err("Não deu para abrir a porta do login.".into())
+    Err(tr("Não deu para abrir a porta do login.").into())
 }
 
 /// Mensagem para uma recusa do login.
@@ -167,13 +168,15 @@ fn refusal(err: &str, detail: &str) -> String {
         .any(|code| detail.contains(code))
         || detail.contains("admin")
     {
-        return "A sua empresa precisa liberar o Papeo: peça ao administrador do Microsoft 365."
-            .into();
+        return tr(
+            "A sua empresa precisa liberar o Papeo: peça ao administrador do Microsoft 365.",
+        )
+        .into();
     }
     if err == "access_denied" {
-        return "Acesso à caixa do Outlook não autorizado.".into();
+        return tr("Acesso à caixa do Outlook não autorizado.").into();
     }
-    format!("A Microsoft recusou o login ({err}).")
+    trf("A Microsoft recusou o login ({erro}).", &[("erro", &err)])
 }
 
 /// Troca o código do login pelos tokens.
@@ -201,7 +204,12 @@ pub async fn refresh(refresh_token: &str, scope: Scope) -> Result<Tokens, TokenE
 }
 
 async fn token_request(body: String) -> Result<Tokens, TokenError> {
-    let network = |e: String| TokenError::Network(format!("Sem conexão com a Microsoft ({e})."));
+    let network = |e: String| {
+        TokenError::Network(trf(
+            "Sem conexão com a Microsoft ({erro}).",
+            &[("erro", &e)],
+        ))
+    };
     let resp = http()
         .map_err(network)?
         .post(TOKEN_URL)
@@ -225,7 +233,7 @@ async fn token_request(body: String) -> Result<Tokens, TokenError> {
         ));
     }
     serde_json::from_str(&text)
-        .map_err(|_| TokenError::Network("Resposta inválida da Microsoft.".into()))
+        .map_err(|_| TokenError::Network(tr("Resposta inválida da Microsoft.").into()))
 }
 
 /// Tipo de falha de uma resposta de erro do servidor de tokens.
@@ -236,11 +244,12 @@ fn classify(status: u16, err: &str, detail: &str) -> TokenError {
             TokenError::Reauth
         }
         "temporarily_unavailable" | "server_error" => {
-            TokenError::Network("A Microsoft está indisponível; tentando de novo.".into())
+            TokenError::Network(tr("A Microsoft está indisponível; tentando de novo.").into())
         }
-        _ if status >= 500 || err.is_empty() => {
-            TokenError::Network(format!("A Microsoft respondeu com erro ({status})."))
-        }
+        _ if status >= 500 || err.is_empty() => TokenError::Network(trf(
+            "A Microsoft respondeu com erro ({status}).",
+            &[("status", &status)],
+        )),
         _ => TokenError::Refused(refusal(err, detail)),
     }
 }

@@ -9,6 +9,7 @@
 use crate::mail::{self, Access, Control, Tls};
 use crate::secrets::{self, Saved};
 use crate::state::AppState;
+use papeo_core::i18n::{tr, trf};
 use papeo_core::mail::{ImapError, MailAccount, MailAuth};
 use papeo_core::mailbox::{self as core, Folder, MessageView, Page, Reader, Role};
 use serde::{Deserialize, Serialize};
@@ -104,11 +105,11 @@ fn account_of(app: &AppHandle, id: &str) -> Result<(MailAccount, Saved), String>
         .service(id)?
         .mail
         .clone()
-        .ok_or("Esta conta não tem o e-mail por IMAP configurado.")?;
+        .ok_or(tr("Esta conta não tem o e-mail por IMAP configurado."))?;
     // Fora do lock: arquivo ou cofre do sistema.
     let saved = secrets::read(app, id)
         .filter(|s| s.matches(&account))
-        .ok_or("Senha não salva: configure o IMAP da conta de novo.")?;
+        .ok_or(tr("Senha não salva: configure o IMAP da conta de novo."))?;
     Ok((account, saved))
 }
 
@@ -195,7 +196,7 @@ fn with_reader_cached<T>(
 
 fn describe(err: &ImapError) -> String {
     match err {
-        ImapError::Auth(_) => "O servidor recusou o login. Confira a senha da conta.".into(),
+        ImapError::Auth(_) => tr("O servidor recusou o login. Confira a senha da conta.").into(),
         other => mail::describe(other),
     }
 }
@@ -256,7 +257,7 @@ pub async fn set_flag(
     let flag = match flag.as_str() {
         "seen" => "\\Seen",
         "flagged" => "\\Flagged",
-        _ => return Err("Marcação inválida.".into()),
+        _ => return Err(tr("Marcação inválida.").into()),
     };
     blocking(move || with_reader(&app, &id, |r, _| r.set_flags(&folder, &uids, &[flag], on))).await
 }
@@ -283,12 +284,12 @@ pub async fn move_to(
                     Some(path) => path,
                     // Gmail: arquivar é tirar da Caixa de Entrada.
                     None => r.role_path(Role::All)?.ok_or_else(|| {
-                        ImapError::Rejected("Esta conta não tem pasta de arquivo.".into())
+                        ImapError::Rejected(tr("Esta conta não tem pasta de arquivo.").into())
                     })?,
                 },
                 Some(role) => r
                     .role_path(role)?
-                    .ok_or_else(|| ImapError::Rejected("Pasta não encontrada.".into()))?,
+                    .ok_or_else(|| ImapError::Rejected(tr("Pasta não encontrada.").into()))?,
                 None => target,
             };
             r.move_to(&folder, &uids, &target)
@@ -321,12 +322,13 @@ pub async fn save_attachment(
                 _ => Arc::new(r.fetch_raw(&folder, uid, false)?.0),
             };
             core::attachment(&raw, index)
-                .ok_or_else(|| ImapError::Rejected("Anexo não encontrado.".into()))
+                .ok_or_else(|| ImapError::Rejected(tr("Anexo não encontrado.").into()))
         })?;
         let dir = crate::downloads::downloads_dir(&app);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = papeo_core::unique_path(&dir, &papeo_core::safe_file_name(&name), &[]);
-        std::fs::write(&path, bytes).map_err(|e| format!("Não deu para salvar o anexo ({e})."))?;
+        std::fs::write(&path, bytes)
+            .map_err(|e| trf("Não deu para salvar o anexo ({erro}).", &[("erro", &e)]))?;
         mark_downloaded(&path);
         Ok(path.to_string_lossy().into_owned())
     })
@@ -465,7 +467,7 @@ pub fn validate(app: &AppHandle, id: &str, draft: &Draft) -> Result<(), String> 
         .service(id)?
         .mail
         .clone()
-        .ok_or("Esta conta não tem o e-mail por IMAP configurado.")?;
+        .ok_or(tr("Esta conta não tem o e-mail por IMAP configurado."))?;
     build(&account, draft).map(|_| ())
 }
 
@@ -487,7 +489,7 @@ fn build_as(
     let from: Mailbox = account
         .user
         .parse()
-        .map_err(|_| "O usuário da conta não é um endereço de e-mail.".to_owned())?;
+        .map_err(|_| tr("O usuário da conta não é um endereço de e-mail.").to_owned())?;
     // Rascunho: endereço ainda incompleto ("ana@") não impede salvar; vai
     // num cabeçalho próprio do Papeo e volta ao editor ao reabrir.
     let mut unparsed: Vec<(&'static str, Vec<String>)> = Vec::new();
@@ -499,7 +501,10 @@ fn build_as(
                 Ok(m) => ok.push(m),
                 Err(_) if draft_id.is_some() => bad.push(papeo_core::clip(a, 300)),
                 Err(_) => {
-                    return Err(format!("Endereço inválido: {}", papeo_core::clip(a, 80)));
+                    return Err(trf(
+                        "Endereço inválido: {endereco}",
+                        &[("endereco", &papeo_core::clip(a, 80))],
+                    ));
                 }
             }
         }
@@ -512,13 +517,13 @@ fn build_as(
     let cc = parse(&draft.cc, core::UNPARSED_CC)?;
     let bcc = parse(&draft.bcc, core::UNPARSED_BCC)?;
     if draft_id.is_none() && to.is_empty() && cc.is_empty() && bcc.is_empty() {
-        return Err("Informe para quem enviar.".into());
+        return Err(tr("Informe para quem enviar.").into());
     }
     if to.len() + cc.len() + bcc.len() > RECIPIENTS_MAX {
-        return Err("Destinatários demais.".into());
+        return Err(tr("Destinatários demais.").into());
     }
     if draft.body.len() > BODY_MAX {
-        return Err("Texto longo demais.".into());
+        return Err(tr("Texto longo demais.").into());
     }
     let subject: String = draft.subject.chars().filter(|c| !c.is_control()).collect();
     let mut builder = lettre::Message::builder()
@@ -578,10 +583,10 @@ fn build_as(
     for file in &draft.attachments {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(file.data.as_bytes())
-            .map_err(|_| "Anexo inválido.".to_owned())?;
+            .map_err(|_| tr("Anexo inválido.").to_owned())?;
         total += bytes.len();
         if total > ATTACHMENTS_MAX {
-            return Err("Os anexos passam de 25 MB.".into());
+            return Err(tr("Os anexos passam de 25 MB.").into());
         }
         let mime = ContentType::parse(&file.mime)
             .unwrap_or_else(|_| ContentType::parse("application/octet-stream").expect("tipo fixo"));
@@ -616,7 +621,7 @@ pub async fn send(app: AppHandle, id: String, draft: Draft) -> Result<(), String
             )
             .map_err(|e| match e {
                 ImapError::Auth(_) => {
-                    "Para enviar, entre de novo com a conta da Microsoft (o login antigo só liberava a leitura).".to_owned()
+                    tr("Para enviar, entre de novo com a conta da Microsoft (o login antigo só liberava a leitura).").to_owned()
                 }
                 other => mail::describe(&other),
             })?;
@@ -687,7 +692,7 @@ fn account_only(app: &AppHandle, id: &str) -> Result<MailAccount, String> {
         .service(id)?
         .mail
         .clone()
-        .ok_or_else(|| "Esta conta não tem o e-mail por IMAP configurado.".to_owned())
+        .ok_or_else(|| tr("Esta conta não tem o e-mail por IMAP configurado.").to_owned())
 }
 
 /// Salva o rascunho na pasta Rascunhos (spec 18). Devolve o token dele.
@@ -699,7 +704,7 @@ pub async fn save_draft(app: AppHandle, id: String, draft: Draft) -> Result<Stri
             .clone()
             .filter(|t| crate::outbox::valid_id(t))
             .unwrap_or_else(crate::outbox::new_id);
-        let message_id = draft_message_id(&token).ok_or("Rascunho inválido.")?;
+        let message_id = draft_message_id(&token).ok_or(tr("Rascunho inválido."))?;
         let raw = build_as(&account, &draft, Some(&message_id))?.formatted();
         // Uma ida só à conexão da conta: dois salvamentos não se cruzam
         // (a ordem é a de chegada).
@@ -748,7 +753,7 @@ pub async fn open_draft(
         let raw = with_reader(&app, &id, |r, _| {
             r.fetch_raw(&folder, uid, false).map(|(raw, _, _)| raw)
         })?;
-        let view = core::draft_view(&raw).ok_or("Os anexos deste rascunho passam de 25 MB.")?;
+        let view = core::draft_view(&raw).ok_or(tr("Os anexos deste rascunho passam de 25 MB."))?;
         let token = token_of(&view.message_id);
         Ok(OpenedDraft {
             to: view.to,
@@ -810,18 +815,23 @@ fn smtp_send(
         if e.is_permanent() {
             let text = e.to_string();
             if text.contains("535") || text.to_ascii_lowercase().contains("auth") {
-                format!(
-                    "O servidor de envio ({}) recusou o login. Alguns provedores pedem liberar o SMTP ou uma senha de app.",
-                    server.host
+                trf(
+                    "O servidor de envio ({servidor}) recusou o login. Alguns provedores pedem liberar o SMTP ou uma senha de app.",
+                    &[("servidor", &server.host)],
                 )
             } else {
-                format!("O servidor de envio recusou a mensagem ({}).", papeo_core::clip(&text, 200))
+                trf(
+                    "O servidor de envio recusou a mensagem ({texto}).",
+                    &[("texto", &papeo_core::clip(&text, 200))],
+                )
             }
         } else {
-            format!(
-                "Não deu para falar com o servidor de envio ({}): {}",
-                server.host,
-                papeo_core::clip(&e.to_string(), 200)
+            trf(
+                "Não deu para falar com o servidor de envio ({servidor}): {erro}",
+                &[
+                    ("servidor", &server.host),
+                    ("erro", &papeo_core::clip(&e.to_string(), 200)),
+                ],
             )
         }
     })

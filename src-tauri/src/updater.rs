@@ -8,6 +8,7 @@
 //! Nunca segura o lock do estado durante a rede nem ao publicar.
 
 use crate::state::{now_secs, publish, AppState, UpdateStatus};
+use papeo_core::i18n::{tr, trf};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::UpdaterExt;
@@ -52,7 +53,12 @@ async fn find(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, S
         .map_err(|e| e.to_string())?
         .check()
         .await
-        .map_err(|e| format!("Não foi possível verificar atualizações: {e}"))
+        .map_err(|e| {
+            trf(
+                "Não foi possível verificar atualizações: {erro}",
+                &[("erro", &e)],
+            )
+        })
 }
 
 /// Consulta se há versão nova e publica o resultado.
@@ -87,9 +93,9 @@ pub async fn check(app: &AppHandle) -> Result<(), String> {
 /// o próprio `.dmg`.
 fn blocked_location(exe: &str) -> Option<&'static str> {
     if exe.contains("/AppTranslocation/") {
-        Some("O Mac está abrindo o Papeo de uma cópia temporária, que não pode ser atualizada. Feche o Papeo (ícone na barra de menus → Sair) e abra de novo: ele já se corrigiu. Se o aviso voltar, rode no Terminal: xattr -dr com.apple.quarantine /Applications/Papeo.app")
+        Some(tr("O Mac está abrindo o Papeo de uma cópia temporária, que não pode ser atualizada. Feche o Papeo (ícone na barra de menus → Sair) e abra de novo: ele já se corrigiu. Se o aviso voltar, rode no Terminal: xattr -dr com.apple.quarantine /Applications/Papeo.app"))
     } else if exe.starts_with("/Volumes/") {
-        Some("O Papeo está aberto direto do instalador. Arraste-o para a pasta Aplicativos, abra de lá e atualize de novo.")
+        Some(tr("O Papeo está aberto direto do instalador. Arraste-o para a pasta Aplicativos, abra de lá e atualize de novo."))
     } else {
         None
     }
@@ -212,7 +218,10 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
             clear_quarantine();
             app.restart()
         }
-        Err(e) => fail(format!("Não foi possível instalar a atualização: {e}")),
+        Err(e) => fail(trf(
+            "Não foi possível instalar a atualização: {erro}",
+            &[("erro", &e)],
+        )),
     }
 }
 

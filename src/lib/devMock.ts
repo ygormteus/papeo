@@ -282,6 +282,13 @@ export function installDevMock() {
           : settings.notificationPreview === "hidden"
             ? { ...silence, accounts: silence.accounts.map((a) => ({ ...a, chats: [] })) }
             : structuredClone(silence),
+      // Idioma (spec 20): `?en` força inglês; "system" segue o navegador.
+      lang:
+        settings.language === "system"
+          ? /^pt([-_]|$)/i.test(navigator.language) && !new URLSearchParams(location.search).has("en")
+            ? "pt"
+            : "en"
+          : settings.language,
     };
   };
 

@@ -3,6 +3,7 @@
 use crate::state::{
     publish, AppState, Area, DownloadState, Health, Snapshot, MAIN_WINDOW, UI_WEBVIEW,
 };
+use papeo_core::i18n::tr;
 use papeo_core::{MediaPolicy, Service};
 use std::time::{Duration, Instant};
 use tauri::webview::{
@@ -118,11 +119,11 @@ pub fn create_service_webview(
 ) -> Result<Webview, String> {
     let window = app
         .get_window(MAIN_WINDOW)
-        .ok_or("Janela principal indisponível.")?;
+        .ok_or(tr("Janela principal indisponível."))?;
     let url = service
         .url
         .parse()
-        .map_err(|_| "URL inválida.".to_owned())?;
+        .map_err(|_| tr("URL inválida.").to_owned())?;
     let state = app.state::<AppState>();
     let voice = state.lock().config.settings.voice_capture;
     let kind = service.kind;

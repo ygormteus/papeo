@@ -2,6 +2,7 @@
 //! (spec 17). A contagem fica em `Inner::silence` (ver `notify::deliver`).
 
 use crate::state::{local_minute_of_day, now_secs, publish, AppState};
+use papeo_core::i18n::{tr, trf};
 use tauri::{AppHandle, Manager};
 
 /// Confere se o silêncio começou ou acabou desde a última vez. Na saída,
@@ -70,21 +71,40 @@ pub fn check(app: &AppHandle) {
         task: None,
         remind_at: None,
     };
-    let _ =
-        crate::notifications::show(app, "Enquanto você estava em silêncio", &text, None, target);
+    let _ = crate::notifications::show(
+        app,
+        tr("Enquanto você estava em silêncio"),
+        &text,
+        None,
+        target,
+    );
 }
 
-fn plural(n: u32, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
+fn plural_msgs(n: u32) -> String {
+    if n == 1 {
+        trf("{n} mensagem", &[("n", &n)])
+    } else {
+        trf("{n} mensagens", &[("n", &n)])
+    }
+}
+
+fn plural_accounts(n: u32) -> String {
+    if n == 1 {
+        trf("{n} conta", &[("n", &n)])
+    } else {
+        trf("{n} contas", &[("n", &n)])
+    }
 }
 
 /// "14 mensagens em 3 contas: WhatsApp (9), Gmail (3), Telegram (2)".
 /// Bloqueado: só os números.
 fn text(total: u32, accounts: &[(String, u32)], locked: bool) -> String {
-    let head = format!(
-        "{} em {}",
-        plural(total, "mensagem", "mensagens"),
-        plural(accounts.len() as u32, "conta", "contas")
+    let head = trf(
+        "{mensagens} em {contas}",
+        &[
+            ("mensagens", &plural_msgs(total)),
+            ("contas", &plural_accounts(accounts.len() as u32)),
+        ],
     );
     if locked || accounts.is_empty() {
         return head;
@@ -96,7 +116,7 @@ fn text(total: u32, accounts: &[(String, u32)], locked: bool) -> String {
         .collect();
     let more = accounts.len().saturating_sub(4);
     let tail = if more > 0 {
-        format!(" e mais {more}")
+        trf(" e mais {n}", &[("n", &more)])
     } else {
         String::new()
     };

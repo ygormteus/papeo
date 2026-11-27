@@ -6,6 +6,7 @@
 
 use crate::notifications::Target;
 use crate::state::{now_secs, publish, AppState, Inner, UI_WEBVIEW};
+use papeo_core::i18n::{tr, trf};
 use papeo_core::{ContactRef, NotificationPreview, Organizer, Repeat, TaskInput};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -173,7 +174,7 @@ fn complete(
     let task = inner
         .organizer
         .task(id)
-        .ok_or_else(|| "Tarefa não encontrada.".to_owned())?;
+        .ok_or_else(|| tr("Tarefa não encontrada.").to_owned())?;
     if task.repeat.is_some() {
         if let Some(seen) = seen {
             let same =
@@ -237,7 +238,7 @@ fn change<T>(
 
 fn ensure_unlocked(app: &AppHandle) -> CmdResult {
     if app.state::<AppState>().lock().locked {
-        Err("Desbloqueie o Papeo primeiro.".into())
+        Err(tr("Desbloqueie o Papeo primeiro.").into())
     } else {
         Ok(())
     }
@@ -375,10 +376,10 @@ pub async fn reply_later(
 pub fn add_reply_later(app: &AppHandle, service_id: &str, chat: &str, at: u64) -> CmdResult {
     let chat = chat.trim();
     if chat.is_empty() {
-        return Err("Conversa não encontrada.".into());
+        return Err(tr("Conversa não encontrada.").into());
     }
     if at + 60 < now_secs() {
-        return Err("Escolha um horário no futuro.".into());
+        return Err(tr("Escolha um horário no futuro.").into());
     }
     change(app, |inner, now| {
         let text = reply_later_text(inner, service_id, chat);
@@ -440,7 +441,7 @@ pub async fn save_note(
                 let c = inner
                     .organizer
                     .contact(id)
-                    .ok_or_else(|| "Contato não encontrado.".to_owned())?;
+                    .ok_or_else(|| tr("Contato não encontrado.").to_owned())?;
                 ContactRef {
                     service_id: c.service_id.clone(),
                     service_kind: c.service_kind.clone(),
@@ -448,7 +449,7 @@ pub async fn save_note(
                     chat: c.chat.clone(),
                 }
             }
-            (None, None) => return Err("Escolha a conversa.".into()),
+            (None, None) => return Err(tr("Escolha a conversa.").into()),
         };
         inner.organizer.set_note(&r, &note, now)
     })?;
@@ -490,8 +491,8 @@ pub fn tick(app: &AppHandle) {
                 remind_at: None,
             };
             vec![(
-                "Lembretes".to_owned(),
-                format!("Você tem {} lembretes vencidos.", due.len()),
+                tr("Lembretes").to_owned(),
+                trf("Você tem {n} lembretes vencidos.", &[("n", &due.len())]),
                 target,
             )]
         } else {
@@ -559,13 +560,20 @@ fn reminder_text(
     text: &str,
 ) -> (String, String) {
     match preview {
-        NotificationPreview::Hidden => ("Lembrete".into(), "Você tem um lembrete no Papeo.".into()),
+        NotificationPreview::Hidden => (
+            tr("Lembrete").into(),
+            tr("Você tem um lembrete no Papeo.").into(),
+        ),
         NotificationPreview::Sender => (
-            contact.map_or("Lembrete".into(), |c| format!("Lembrete · {c}")),
-            "Abra o Papeo para ver.".into(),
+            contact.map_or(tr("Lembrete").into(), |c| {
+                trf("Lembrete · {contato}", &[("contato", &c)])
+            }),
+            tr("Abra o Papeo para ver.").into(),
         ),
         NotificationPreview::Full => (
-            contact.map_or("Lembrete".into(), |c| format!("Lembrete · {c}")),
+            contact.map_or(tr("Lembrete").into(), |c| {
+                trf("Lembrete · {contato}", &[("contato", &c)])
+            }),
             papeo_core::clip(text, 240),
         ),
     }

@@ -3,6 +3,7 @@
 
 use crate::state::{now_secs, publish, snapshot, AppState, Area, LockMethod, Snapshot};
 use crate::webviews::{activate, apply_layout, close_all, hibernate};
+use papeo_core::i18n::{tr, trf};
 use papeo_core::{
     AppLock, MediaPolicy, NotificationPreview, QuietHours, Service, ServiceKind, DND_FOREVER,
     LOCK_MAX_MINUTES,
@@ -19,7 +20,7 @@ type CmdResult<T = Snapshot> = Result<T, String>;
 /// também recusa mudanças e acesso a arquivos (defesa em profundidade).
 fn ensure_unlocked(app: &AppHandle) -> CmdResult<()> {
     if app.state::<AppState>().lock().locked {
-        Err("Desbloqueie o Papeo primeiro.".into())
+        Err(tr("Desbloqueie o Papeo primeiro.").into())
     } else {
         Ok(())
     }
@@ -70,7 +71,7 @@ pub async fn remove_service(app: AppHandle, state: State<'_, AppState>, id: Stri
             .services
             .iter()
             .position(|s| s.id == id)
-            .ok_or("Serviço não encontrado.")?;
+            .ok_or(tr("Serviço não encontrado."))?;
         if inner.active.as_deref() == Some(id.as_str()) {
             inner.active = None;
         }
@@ -127,7 +128,7 @@ pub async fn move_service(
         let from = services
             .iter()
             .position(|s| s.id == id)
-            .ok_or("Serviço não encontrado.")?;
+            .ok_or(tr("Serviço não encontrado."))?;
         let service = services.remove(from);
         let to = to.min(services.len());
         services.insert(to, service);
@@ -223,7 +224,7 @@ pub async fn set_mail_account(
         return Ok(publish(&app));
     }
     if !kind.supports_mail_watch() {
-        return Err("Esta conta ainda não aceita avisos por IMAP.".into());
+        return Err(tr("Esta conta ainda não aceita avisos por IMAP.").into());
     }
     let account = papeo_core::mail::MailAccount {
         host: input.host,
@@ -250,10 +251,10 @@ pub async fn set_mail_account(
             // Fora do lock: arquivo ou cofre do sistema.
             let kept = crate::secrets::read(&app, &id).is_some_and(|s| s.matches(&account));
             if !kept {
-                return Err(
-                    "Digite a senha: ela vale só para o servidor e o usuário em que foi informada."
-                        .into(),
-                );
+                return Err(tr(
+                    "Digite a senha: ela vale só para o servidor e o usuário em que foi informada.",
+                )
+                .into());
             }
         }
     }
@@ -299,7 +300,7 @@ impl LoginBusy {
         MICROSOFT_LOGIN
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .map(|_| LoginBusy)
-            .map_err(|_| "Já há um login da Microsoft aberto no navegador.".to_owned())
+            .map_err(|_| tr("Já há um login da Microsoft aberto no navegador.").to_owned())
     }
 }
 
@@ -322,7 +323,7 @@ pub async fn mail_microsoft_login(
     ensure_unlocked(&app)?;
     let kind = state.lock().service(&id)?.kind;
     if !kind.accepts_mail(MailAuth::Microsoft) {
-        return Err("O login da Microsoft vale só para contas do Outlook.".into());
+        return Err(tr("O login da Microsoft vale só para contas do Outlook.").into());
     }
     let _busy = LoginBusy::take()?;
     let opener = app.clone();
@@ -338,15 +339,16 @@ pub async fn mail_microsoft_login(
     .await
     .map_err(|e| e.to_string())??;
     let tokens = crate::microsoft::exchange(code).await?;
-    let refresh = tokens
-        .refresh_token
-        .filter(|t| !t.is_empty())
-        .ok_or("A Microsoft não liberou o acesso contínuo. Tente de novo.")?;
+    let refresh = tokens.refresh_token.filter(|t| !t.is_empty()).ok_or(tr(
+        "A Microsoft não liberou o acesso contínuo. Tente de novo.",
+    ))?;
     let user = tokens
         .id_token
         .as_deref()
         .and_then(crate::microsoft::account_email)
-        .ok_or("A Microsoft não informou o e-mail da conta. Tente de novo.")?;
+        .ok_or(tr(
+            "A Microsoft não informou o e-mail da conta. Tente de novo.",
+        ))?;
     // O login levou minutos: confere de novo o bloqueio e a conta.
     ensure_unlocked(&app)?;
     let previous = state.lock().service(&id)?.mail.clone();
@@ -394,7 +396,7 @@ pub async fn mail_microsoft_login(
     if !still {
         crate::secrets::delete(&app, &id);
         crate::mail::sync(&app);
-        return Err("A conta mudou durante o login. Tente de novo.".into());
+        return Err(tr("A conta mudou durante o login. Tente de novo.").into());
     }
     crate::mail::restart(&app, &id);
     if slept && !sleep_site {
@@ -676,6 +678,7 @@ pub struct Preferences {
     mail_undo_secs: Option<u8>,
     silence_summary: Option<bool>,
     voice_capture: Option<papeo_core::VoiceCapture>,
+    language: Option<papeo_core::Language>,
 }
 
 #[tauri::command]
@@ -720,6 +723,9 @@ pub async fn set_preferences(
         if let Some(v) = prefs.voice_capture {
             s.voice_capture = v;
         }
+        if let Some(v) = prefs.language {
+            s.language = v;
+        }
         if let Some(v) = prefs.silence_summary {
             s.silence_summary = v;
             // Desligado: o cartão do último resumo sai também.
@@ -753,6 +759,23 @@ pub async fn set_preferences(
     if let Some(v) = prefs.voice_capture {
         crate::webviews::set_voice_capture(&app, v);
     }
+    if let Some(v) = prefs.language {
+        let before = papeo_core::i18n::lang();
+        if crate::lang::apply(v) != before {
+            crate::notifications::relabel();
+            crate::preview::relabel(&app);
+            crate::attachment::relabel(&app);
+            // Menu do macOS na thread principal, fora do lock do estado; a
+            // bandeja refaz o menu no `publish`.
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    let _ = crate::menu::rebuild(&handle);
+                });
+            }
+        }
+    }
     Ok(publish(&app))
 }
 
@@ -782,7 +805,12 @@ pub async fn set_autostart(app: AppHandle, state: State<'_, AppState>, enabled: 
     } else {
         launcher.disable()
     }
-    .map_err(|e| format!("Não foi possível alterar o início automático: {e}"))?;
+    .map_err(|e| {
+        trf(
+            "Não foi possível alterar o início automático: {erro}",
+            &[("erro", &e)],
+        )
+    })?;
     state.lock().autostart = launcher.is_enabled().unwrap_or(enabled);
     Ok(publish(&app))
 }
@@ -799,7 +827,7 @@ pub async fn set_downloads_dir(
         Some(p) => {
             let dir = PathBuf::from(&p);
             if !dir.is_absolute() || !dir.is_dir() {
-                return Err("Escolha uma pasta existente.".into());
+                return Err(tr("Escolha uma pasta existente.").into());
             }
             Some(p)
         }
@@ -818,7 +846,7 @@ pub async fn reveal_download(app: AppHandle, id: u64) -> CmdResult<()> {
     let path = crate::downloads::path_of(&app, id)?;
     app.opener()
         .reveal_item_in_dir(&path)
-        .map_err(|_| "O arquivo não está mais nessa pasta.".to_owned())
+        .map_err(|_| tr("O arquivo não está mais nessa pasta.").to_owned())
 }
 
 #[tauri::command]
@@ -916,7 +944,7 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
         let mut inner = state.lock();
         // Bloqueado enquanto lia o arquivo: não restaura.
         if inner.locked {
-            return Err("Desbloqueie o Papeo primeiro.".into());
+            return Err(tr("Desbloqueie o Papeo primeiro.").into());
         }
         if let Some(err) = &inner.organizer_error {
             return Err(err.clone());
@@ -1043,13 +1071,13 @@ pub async fn set_lock(
         )
     };
     if locked {
-        return Err("Desbloqueie o Papeo primeiro.".into());
+        return Err(tr("Desbloqueie o Papeo primeiro.").into());
     }
     if enabled && !was_enabled {
         match method {
-            LockMethod::None => return Err(crate::lock::NO_METHOD.into()),
+            LockMethod::None => return Err(tr(crate::lock::NO_METHOD).into()),
             LockMethod::System => {
-                crate::lock::confirm_identity(&app, "ativar o bloqueio do Papeo").await?
+                crate::lock::confirm_identity(&app, tr("ativar o bloqueio do Papeo")).await?
             }
             LockMethod::Pin => {}
         }
@@ -1088,7 +1116,7 @@ pub async fn set_lock_pin(
     match method {
         LockMethod::Pin => crate::lock::verify_pin(&app, current).await?,
         LockMethod::System if pin.is_some() => {
-            crate::lock::confirm_identity(&app, "criar um PIN do Papeo").await?
+            crate::lock::confirm_identity(&app, tr("criar um PIN do Papeo")).await?
         }
         LockMethod::System | LockMethod::None => {}
     }
@@ -1127,7 +1155,7 @@ pub async fn forget_lock_pin(app: AppHandle) -> CmdResult {
 #[tauri::command]
 pub async fn open_signin_settings(app: AppHandle) -> CmdResult<()> {
     if !cfg!(windows) {
-        return Err("Disponível só no Windows.".into());
+        return Err(tr("Disponível só no Windows.").into());
     }
     app.opener()
         .open_url("ms-settings:signinoptions", None::<&str>)
@@ -1139,7 +1167,7 @@ pub async fn unlock(app: AppHandle, state: State<'_, AppState>, pin: Option<Stri
     if !state.lock().locked {
         return Ok(snapshot(&app));
     }
-    crate::lock::confirm(&app, "desbloquear o Papeo", pin).await?;
+    crate::lock::confirm(&app, tr("desbloquear o Papeo"), pin).await?;
     {
         let mut inner = state.lock();
         inner.locked = false;
@@ -1386,7 +1414,7 @@ pub async fn set_mail_signature(
             .service_mut(&id)?
             .mail
             .as_mut()
-            .ok_or("Esta conta não tem o e-mail por IMAP configurado.")?;
+            .ok_or(tr("Esta conta não tem o e-mail por IMAP configurado."))?;
         mail.signature = papeo_core::mail::normalize_signature(&signature);
         Ok(())
     })?;
@@ -1413,7 +1441,7 @@ pub async fn mail_reveal_file(app: AppHandle, path: String) -> CmdResult<()> {
         .zip(dir.canonicalize().ok())
         .is_some_and(|(p, d)| p.starts_with(d));
     if !inside {
-        return Err("Arquivo fora da pasta de downloads.".into());
+        return Err(tr("Arquivo fora da pasta de downloads.").into());
     }
     app.opener()
         .reveal_item_in_dir(&path)

@@ -2,14 +2,28 @@
 // interface e testadas em `tests/tasks.test.mjs`.
 import type { Contact, Organizer, Task } from "./api";
 
+// Este módulo roda também no Node (testes), onde `i18n.svelte.ts` não carrega:
+// o tradutor é injetado pelo módulo da API (`setTranslator`); sem ele, português.
+type Vars = Record<string, string | number>;
+let translate = (pt: string, vars?: Vars): string =>
+  vars ? pt.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : pt;
+let localeTag = () => "pt-BR";
+export function setTranslator(fn: typeof translate, locale: () => string) {
+  translate = fn;
+  localeTag = locale;
+}
+const t = (pt: string, vars?: Vars) => translate(pt, vars);
+/** Marca a frase para o catálogo; quem exibe chama `t(valor)`. */
+const tk = (pt: string): string => pt;
+
 export type Group = "overdue" | "today" | "upcoming" | "someday" | "done";
 
 export const GROUP_LABEL: Record<Group, string> = {
-  overdue: "Atrasadas",
-  today: "Hoje",
-  upcoming: "Próximas",
-  someday: "Sem data",
-  done: "Feitas",
+  overdue: tk("Atrasadas"),
+  today: tk("Hoje"),
+  upcoming: tk("Próximas"),
+  someday: tk("Sem data"),
+  done: tk("Feitas"),
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -71,22 +85,39 @@ export function groupTasks(tasks: Task[], now: Date): { group: Group; tasks: Tas
   return order.map((group) => ({ group, tasks: by.get(group)! })).filter((g) => g.tasks.length);
 }
 
-const WEEKDAY = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."];
-const MONTH = ["jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.", "dez."];
+const WEEKDAY = [tk("dom."), tk("seg."), tk("ter."), tk("qua."), tk("qui."), tk("sex."), tk("sáb.")];
+const MONTH = [
+  tk("jan."),
+  tk("fev."),
+  tk("mar."),
+  tk("abr."),
+  tk("mai."),
+  tk("jun."),
+  tk("jul."),
+  tk("ago."),
+  tk("set."),
+  tk("out."),
+  tk("nov."),
+  tk("dez."),
+];
 
 /** "Hoje", "Amanhã", "Ontem", "qui., 3 dez." ou "3 dez. 2027". */
 export function dayLabel(d: Date, now: Date): string {
   const diff = Math.round((startOfDay(d).getTime() - startOfDay(now).getTime()) / 86_400_000);
-  if (diff === 0) return "Hoje";
-  if (diff === 1) return "Amanhã";
-  if (diff === -1) return "Ontem";
-  const base = `${d.getDate()} ${MONTH[d.getMonth()]}`;
-  if (d.getFullYear() !== now.getFullYear()) return `${base} ${d.getFullYear()}`;
-  if (diff > 1 && diff < 7) return `${WEEKDAY[d.getDay()]}, ${base}`;
+  if (diff === 0) return t("Hoje");
+  if (diff === 1) return t("Amanhã");
+  if (diff === -1) return t("Ontem");
+  const base = t("{dia} {mes}", { dia: d.getDate(), mes: t(MONTH[d.getMonth()]) });
+  if (d.getFullYear() !== now.getFullYear()) return t("{data} {ano}", { data: base, ano: d.getFullYear() });
+  if (diff > 1 && diff < 7) return t("{semana}, {data}", { semana: t(WEEKDAY[d.getDay()]), data: base });
   return base;
 }
 
 export function timeLabel(d: Date): string {
+  if (localeTag() !== "pt-BR") {
+    const h = d.getHours() % 12 || 12;
+    return `${h}:${pad(d.getMinutes())} ${d.getHours() < 12 ? "AM" : "PM"}`;
+  }
   return `${d.getHours()}:${pad(d.getMinutes())}`;
 }
 
@@ -111,17 +142,17 @@ export function quickTimes(now: Date): QuickTime[] {
   const at = (d: Date) => secs(d);
   const inHour = new Date(now.getTime() + 60 * 60 * 1000);
   inHour.setSeconds(0, 0);
-  const list: QuickTime[] = [{ label: "Em 1 h", at: at(inHour) }];
+  const list: QuickTime[] = [{ label: t("Em 1 h"), at: at(inHour) }];
   const evening = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0);
-  if (evening.getTime() - now.getTime() > 30 * 60 * 1000) list.push({ label: "Hoje 18h", at: at(evening) });
+  if (evening.getTime() - now.getTime() > 30 * 60 * 1000) list.push({ label: t("Hoje 18h"), at: at(evening) });
   const tomorrow = addDays(startOfDay(now), 1);
   tomorrow.setHours(9, 0);
-  list.push({ label: "Amanhã 9h", at: at(tomorrow) });
+  list.push({ label: t("Amanhã 9h"), at: at(tomorrow) });
   // Próxima segunda, a partir de depois de amanhã (não repete o "amanhã").
   let monday = addDays(startOfDay(now), 2);
   while (monday.getDay() !== 1) monday = addDays(monday, 1);
   monday.setHours(9, 0);
-  list.push({ label: "Segunda 9h", at: at(monday) });
+  list.push({ label: t("Segunda 9h"), at: at(monday) });
   return list;
 }
 
@@ -151,7 +182,7 @@ export function laterTimes(now: Date, hours?: Hours): QuickTime[] {
   if (work) {
     const at = secs(work);
     if (!list.some((q) => q.at === at)) {
-      list.push({ label: `Expediente · ${dayLabel(work, now)} ${timeLabel(work)}`, at });
+      list.push({ label: t("Expediente · {quando}", { quando: `${dayLabel(work, now)} ${timeLabel(work)}` }), at });
     }
   }
   return list.sort((a, b) => a.at - b.at);

@@ -5,6 +5,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use base64::Engine;
+use papeo_core::i18n::{tk, tr, trf};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -96,7 +97,7 @@ pub struct LoginCode {
 /// Login: abre o navegador e espera o retorno em 127.0.0.1. Bloqueia
 /// (chamar numa thread própria); depois, `exchange`.
 pub fn login(open_browser: impl FnOnce(&str) -> Result<(), String>) -> Result<LoginCode, String> {
-    let (client_id, _) = client().ok_or("Sincronização indisponível nesta versão.")?;
+    let (client_id, _) = client().ok_or(tr("Sincronização indisponível nesta versão."))?;
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let redirect = format!("http://127.0.0.1:{port}/");
@@ -122,22 +123,22 @@ pub fn login(open_browser: impl FnOnce(&str) -> Result<(), String>) -> Result<Lo
         &[listener],
         &state,
         &Texts {
-            done: "Papeo conectado ao Google Drive. Pode fechar esta aba.",
-            timeout: "O login no Google não foi concluído a tempo.",
+            done: tr("Papeo conectado ao Google Drive. Pode fechar esta aba."),
+            timeout: tr("O login no Google não foi concluído a tempo."),
         },
         None,
     )?;
     if let Some(err) = params.get("error") {
         return Err(if err == "access_denied" {
-            "Acesso ao Google Drive não autorizado.".into()
+            tr("Acesso ao Google Drive não autorizado.").into()
         } else {
-            format!("O Google recusou o login ({err}).")
+            trf("O Google recusou o login ({erro}).", &[("erro", &err)])
         });
     }
     let code = params
         .get("code")
         .cloned()
-        .ok_or("Resposta de login inválida.")?;
+        .ok_or(tr("Resposta de login inválida."))?;
     Ok(LoginCode {
         code,
         verifier,
@@ -147,7 +148,8 @@ pub fn login(open_browser: impl FnOnce(&str) -> Result<(), String>) -> Result<Lo
 
 /// Troca o código do login pelos tokens.
 pub async fn exchange(login: LoginCode) -> Result<TokenResponse, String> {
-    let (client_id, client_secret) = client().ok_or("Sincronização indisponível nesta versão.")?;
+    let (client_id, client_secret) =
+        client().ok_or(tr("Sincronização indisponível nesta versão."))?;
     token_request(form(&[
         ("code", &login.code),
         ("client_id", client_id),
@@ -160,7 +162,7 @@ pub async fn exchange(login: LoginCode) -> Result<TokenResponse, String> {
 }
 
 /// Login desistido (diálogo fechado): quem chamou não mostra erro.
-pub(crate) const LOGIN_CANCELLED: &str = "Login cancelado.";
+pub(crate) const LOGIN_CANCELLED: &str = tk("Login cancelado.");
 
 /// Textos da página que o navegador mostra ao voltar do login.
 pub(crate) struct Texts {
@@ -187,7 +189,7 @@ pub(crate) fn wait_for_redirect(
             return Err(texts.timeout.into());
         }
         if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst)) {
-            return Err(LOGIN_CANCELLED.into());
+            return Err(tr(LOGIN_CANCELLED).into());
         }
         let mut conn = None;
         for listener in listeners {
@@ -229,7 +231,7 @@ pub(crate) fn wait_for_redirect(
         let page = if params.contains_key("code") {
             texts.done
         } else {
-            "O login não foi concluído. Volte ao Papeo e tente de novo."
+            tr("O login não foi concluído. Volte ao Papeo e tente de novo.")
         };
         let html = format!(
             "<!doctype html><meta charset=utf-8><title>Papeo</title><body style=\"font:16px system-ui;padding:40px\">{page}</body>"
@@ -252,22 +254,26 @@ async fn token_request(body: String) -> Result<TokenResponse, String> {
         .body(body)
         .send()
         .await
-        .map_err(|e| format!("Sem conexão com o Google ({e})."))?;
+        .map_err(|e| trf("Sem conexão com o Google ({erro}).", &[("erro", &e)]))?;
     let status = resp.status();
     let text = resp.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
         if text.contains("invalid_grant") {
             return Err("REAUTH".into());
         }
-        return Err(format!("O Google recusou o acesso ({status})."));
+        return Err(trf(
+            "O Google recusou o acesso ({status}).",
+            &[("status", &status)],
+        ));
     }
-    serde_json::from_str(&text).map_err(|_| "Resposta inválida do Google.".to_owned())
+    serde_json::from_str(&text).map_err(|_| tr("Resposta inválida do Google.").to_owned())
 }
 
 /// Novo token de acesso a partir do de renovação. `Err("REAUTH")`: o acesso
 /// foi revogado; é preciso entrar de novo.
 pub async fn refresh(refresh_token: &str) -> Result<TokenResponse, String> {
-    let (client_id, client_secret) = client().ok_or("Sincronização indisponível nesta versão.")?;
+    let (client_id, client_secret) =
+        client().ok_or(tr("Sincronização indisponível nesta versão."))?;
     token_request(form(&[
         ("refresh_token", refresh_token),
         ("client_id", client_id),
@@ -320,15 +326,15 @@ async fn check(resp: reqwest::Response) -> Result<reqwest::Response, String> {
         403 if body.contains("insufficientPermissions")
             || body.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") =>
         {
-            "Falta a permissão do Google Drive. Desconecte e conecte de novo, marcando o acesso à pasta do Papeo.".to_owned()
+            tr("Falta a permissão do Google Drive. Desconecte e conecte de novo, marcando o acesso à pasta do Papeo.").to_owned()
         }
         403 if body.contains("storageQuotaExceeded") => {
-            "O Google Drive está sem espaço. Libere espaço na conta Google.".to_owned()
+            tr("O Google Drive está sem espaço. Libere espaço na conta Google.").to_owned()
         }
         403 | 429 => {
-            "O Google Drive limitou o acesso por agora. Tentamos de novo em instantes.".to_owned()
+            tr("O Google Drive limitou o acesso por agora. Tentamos de novo em instantes.").to_owned()
         }
-        _ => format!("Erro do Google Drive ({status})."),
+        _ => trf("Erro do Google Drive ({status}).", &[("status", &status)]),
     })
 }
 
@@ -352,7 +358,7 @@ pub async fn list(token: &str) -> Result<Vec<RemoteFile>, String> {
         let resp = check(
             req.send()
                 .await
-                .map_err(|e| format!("Sem conexão ({e})."))?,
+                .map_err(|e| trf("Sem conexão ({erro}).", &[("erro", &e)]))?,
         )
         .await?;
         let list: FileList = resp.json().await.map_err(|e| e.to_string())?;
@@ -372,16 +378,16 @@ pub async fn download(token: &str, id: &str) -> Result<Vec<u8>, String> {
         .query(&[("alt", "media")])
         .send()
         .await
-        .map_err(|e| format!("Sem conexão ({e})."))?;
+        .map_err(|e| trf("Sem conexão ({erro}).", &[("erro", &e)]))?;
     let mut resp = check(resp).await?;
     if resp.content_length().is_some_and(|n| n as usize > MAX_FILE) {
-        return Err("Arquivo grande demais na nuvem.".into());
+        return Err(tr("Arquivo grande demais na nuvem.").into());
     }
     // Para no limite mesmo sem `Content-Length` (não lê o resto).
     let mut body = Vec::new();
     while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
         if body.len() + chunk.len() > MAX_FILE {
-            return Err("Arquivo grande demais na nuvem.".into());
+            return Err(tr("Arquivo grande demais na nuvem.").into());
         }
         body.extend_from_slice(&chunk);
     }
@@ -426,7 +432,7 @@ pub async fn upload(
                 .await
         }
     }
-    .map_err(|e| format!("Sem conexão ({e})."))?;
+    .map_err(|e| trf("Sem conexão ({erro}).", &[("erro", &e)]))?;
     #[derive(Deserialize)]
     struct Created {
         id: String,
@@ -441,7 +447,7 @@ pub async fn delete(token: &str, id: &str) -> Result<(), String> {
         .bearer_auth(token)
         .send()
         .await
-        .map_err(|e| format!("Sem conexão ({e})."))?;
+        .map_err(|e| trf("Sem conexão ({erro}).", &[("erro", &e)]))?;
     if resp.status().as_u16() == 404 {
         return Ok(());
     }

@@ -8,6 +8,7 @@
 //! nenhum comando novo.
 
 use crate::state::{now_secs, publish, AppState, ChatMessage, Snapshot};
+use papeo_core::i18n::{tr, trf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -41,11 +42,12 @@ fn clean_text(text: &str) -> Result<String, String> {
         .collect();
     let text = text.trim();
     if text.is_empty() {
-        return Err("Escreva a mensagem.".into());
+        return Err(tr("Escreva a mensagem.").into());
     }
     if text.chars().count() > MAX_REPLY_CHARS {
-        return Err(format!(
-            "Mensagem longa demais (máximo {MAX_REPLY_CHARS} caracteres)."
+        return Err(trf(
+            "Mensagem longa demais (máximo {max} caracteres).",
+            &[("max", &MAX_REPLY_CHARS)],
         ));
     }
     Ok(text.to_owned())
@@ -53,17 +55,17 @@ fn clean_text(text: &str) -> Result<String, String> {
 
 fn failure(code: &str) -> String {
     match code {
-        "chat" => "Não encontrei essa conversa. Abra a conversa para responder.",
-        "ambiguous" => "Há mais de uma conversa com esse nome. Abra a conversa para responder.",
-        "draft" => "Há um rascunho nessa conversa. Abra a conversa para terminar.",
-        "unsupported" => "Esse serviço não aceita resposta rápida.",
+        "chat" => tr("Não encontrei essa conversa. Abra a conversa para responder."),
+        "ambiguous" => tr("Há mais de uma conversa com esse nome. Abra a conversa para responder."),
+        "draft" => tr("Há um rascunho nessa conversa. Abra a conversa para terminar."),
+        "unsupported" => tr("Esse serviço não aceita resposta rápida."),
         // Spec 14: o site mudou e o Papeo não acha mais o campo ou a busca.
-        "probes" => "O site dessa conta mudou e a resposta rápida está indisponível. Abra a conversa para responder.",
-        "timeout" => "O site demorou e a mensagem não foi enviada. Tente de novo.",
-        "send" => "O site não aceitou a mensagem; ela não foi enviada.",
+        "probes" => tr("O site dessa conta mudou e a resposta rápida está indisponível. Abra a conversa para responder."),
+        "timeout" => tr("O site demorou e a mensagem não foi enviada. Tente de novo."),
+        "send" => tr("O site não aceitou a mensagem; ela não foi enviada."),
         // Não dá para saber se saiu: reenviar poderia duplicar.
-        "unsure" => "Não consegui confirmar o envio. Confira a conversa antes de mandar de novo.",
-        _ => "A mensagem não foi enviada. Abra a conversa para conferir.",
+        "unsure" => tr("Não consegui confirmar o envio. Confira a conversa antes de mandar de novo."),
+        _ => tr("A mensagem não foi enviada. Abra a conversa para conferir."),
     }
     .to_owned()
 }
@@ -126,12 +128,12 @@ fn ensure_loaded(app: &AppHandle, id: &str) -> Result<Webview, String> {
             break;
         }
         if start.elapsed() > LOAD_TIMEOUT {
-            return Err("A conta ainda está carregando. Tente de novo em instantes.".into());
+            return Err(tr("A conta ainda está carregando. Tente de novo em instantes.").into());
         }
         std::thread::sleep(Duration::from_millis(250));
     }
     app.get_webview(id)
-        .ok_or_else(|| "A conta foi fechada.".to_owned())
+        .ok_or_else(|| tr("A conta foi fechada.").to_owned())
 }
 
 /// Envia `text` para a conversa `chat` da conta `id`. Bloqueia até o site
@@ -139,14 +141,14 @@ fn ensure_loaded(app: &AppHandle, id: &str) -> Result<Webview, String> {
 pub fn send(app: &AppHandle, id: &str, chat: &str, text: &str) -> Result<Snapshot, String> {
     let chat = clean_chat(chat);
     if chat.is_empty() {
-        return Err("Conversa inválida.".into());
+        return Err(tr("Conversa inválida.").into());
     }
     let text = clean_text(text)?;
     {
         let state = app.state::<AppState>();
         let inner = state.lock();
         if inner.locked {
-            return Err("Desbloqueie o Papeo primeiro.".into());
+            return Err(tr("Desbloqueie o Papeo primeiro.").into());
         }
         if !inner.service(id)?.kind.supports_chat() {
             return Err(failure("unsupported"));
@@ -163,7 +165,7 @@ pub fn send(app: &AppHandle, id: &str, chat: &str, text: &str) -> Result<Snapsho
         let state = app.state::<AppState>();
         let inner = state.lock();
         if inner.locked {
-            return Err("Desbloqueie o Papeo primeiro.".into());
+            return Err(tr("Desbloqueie o Papeo primeiro.").into());
         }
         if !papeo_core::same_site(&inner.service(id)?.url, &page) {
             return Err(failure("chat"));
