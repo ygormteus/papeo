@@ -1,7 +1,7 @@
 # 29 — Leitor do Nextcloud Talk
 
 - **Estado:** implementada
-- **Versão:** —
+- **Versão:** 0.17.0
 - **Relacionadas:** 09 (leitor de e-mail, mesmo padrão), 26 (Nextcloud
   Talk pelo site), 11 (backup)
 

@@ -1,7 +1,7 @@
 # 31 — Formatação no editor de e-mail
 
 - **Estado:** implementada
-- **Versão:** —
+- **Versão:** 0.17.0
 - **Relacionadas:** 09 (leitor de e-mail), 16 (desfazer envio), 18
   (rascunhos no servidor), 22 (assinatura formatada)
 

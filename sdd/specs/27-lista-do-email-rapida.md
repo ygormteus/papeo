@@ -1,7 +1,7 @@
 # 27 — Lista do e-mail rápida e rolagem infinita
 
 - **Estado:** implementada
-- **Versão:** —
+- **Versão:** 0.17.0
 - **Relacionadas:** 09 (e-mail), 15 (fluidez), 25 (contatos e pastas)
 
 ## Problema

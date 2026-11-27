@@ -1,7 +1,7 @@
 # 28 — Leitor de e-mail mais rápido e mais completo
 
 - **Estado:** implementada
-- **Versão:** —
+- **Versão:** 0.17.0
 - **Relacionadas:** 09 (e-mail), 21 (anexos na tela), 22 (assinatura
   formatada), 27 (lista rápida)
 

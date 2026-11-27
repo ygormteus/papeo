@@ -1,7 +1,7 @@
 # 30 — Tela dividida
 
 - **Estado:** implementada
-- **Versão:** —
+- **Versão:** 0.17.0
 - **Relacionadas:** 01 (contas), 02 (não lidas), 09/29 (leitores), 12
   (hibernação)
 
