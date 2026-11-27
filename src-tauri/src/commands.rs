@@ -1269,9 +1269,10 @@ pub async fn mail_list(
     folder: String,
     skip: u32,
     query: String,
+    filter: Option<papeo_core::mailbox::Filter>,
 ) -> CmdResult<papeo_core::mailbox::Page> {
     ensure_unlocked(&app)?;
-    crate::mailbox::list(app, id, folder, skip, query).await
+    crate::mailbox::list(app, id, folder, skip, query, filter.unwrap_or_default()).await
 }
 
 /// Lista guardada da última vez (spec 27), para mostrar antes do servidor.
@@ -1291,9 +1292,10 @@ pub async fn mail_open(
     folder: String,
     uid: u32,
     peek: Option<bool>,
+    size: Option<u32>,
 ) -> CmdResult<papeo_core::mailbox::MessageView> {
     ensure_unlocked(&app)?;
-    crate::mailbox::open(app, id, folder, uid, peek.unwrap_or(false)).await
+    crate::mailbox::open(app, id, folder, uid, peek.unwrap_or(false), size).await
 }
 
 #[tauri::command]
@@ -1316,7 +1318,7 @@ pub async fn mail_move(
     folder: String,
     uids: Vec<u32>,
     target: String,
-) -> CmdResult<()> {
+) -> CmdResult<Vec<u32>> {
     ensure_unlocked(&app)?;
     crate::mailbox::move_to(app, id, folder, uids, target).await
 }
@@ -1327,9 +1329,16 @@ pub async fn mail_delete(
     id: String,
     folder: String,
     uids: Vec<u32>,
-) -> CmdResult<()> {
+) -> CmdResult<Vec<u32>> {
     ensure_unlocked(&app)?;
     crate::mailbox::delete(app, id, folder, uids).await
+}
+
+/// Marca todas as mensagens da pasta como lidas (spec 28).
+#[tauri::command]
+pub async fn mail_mark_all_read(app: AppHandle, id: String, folder: String) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::mark_all_read(app, id, folder).await
 }
 
 /// Abre o anexo na visualização (spec 21); `false`: tipo sem visualização.

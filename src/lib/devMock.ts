@@ -431,6 +431,8 @@ export function installDevMock() {
       case "mail_move":
       case "mail_delete":
         mailbox.remove(String(args.folder), args.uids as number[]);
+        return [];
+      case "mail_mark_all_read":
         return undefined;
       case "mail_save_attachment":
         return "/Users/voce/Downloads/anexo.pdf";

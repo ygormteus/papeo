@@ -581,7 +581,9 @@ impl core::Sink for AppSink<'_> {
             } else {
                 mail.subject
             };
-            // Clique busca o assunto na caixa do site.
+            // Clique: no leitor, abre esta mensagem (pelo UID guardado);
+            // no site, busca o assunto.
+            remember_notified(self.id, &subject, mail.uid);
             let _ =
                 crate::notify::deliver(self.app, self.id, &from, &subject, Some(&subject), false);
         }
@@ -594,6 +596,38 @@ impl core::Sink for AppSink<'_> {
     fn wait(&mut self, timeout: Duration) -> bool {
         self.control.sleep(timeout)
     }
+}
+
+/// Avisos recentes de e-mail novo (conta, assunto como a busca recebe,
+/// UID na Caixa de Entrada): o clique abre a mensagem certa no leitor.
+type Notified = (String, String, u32, Instant);
+static NOTIFIED: std::sync::Mutex<Vec<Notified>> = std::sync::Mutex::new(Vec::new());
+const NOTIFIED_MAX: usize = 100;
+/// Aviso mais velho que isto não abre pelo UID (o clique procura o assunto).
+const NOTIFIED_TTL: Duration = Duration::from_secs(30 * 60);
+
+/// Assunto como `open_chat` o recebe (sem controles, cortado).
+fn notified_key(subject: &str) -> String {
+    let clean: String = subject.chars().filter(|c| !c.is_control()).collect();
+    papeo_core::clip(&clean, 100).to_string()
+}
+
+fn remember_notified(id: &str, subject: &str, uid: u32) {
+    let mut list = NOTIFIED.lock().unwrap_or_else(|e| e.into_inner());
+    list.retain(|n| n.3.elapsed() < NOTIFIED_TTL);
+    list.push((id.to_owned(), notified_key(subject), uid, Instant::now()));
+    let extra = list.len().saturating_sub(NOTIFIED_MAX);
+    list.drain(..extra);
+}
+
+/// UID do aviso recente da conta com este assunto; usado uma vez só (um
+/// clique depois, numa lista de recentes com o mesmo assunto, procura).
+pub fn notified_uid(id: &str, subject: &str) -> Option<u32> {
+    let key = notified_key(subject);
+    let mut list = NOTIFIED.lock().unwrap_or_else(|e| e.into_inner());
+    list.retain(|n| n.3.elapsed() < NOTIFIED_TTL);
+    let at = list.iter().rposition(|(i, s, _, _)| i == id && *s == key)?;
+    Some(list.remove(at).2)
 }
 
 /// Token de acesso da Microsoft e quando vence.

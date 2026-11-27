@@ -525,6 +525,8 @@ pub struct Imap<S: Transport> {
     /// aumenta para receber e-mails inteiros).
     literal_max: usize,
     literals_max: usize,
+    /// Linha do último OK com tag (traz códigos como `[COPYUID …]`).
+    pub(crate) last_ok: String,
 }
 
 /// Argumento de comando: texto entre aspas ou, com caracteres fora do
@@ -554,6 +556,7 @@ impl<S: Transport> Imap<S> {
             changed: false,
             literal_max: LITERAL_MAX,
             literals_max: LITERALS_MAX,
+            last_ok: String::new(),
         };
         let greeting = imap.read_response()?;
         let mut words = greeting.line.split_whitespace();
@@ -577,6 +580,7 @@ impl<S: Transport> Imap<S> {
             changed: false,
             literal_max: LITERAL_MAX,
             literals_max: LITERALS_MAX,
+            last_ok: String::new(),
         }
     }
 
@@ -721,7 +725,12 @@ impl<S: Transport> Imap<S> {
                     self.note_change(&response);
                     untagged.push(response);
                 }
-                Tagged::Done(result) => return result.map(|()| untagged),
+                Tagged::Done(result) => {
+                    if result.is_ok() {
+                        self.last_ok = response.line;
+                    }
+                    return result.map(|()| untagged);
+                }
             }
         }
     }

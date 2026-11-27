@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-mark-all-read"
+description = "Enables the mail_mark_all_read command without any pre-configured scope."
+commands.allow = ["mail_mark_all_read"]
+
+[[permission]]
+identifier = "deny-mail-mark-all-read"
+description = "Denies the mail_mark_all_read command without any pre-configured scope."
+commands.deny = ["mail_mark_all_read"]

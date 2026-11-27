@@ -25,6 +25,7 @@
     "allow-mail-set-flag",
     "allow-mail-move",
     "allow-mail-delete",
+    "allow-mail-mark-all-read",
     "allow-mail-save-attachment",
     "allow-mail-save-attachments",
     "allow-mail-contacts",

@@ -25,6 +25,8 @@ const INLINE_IMAGE_MAX: usize = 3 * 1024 * 1024;
 const INLINE_TOTAL_MAX: usize = 12 * 1024 * 1024;
 /// Termo de busca.
 pub const QUERY_MAX: usize = 200;
+/// E-mail maior que isto abre aos pedaços, sem baixar os anexos (spec 28).
+pub const PARTIAL_FROM: u32 = 512 * 1024;
 
 // ---------------------------------------------------------------------------
 // Leitura de respostas IMAP
@@ -67,6 +69,7 @@ impl Tok {
 /// Lê a linha de uma resposta (com os literais no lugar dos `{n}`).
 pub(crate) fn tokens(response: &Response) -> Vec<Tok> {
     let mut parser = Tokens {
+        depth: 0,
         line: response.line.as_bytes(),
         pos: 0,
         literals: response.literals.iter(),
@@ -78,7 +81,13 @@ struct Tokens<'a> {
     line: &'a [u8],
     pos: usize,
     literals: std::slice::Iter<'a, Vec<u8>>,
+    /// Listas abertas agora: aninhamento absurdo (estrutura de e-mail
+    /// hostil) para a leitura em vez de estourar a pilha.
+    depth: usize,
 }
+
+/// Listas dentro de listas numa resposta.
+const TOKENS_DEPTH_MAX: usize = 64;
 
 impl Tokens<'_> {
     fn list(&mut self, close: Option<u8>) -> Vec<Tok> {
@@ -93,7 +102,13 @@ impl Tokens<'_> {
                 }
                 b'(' => {
                     self.pos += 1;
+                    if self.depth >= TOKENS_DEPTH_MAX {
+                        self.pos = self.line.len();
+                        return out;
+                    }
+                    self.depth += 1;
                     out.push(Tok::List(self.list(Some(b')'))));
+                    self.depth -= 1;
                 }
                 b'"' => out.push(self.quoted()),
                 b'{' => match self.literal() {
@@ -168,6 +183,14 @@ impl Tokens<'_> {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn tokens_of_line(line: &str) -> Vec<Tok> {
+    tokens(&Response {
+        line: line.to_owned(),
+        literals: Vec::new(),
+    })
+}
+
 /// Resposta sem tag do tipo `* <word> ...` (ex.: `LIST`, `SEARCH`): o resto.
 fn untagged<'a>(toks: &'a [Tok], word: &str) -> Option<&'a [Tok]> {
     match toks {
@@ -208,6 +231,113 @@ fn fetch_key(key: &str) -> String {
         return format!("BODY[{}]", &rest[..end]);
     }
     upper
+}
+
+/// Valor de um campo do cabeçalho principal (linhas de continuação
+/// juntadas), sem decodificar.
+fn header_field(raw: &[u8], name: &str) -> Option<String> {
+    let end = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .or_else(|| raw.windows(2).position(|w| w == b"\n\n"))
+        .unwrap_or(raw.len().min(256 * 1024));
+    let header = String::from_utf8_lossy(&raw[..end]);
+    let mut found: Option<String> = None;
+    for line in header.split('\n') {
+        let line = line.trim_end_matches('\r');
+        if line.starts_with([' ', '\t']) {
+            if let Some(v) = found.as_mut() {
+                v.push(' ');
+                v.push_str(line.trim());
+            }
+            continue;
+        }
+        if found.is_some() {
+            break;
+        }
+        if let Some((key, value)) = line.split_once(':') {
+            if key.trim().eq_ignore_ascii_case(name) {
+                found = Some(value.trim().to_owned());
+            }
+        }
+    }
+    found
+}
+
+/// Melhor destino do `List-Unsubscribe`: o primeiro `https:` (ou `http:`),
+/// senão o primeiro `mailto:`. Endereços longos ou com espaços são
+/// recusados.
+fn unsubscribe_target(value: &str) -> Option<String> {
+    let items: Vec<&str> = value
+        .split('<')
+        .skip(1)
+        .filter_map(|p| p.split_once('>').map(|(u, _)| u.trim()))
+        .filter(|u| u.len() <= 2000 && !u.chars().any(|c| c.is_whitespace() || c.is_control()))
+        .collect();
+    let lower = |u: &str| u.to_ascii_lowercase();
+    items
+        .iter()
+        .find(|u| lower(u).starts_with("https://") || lower(u).starts_with("http://"))
+        .or_else(|| items.iter().find(|u| lower(u).starts_with("mailto:")))
+        .map(|u| (*u).to_owned())
+}
+
+/// UIDs novos de uma cópia ou movimentação (`[COPYUID v origem destino]`),
+/// na ordem dos de origem. Vazio se o servidor não informa.
+fn copied_uids(lines: &[&str]) -> Vec<(u32, u32)> {
+    fn expand(set: &str) -> Option<Vec<u32>> {
+        let mut out = Vec::new();
+        for piece in set.split(',') {
+            match piece.split_once(':') {
+                Some((a, b)) => {
+                    let (a, b): (u32, u32) = (a.parse().ok()?, b.parse().ok()?);
+                    let (lo, hi) = (a.min(b), a.max(b));
+                    if hi - lo > 10_000 || out.len() > 10_000 {
+                        return None;
+                    }
+                    out.extend(lo..=hi);
+                }
+                None => out.push(piece.parse().ok()?),
+            }
+        }
+        Some(out)
+    }
+    let mut pairs = Vec::new();
+    for line in lines {
+        let upper = line.to_ascii_uppercase();
+        let Some(start) = upper.find("[COPYUID ") else {
+            continue;
+        };
+        let rest = &line[start + 9..];
+        let rest = rest.split(']').next().unwrap_or("");
+        let mut words = rest.split_whitespace();
+        let (Some(_), Some(from), Some(to)) = (words.next(), words.next(), words.next()) else {
+            continue;
+        };
+        if let (Some(from), Some(to)) = (expand(from), expand(to)) {
+            if from.len() == to.len() {
+                pairs.extend(from.into_iter().zip(to));
+            }
+        }
+    }
+    pairs
+}
+
+/// Filtro rápido da lista (spec 28).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Filter {
+    #[default]
+    All,
+    Unread,
+    Flagged,
+    Attachments,
+}
+
+/// Mensagem aberta: a vista e, se veio inteira, os bytes (para os anexos).
+pub struct Opened {
+    pub view: MessageView,
+    pub raw: Option<Vec<u8>>,
 }
 
 /// Números de sequência (de, até) das até `PAGE_SIZE` mensagens depois das
@@ -600,6 +730,9 @@ pub struct MessageView {
     pub attachments: Vec<Attachment>,
     pub seen: bool,
     pub flagged: bool,
+    /// Endereço para sair da lista (`List-Unsubscribe`): `https:` ou
+    /// `mailto:` (spec 28).
+    pub unsubscribe: Option<String>,
 }
 
 /// Monta a mensagem para a tela a partir do e-mail inteiro.
@@ -635,6 +768,7 @@ pub fn message_view(uid: u32, raw: &[u8]) -> MessageView {
         .body_text(0)
         .map(Cow::into_owned)
         .unwrap_or_default();
+    view.unsubscribe = header_field(raw, "List-Unsubscribe").and_then(|v| unsubscribe_target(&v));
 
     // Imagens embutidas: `cid:` vira `data:` (só imagem, com teto).
     let mut inline: HashMap<String, String> = HashMap::new();
@@ -1053,15 +1187,21 @@ impl<S: Transport> Reader<S> {
 
     /// Página `page` (0 = mais novas) da pasta, ou da busca por `query`.
     pub fn list(&mut self, path: &str, page: u32, query: &str) -> ImapResult<Page> {
-        self.list_from(path, page.saturating_mul(PAGE_SIZE), query)
+        self.list_from(path, page.saturating_mul(PAGE_SIZE), query, Filter::All)
     }
 
     /// Até `PAGE_SIZE` mensagens depois das `skip` mais novas (rolagem
     /// infinita: `skip` é quantas já estão na tela).
-    pub fn list_from(&mut self, path: &str, skip: u32, query: &str) -> ImapResult<Page> {
+    pub fn list_from(
+        &mut self,
+        path: &str,
+        skip: u32,
+        query: &str,
+        filter: Filter,
+    ) -> ImapResult<Page> {
         let exists = self.select(path)?;
         let query = query.trim();
-        if query.is_empty() {
+        if query.is_empty() && filter == Filter::All {
             if exists == 0 {
                 return Ok(Page::default());
             }
@@ -1078,7 +1218,7 @@ impl<S: Transport> Reader<S> {
                 total: exists,
             });
         }
-        let mut uids = self.search(query)?;
+        let mut uids = self.search(query, filter)?;
         uids.sort_unstable_by(|a, b| b.cmp(a));
         let total = uids.len() as u32;
         let start = (skip as usize).min(uids.len());
@@ -1120,22 +1260,41 @@ impl<S: Transport> Reader<S> {
         Ok(out)
     }
 
-    /// UIDs que batem com `query` na pasta aberta.
-    fn search(&mut self, query: &str) -> ImapResult<Vec<u32>> {
+    /// UIDs que batem com `query` e o filtro na pasta aberta.
+    fn search(&mut self, query: &str, filter: Filter) -> ImapResult<Vec<u32>> {
         let query = crate::clip(query, QUERY_MAX);
-        let mut parts = vec![Part::Text("UID SEARCH".into())];
-        if self.gmail && self.has_cap("X-GM-EXT-1") {
-            parts.push(Part::Text(if query.is_ascii() {
-                "X-GM-RAW".into()
+        let gmail = self.gmail && self.has_cap("X-GM-EXT-1");
+        // Gmail: a busca do próprio Gmail entende "tem anexo".
+        let raw = match (gmail, filter, query.is_empty()) {
+            (true, Filter::Attachments, true) => "has:attachment".to_owned(),
+            (true, Filter::Attachments, false) => format!("has:attachment {query}"),
+            _ => query.to_string(),
+        };
+        let utf8 = !raw.is_ascii();
+        let mut parts = vec![Part::Text(
+            if utf8 {
+                "UID SEARCH CHARSET UTF-8"
             } else {
-                "CHARSET UTF-8 X-GM-RAW".into()
-            }));
-        } else if query.is_ascii() {
-            parts.push(Part::Text("TEXT".into()));
-        } else {
-            parts.push(Part::Text("CHARSET UTF-8 TEXT".into()));
+                "UID SEARCH"
+            }
+            .into(),
+        )];
+        match filter {
+            Filter::All => {}
+            Filter::Unread => parts.push(Part::Text("UNSEEN".into())),
+            Filter::Flagged => parts.push(Part::Text("FLAGGED".into())),
+            // Sem o Gmail: e-mail com anexo quase sempre é multipart/mixed.
+            Filter::Attachments if !gmail => {
+                parts.push(Part::Text("HEADER Content-Type \"multipart/mixed\"".into()))
+            }
+            Filter::Attachments => {}
         }
-        push_string(&mut parts, &query);
+        if !raw.is_empty() {
+            parts.push(Part::Text(if gmail { "X-GM-RAW" } else { "TEXT" }.into()));
+            push_string(&mut parts, &raw);
+        } else if filter == Filter::All {
+            parts.push(Part::Text("ALL".into()));
+        }
         self.search_criteria(parts)
     }
 
@@ -1154,6 +1313,150 @@ impl<S: Transport> Reader<S> {
         uids.sort_unstable();
         uids.dedup();
         Ok(uids)
+    }
+
+    /// Abre a mensagem para ler. Grande (`size_hint` acima de
+    /// `PARTIAL_FROM`, ou desconhecido e grande no servidor) e com partes:
+    /// baixa só o texto e as imagens do corpo (spec 28).
+    pub fn open_message(
+        &mut self,
+        path: &str,
+        uid: u32,
+        mark_seen: bool,
+        size_hint: Option<u32>,
+    ) -> ImapResult<Opened> {
+        if size_hint.is_none_or(|s| s > PARTIAL_FROM) {
+            if let Some(opened) = self.open_partial(path, uid, mark_seen)? {
+                return Ok(opened);
+            }
+        }
+        let (raw, seen, flagged) = self.fetch_raw(path, uid, mark_seen)?;
+        let mut view = message_view(uid, &raw);
+        view.seen = seen || mark_seen;
+        view.flagged = flagged;
+        Ok(Opened {
+            view,
+            raw: Some(raw),
+        })
+    }
+
+    /// `None`: pequena ou de uma parte só (abre inteira).
+    fn open_partial(
+        &mut self,
+        path: &str,
+        uid: u32,
+        mark_seen: bool,
+    ) -> ImapResult<Option<Opened>> {
+        use crate::mail_parts::{assemble, decoded_size, leaves, parse, wanted, Node};
+        self.ensure(path)?;
+        let responses = self.imap.command(vec![Part::Text(format!(
+            "UID FETCH {uid} (UID RFC822.SIZE BODYSTRUCTURE)"
+        ))])?;
+        let mut size = 0;
+        let mut root = None;
+        for r in &responses {
+            let toks = tokens(r);
+            let Some(items) = fetch_items(&toks) else {
+                continue;
+            };
+            if items.get("UID").and_then(|t| t.number()) != Some(uid) {
+                continue;
+            }
+            size = items
+                .get("RFC822.SIZE")
+                .and_then(|t| t.number())
+                .unwrap_or(0);
+            root = items.get("BODYSTRUCTURE").and_then(|t| parse(t));
+        }
+        let root = match root {
+            Some(root @ Node::Multi { .. }) if size > PARTIAL_FROM => root,
+            _ => return Ok(None),
+        };
+        let all = leaves(&root);
+        let mut images = 0usize;
+        let fetch: Vec<&str> = all
+            .iter()
+            .filter(|l| wanted(l, INLINE_IMAGE_MAX as u32))
+            .filter(|l| {
+                if !l.mime.starts_with("image/") {
+                    return true;
+                }
+                images += l.size as usize;
+                images <= INLINE_TOTAL_MAX
+            })
+            .map(|l| l.part.as_str())
+            .collect();
+        let header = if mark_seen {
+            "BODY[HEADER]"
+        } else {
+            "BODY.PEEK[HEADER]"
+        };
+        let mut items = format!("UID FLAGS {header}");
+        for l in &all {
+            items.push_str(&format!(" BODY.PEEK[{}.MIME]", l.part));
+        }
+        for p in &fetch {
+            items.push_str(&format!(" BODY.PEEK[{p}]"));
+        }
+        let responses = self
+            .imap
+            .command(vec![Part::Text(format!("UID FETCH {uid} ({items})"))])?;
+        let mut got: HashMap<String, Vec<u8>> = HashMap::new();
+        let mut flags: Option<Tok> = None;
+        for r in &responses {
+            let toks = tokens(r);
+            let Some(map) = fetch_items(&toks) else {
+                continue;
+            };
+            if map.get("UID").and_then(|t| t.number()) != Some(uid) {
+                continue;
+            }
+            for (key, value) in map {
+                if key == "FLAGS" {
+                    flags = Some(value.clone());
+                } else if key.starts_with("BODY[") {
+                    got.insert(key, value.bytes().to_vec());
+                }
+            }
+        }
+        let Some(head) = got.get("BODY[HEADER").cloned() else {
+            return Err(ImapError::Rejected(tr("mensagem não encontrada").into()));
+        };
+        // Pedaço pedido que não veio (ou veio vazio): abre inteira, em vez
+        // de mostrar um e-mail em branco.
+        let missing = all.iter().any(|l| {
+            l.size > 0
+                && fetch.contains(&l.part.as_str())
+                && got
+                    .get(&format!("BODY[{}]", l.part))
+                    .is_none_or(|b| b.is_empty())
+        });
+        if missing {
+            return Ok(None);
+        }
+        let mime = |p: &str| got.get(&format!("BODY[{p}.MIME]")).cloned();
+        let body = |p: &str| {
+            fetch
+                .contains(&p)
+                .then(|| got.get(&format!("BODY[{p}]")).cloned())
+                .flatten()
+        };
+        let raw = assemble(&head, &root, &mime, &body);
+        let mut view = message_view(uid, &raw);
+        // Anexos que vieram vazios: o tamanho pela estrutura.
+        let mut empty = all
+            .iter()
+            .filter(|l| !fetch.contains(&l.part.as_str()))
+            .map(|l| decoded_size(l.size));
+        for a in view.attachments.iter_mut().filter(|a| a.size == 0) {
+            if let Some(size) = empty.next() {
+                a.size = size;
+            }
+        }
+        let flags = flags.as_ref();
+        view.seen = has_flag(flags.as_ref(), "\\Seen") || mark_seen;
+        view.flagged = has_flag(flags.as_ref(), "\\Flagged");
+        Ok(Some(Opened { view, raw: None }))
     }
 
     /// E-mail inteiro (sem marcar como lido) e as marcações dele.
@@ -1221,23 +1524,40 @@ impl<S: Transport> Reader<S> {
     }
 
     /// Move mensagens para outra pasta.
-    pub fn move_to(&mut self, path: &str, uids: &[u32], target: &str) -> ImapResult<()> {
+    /// Move e devolve os UIDs novos no destino (na ordem de `uids`), quando
+    /// o servidor informa (UIDPLUS); senão, vazio.
+    pub fn move_to(&mut self, path: &str, uids: &[u32], target: &str) -> ImapResult<Vec<u32>> {
         if uids.is_empty() || path == target {
-            return Ok(());
+            return Ok(Vec::new());
         }
         check_path(target)?;
         self.ensure(path)?;
         let set = uid_set(uids);
-        if self.has_cap("MOVE") {
-            let mut parts = vec![Part::Text(format!("UID MOVE {set}"))];
-            push_string(&mut parts, target);
-            self.imap.command(parts)?;
+        let verb = if self.has_cap("MOVE") { "MOVE" } else { "COPY" };
+        let mut parts = vec![Part::Text(format!("UID {verb} {set}"))];
+        push_string(&mut parts, target);
+        let responses = self.imap.command(parts)?;
+        let mut lines: Vec<&str> = responses.iter().map(|r| r.line.as_str()).collect();
+        let done = self.imap.last_ok.clone();
+        lines.push(&done);
+        let pairs = copied_uids(&lines);
+        if verb == "COPY" {
+            self.expunge(&set)?;
+        }
+        Ok(uids
+            .iter()
+            .filter_map(|u| pairs.iter().find(|(from, _)| from == u).map(|(_, to)| *to))
+            .collect())
+    }
+
+    /// Marca todas as mensagens da pasta como lidas (um comando só).
+    pub fn mark_all_seen(&mut self, path: &str) -> ImapResult<()> {
+        if self.select(path)? == 0 {
             return Ok(());
         }
-        let mut parts = vec![Part::Text(format!("UID COPY {set}"))];
-        push_string(&mut parts, target);
-        self.imap.command(parts)?;
-        self.expunge(&set)
+        self.imap
+            .command(vec![Part::Text("STORE 1:* +FLAGS.SILENT (\\Seen)".into())])?;
+        Ok(())
     }
 
     /// Apaga de vez (marca `\Deleted` e expurga).
@@ -1262,15 +1582,18 @@ impl<S: Transport> Reader<S> {
     }
 
     /// Manda para a Lixeira; já na Lixeira (ou sem Lixeira), apaga de vez.
-    pub fn delete(&mut self, path: &str, uids: &[u32]) -> ImapResult<()> {
+    /// Leva à Lixeira (devolve os UIDs novos lá, para desfazer) ou, sem
+    /// ela ou já nela, apaga de vez (vazio).
+    pub fn delete(&mut self, path: &str, uids: &[u32]) -> ImapResult<Vec<u32>> {
         if uids.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         match self.role_path(Role::Trash)? {
             Some(trash) if trash != path => self.move_to(path, uids, &trash),
             _ => {
                 self.ensure(path)?;
-                self.expunge(&uid_set(uids))
+                self.expunge(&uid_set(uids))?;
+                Ok(Vec::new())
             }
         }
     }
@@ -1390,6 +1713,46 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn deep_nesting_does_not_overflow() {
+        let line = format!("* 1 FETCH (BODYSTRUCTURE {})", "(".repeat(200_000));
+        let toks = tokens_of_line(&line);
+        assert!(!toks.is_empty());
+    }
+
+    #[test]
+    fn reads_copied_uids() {
+        let lines = [
+            "* OK [COPYUID 38505 304,319:320 3956:3958] Done",
+            "A3 OK done",
+        ];
+        assert_eq!(
+            copied_uids(&lines),
+            vec![(304, 3956), (319, 3957), (320, 3958)]
+        );
+        assert!(copied_uids(&["A1 OK [COPYUID 1 1:3 5] errado"]).is_empty());
+        assert!(copied_uids(&["A1 OK sem código"]).is_empty());
+    }
+
+    #[test]
+    fn finds_unsubscribe() {
+        let raw = b"From: a@x.com\r\nList-Unsubscribe: <mailto:sair@x.com?subject=sair>,\r\n <https://x.com/sair?u=1>\r\nSubject: oi\r\n\r\ncorpo\r\nList-Unsubscribe: <https://falso>\r\n";
+        let value = header_field(raw, "list-unsubscribe").unwrap();
+        assert_eq!(
+            unsubscribe_target(&value).as_deref(),
+            Some("https://x.com/sair?u=1")
+        );
+        assert_eq!(
+            unsubscribe_target("<mailto:sair@x.com>").as_deref(),
+            Some("mailto:sair@x.com")
+        );
+        assert_eq!(unsubscribe_target("<javascript:alert(1)>"), None);
+        assert_eq!(unsubscribe_target("<https://x.com/a b>"), None);
+        assert!(header_field(raw, "X-Nada").is_none());
+        let view = message_view(1, raw);
+        assert_eq!(view.unsubscribe.as_deref(), Some("https://x.com/sair?u=1"));
+    }
 
     #[test]
     fn lists_from_offset() {
@@ -1703,6 +2066,94 @@ mod tests {
         reader.read_line(&mut line).unwrap();
         let (tag, rest) = line.trim_end().split_once(' ').unwrap();
         (tag.to_owned(), rest.to_owned())
+    }
+
+    #[test]
+    fn reader_opens_big_message_in_parts_and_more() {
+        let (stream, server) = fake_server(|r, w| {
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "CAPABILITY");
+            w.write_all(format!("* CAPABILITY IMAP4rev1 UIDPLUS MOVE\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "SELECT \"INBOX\"");
+            w.write_all(format!("* 3 EXISTS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+
+            // Estrutura primeiro; grande: só o texto.
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID FETCH 7 (UID RFC822.SIZE BODYSTRUCTURE)");
+            w.write_all(format!("* 3 FETCH (UID 7 RFC822.SIZE 5000000 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" (\"CHARSET\" \"utf-8\") NIL NIL \"7BIT\" 5 1 NIL NIL NIL)(\"APPLICATION\" \"PDF\" (\"NAME\" \"a.pdf\") NIL NIL \"BASE64\" 4000000 NIL (\"ATTACHMENT\" (\"FILENAME\" \"a.pdf\")) NIL) \"MIXED\" (\"BOUNDARY\" \"x\") NIL NIL))\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(
+                cmd,
+                "UID FETCH 7 (UID FLAGS BODY[HEADER] BODY.PEEK[1.MIME] BODY.PEEK[2.MIME] BODY.PEEK[1])"
+            );
+            let head = b"From: a@x.com\r\nSubject: grande\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n";
+            let m1 = b"Content-Type: text/plain; charset=utf-8\r\n\r\n";
+            let m2 = b"Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n";
+            w.write_all(
+                format!(
+                    "* 3 FETCH (UID 7 FLAGS (\\Seen) BODY[HEADER] {{{}}}\r\n",
+                    head.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            w.write_all(head).unwrap();
+            w.write_all(format!(" BODY[1.MIME] {{{}}}\r\n", m1.len()).as_bytes())
+                .unwrap();
+            w.write_all(m1).unwrap();
+            w.write_all(format!(" BODY[2.MIME] {{{}}}\r\n", m2.len()).as_bytes())
+                .unwrap();
+            w.write_all(m2).unwrap();
+            w.write_all(b" BODY[1] {5}\r\nhello)\r\n").unwrap();
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+
+            // Mover devolve o UID novo (COPYUID).
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID MOVE 7 \"Arquivo\"");
+            w.write_all(
+                format!("* OK [COPYUID 9 7 99] ok\r\n* 3 EXPUNGE\r\n{tag} OK\r\n").as_bytes(),
+            )
+            .unwrap();
+
+            // Marcar todas como lidas.
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "SELECT \"INBOX\"");
+            w.write_all(format!("* 2 EXISTS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "STORE 1:* +FLAGS.SILENT (\\Seen)");
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+
+            // Filtro: não lidas.
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "SELECT \"INBOX\"");
+            w.write_all(format!("* 2 EXISTS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID SEARCH UNSEEN");
+            w.write_all(format!("* SEARCH\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+        });
+        let imap = Imap::connect(stream).unwrap();
+        let mut reader = Reader::new(imap, false).unwrap();
+        let opened = reader.open_message("INBOX", 7, true, None).unwrap();
+        assert!(opened.raw.is_none());
+        assert_eq!(opened.view.subject, "grande");
+        assert!(opened.view.text.contains("hello"));
+        assert!(opened.view.seen);
+        assert_eq!(opened.view.attachments.len(), 1);
+        assert_eq!(opened.view.attachments[0].name, "a.pdf");
+        assert_eq!(opened.view.attachments[0].size, 3_000_000);
+
+        assert_eq!(reader.move_to("INBOX", &[7], "Arquivo").unwrap(), vec![99]);
+        reader.mark_all_seen("INBOX").unwrap();
+        let page = reader.list_from("INBOX", 0, "", Filter::Unread).unwrap();
+        assert_eq!(page.total, 0);
+        server.join().unwrap();
     }
 
     #[test]

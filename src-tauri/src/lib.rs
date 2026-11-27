@@ -563,6 +563,7 @@ pub fn run() {
             commands::mail_set_flag,
             commands::mail_move,
             commands::mail_delete,
+            commands::mail_mark_all_read,
             commands::mail_save_attachment,
             commands::mail_save_attachments,
             commands::mail_contacts,

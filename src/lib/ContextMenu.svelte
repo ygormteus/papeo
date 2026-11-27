@@ -17,7 +17,7 @@
   let menu: HTMLDivElement;
   let width = $state(WIDTH);
   let left = $derived(Math.max(8, Math.min(x, maxX - width - 8)));
-  let top = $derived(Math.min(y, window.innerHeight - items.length * 36 - 24));
+  let top = $derived(Math.max(8, Math.min(y, window.innerHeight - items.length * 36 - 24)));
 
   $effect(() => {
     menu.querySelector<HTMLButtonElement>("button")?.focus();
@@ -58,7 +58,7 @@
   bind:offsetWidth={width}
   onkeydown={keydown}
 >
-  {#each items as item (item.label)}
+  {#each items as item, i (i)}
     <button
       role="menuitem"
       title={t(item.label)}
@@ -77,6 +77,9 @@
 <style>
   .menu {
     position: fixed;
+    /* Muitas pastas em "Mover para…": rola dentro do menu. */
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
     z-index: 50;
     padding: 5px;
     border: 1px solid var(--border);

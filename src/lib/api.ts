@@ -546,20 +546,24 @@ export const api = {
   mailMicrosoftCancel: () => invoke<void>("mail_microsoft_cancel"),
   mailFolders: (id: string, refresh = false) => invoke<MailFolder[]>("mail_folders", { id, refresh }),
   /** Até 50 mensagens depois das `skip` mais novas (rolagem infinita). */
-  mailList: (id: string, folder: string, skip: number, query: string) =>
-    invoke<MailPage>("mail_list", { id, folder, skip, query }),
+  mailList: (id: string, folder: string, skip: number, query: string, filter: MailFilter = "all") =>
+    invoke<MailPage>("mail_list", { id, folder, skip, query, filter }),
   /** Pastas e mais novas guardadas no disco da última vez (spec 27). */
   mailCached: (id: string) => invoke<MailCache>("mail_cached", { id }),
   /** Abre a mensagem (e a marca como lida). */
-  mailOpen: (id: string, folder: string, uid: number, peek = false) =>
-    invoke<MailMessage>("mail_open", { id, folder, uid, peek }),
+  /** `size`: o da lista; e-mail grande abre sem baixar os anexos (spec 28). */
+  mailOpen: (id: string, folder: string, uid: number, peek = false, size?: number) =>
+    invoke<MailMessage>("mail_open", { id, folder, uid, peek, size: size ?? null }),
   mailSetFlag: (id: string, folder: string, uids: number[], flag: "seen" | "flagged", on: boolean) =>
     invoke<void>("mail_set_flag", { id, folder, uids, flag, on }),
   /** `target`: caminho da pasta ou `role:archive`, `role:junk`, `role:inbox`. */
+  /** Devolve os UIDs novos no destino (para desfazer); vazio se o servidor não diz. */
   mailMove: (id: string, folder: string, uids: number[], target: string) =>
-    invoke<void>("mail_move", { id, folder, uids, target }),
+    invoke<number[]>("mail_move", { id, folder, uids, target }),
+  /** Como `mailMove` (para a Lixeira); vazio quando apaga de vez. */
   mailDelete: (id: string, folder: string, uids: number[]) =>
-    invoke<void>("mail_delete", { id, folder, uids }),
+    invoke<number[]>("mail_delete", { id, folder, uids }),
+  mailMarkAllRead: (id: string, folder: string) => invoke<void>("mail_mark_all_read", { id, folder }),
   /** Salva o anexo na pasta de downloads; devolve o caminho. */
   mailSaveAttachment: (id: string, folder: string, uid: number, index: number) =>
     invoke<string>("mail_save_attachment", { id, folder, uid, index }),
@@ -845,7 +849,11 @@ export interface MailMessage {
   attachments: MailAttachment[];
   seen: boolean;
   flagged: boolean;
+  /** Sair da lista (`https:` ou `mailto:`), se o e-mail oferece. */
+  unsubscribe?: string | null;
 }
+
+export type MailFilter = "all" | "unread" | "flagged" | "attachments";
 
 export interface MailDraft {
   to: string[];
@@ -906,8 +914,11 @@ export function onMailSend(cb: (o: MailSendOutcome) => void): Promise<UnlistenFn
 }
 
 /** Clique num aviso de e-mail de conta com o leitor: procura o assunto. */
-export function onMailReveal(cb: (r: { id: string; query: string }) => void): Promise<UnlistenFn> {
-  return listen<{ id: string; query: string }>("papeo://mail-reveal", (e) => cb(e.payload));
+/** `uid`: a mensagem na Caixa de Entrada (aviso de e-mail novo), se conhecida. */
+export function onMailReveal(
+  cb: (r: { id: string; query: string; uid?: number | null }) => void,
+): Promise<UnlistenFn> {
+  return listen<{ id: string; query: string; uid?: number | null }>("papeo://mail-reveal", (e) => cb(e.payload));
 }
 
 export function onSync(cb: (s: SyncStatus) => void): Promise<UnlistenFn> {

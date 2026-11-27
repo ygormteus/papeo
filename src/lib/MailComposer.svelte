@@ -91,6 +91,34 @@
     return false;
   });
 
+  // Prévia da assinatura formatada (o texto da caixa não mostra a logo):
+  // pedida uma vez por editor aberto, num quadro sem scripts.
+  let sigHtml = $state("");
+  let sigHeight = $state(0);
+  $effect(() => {
+    const id = service.id;
+    if (!service.signatureRich || !service.mail?.signature) return;
+    let live = true;
+    api
+      .mailSignature(id)
+      .then((s) => {
+        if (live) sigHtml = s.html;
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  });
+  const sigDoc = $derived(
+    sigHtml
+      ? `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: http:; style-src 'unsafe-inline'"><style>html,body{margin:0;background:#fff;color:#1f2328;font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{padding:8px 12px}img{max-width:100%;height:auto}</style></head><body>${sigHtml}</body></html>`
+      : "",
+  );
+  function sigLoaded(e: Event) {
+    const doc = (e.currentTarget as HTMLIFrameElement).contentDocument;
+    sigHeight = Math.min(180, Math.ceil(doc?.documentElement.scrollHeight ?? 0));
+  }
+
   // svelte-ignore state_referenced_locally
   let to = $state(start.to ?? "");
   // svelte-ignore state_referenced_locally
@@ -379,6 +407,17 @@
   </div>
   <textarea bind:this={bodyField} bind:value={body} aria-label={t("Texto do e-mail")}></textarea>
   {#if service.signatureRich && service.mail?.signature}
+    {#if richIntact && sigDoc}
+      <iframe
+        class="sig-preview"
+        tabindex="-1"
+        title={t("Assinatura")}
+        sandbox="allow-same-origin"
+        srcdoc={sigDoc}
+        style:height={sigHeight ? `${sigHeight}px` : undefined}
+        onload={sigLoaded}
+      ></iframe>
+    {/if}
     <p class="rich-note">
       {#if richIntact}{t("A assinatura sai com a formatação (logo, cores e links).")}{:else}{t("A assinatura foi mudada ou apagada: o e-mail sai só em texto.")}{/if}
     </p>
@@ -418,6 +457,18 @@
 </form>
 
 <style>
+  .sig-preview {
+    /* Só para ver: links da assinatura não navegam aqui dentro. */
+    pointer-events: none;
+    display: block;
+    width: calc(100% - 32px);
+    height: 60px;
+    margin: 6px 16px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    flex-shrink: 0;
+  }
   .rich-note {
     margin: 0;
     padding: 4px 16px;

@@ -122,7 +122,7 @@
   // Servidor e usuário já informados ao adicionar a conta.
   let mailStart = $state<{ host: string; user: string } | null>(null);
   // Clique num aviso de e-mail de conta com o leitor: assunto a procurar.
-  let mailReveal = $state<{ id: string; query: string; n: number } | null>(null);
+  let mailReveal = $state<{ id: string; query: string; uid?: number | null; n: number } | null>(null);
   const mailing = $derived(snap.services.find((s) => s.id === mailingId) ?? null);
   let restoring = $state<{
     path: string;

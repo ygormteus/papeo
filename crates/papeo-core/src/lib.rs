@@ -6,6 +6,7 @@ pub mod address_book;
 pub mod i18n;
 pub mod mail;
 pub mod mail_cache;
+mod mail_parts;
 pub mod mailbox;
 mod organizer;
 mod pin;

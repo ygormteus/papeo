@@ -13,7 +13,7 @@ use papeo_core::address_book::Seen;
 use papeo_core::i18n::{tr, trf};
 use papeo_core::mail::{ImapError, MailAccount, MailAuth};
 use papeo_core::mail_cache::MailCache;
-use papeo_core::mailbox::{self as core, Folder, MessageView, Page, Reader, Role};
+use papeo_core::mailbox::{self as core, Filter, Folder, MessageView, Page, Reader, Role};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,7 +21,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
 /// Conexão parada há este tempo fecha.
-const IDLE_CLOSE: Duration = Duration::from_secs(5 * 60);
+/// (Longo: reabrir custa TLS e login, a demora de abrir o leitor.)
+const IDLE_CLOSE: Duration = Duration::from_secs(20 * 60);
 /// Conexão parada há este tempo é testada (NOOP) antes de usar.
 const IDLE_CHECK: Duration = Duration::from_secs(30);
 /// Soma dos anexos de um e-mail enviado.
@@ -197,6 +198,24 @@ fn with_reader_cached<T>(
     result.map_err(|e| describe(&e))
 }
 
+/// A mensagem inteira: a guardada da última abertura ou baixada agora (e
+/// guardada para o próximo anexo).
+fn full_raw(
+    r: &mut Reader<Tls>,
+    last: &mut Option<(String, u32, Arc<Vec<u8>>)>,
+    folder: &str,
+    uid: u32,
+) -> Result<Arc<Vec<u8>>, ImapError> {
+    if let Some((f, u, raw)) = last.as_ref() {
+        if f == folder && *u == uid {
+            return Ok(raw.clone());
+        }
+    }
+    let raw = Arc::new(r.fetch_raw(folder, uid, false)?.0);
+    *last = Some((folder.to_owned(), uid, raw.clone()));
+    Ok(raw)
+}
+
 fn describe(err: &ImapError) -> String {
     match err {
         ImapError::Auth(_) => tr("O servidor recusou o login. Confira a senha da conta.").into(),
@@ -240,12 +259,13 @@ pub async fn list(
     folder: String,
     skip: u32,
     query: String,
+    filter: Filter,
 ) -> Result<Page, String> {
     blocking(move || {
         let (page, account) = with_reader(&app, &id, |r, account| {
-            Ok((r.list_from(&folder, skip, &query)?, account.clone()))
+            Ok((r.list_from(&folder, skip, &query, filter)?, account.clone()))
         })?;
-        if skip == 0 && query.trim().is_empty() {
+        if skip == 0 && query.trim().is_empty() && filter == Filter::All {
             crate::mail_cache::put_list(&app, &id, &account, &folder, &page);
         }
         let own = account.user;
@@ -277,15 +297,16 @@ pub async fn open(
     folder: String,
     uid: u32,
     peek: bool,
+    size: Option<u32>,
 ) -> Result<MessageView, String> {
     blocking(move || {
         with_reader_cached(&app, &id, |r, account, last| {
-            let (raw, seen, flagged) = r.fetch_raw(&folder, uid, !peek)?;
-            let mut view = core::message_view(uid, &raw);
-            view.seen = seen || !peek;
-            view.flagged = flagged;
-            *last = Some((folder, uid, Arc::new(raw)));
-            Ok((view, account.user.clone()))
+            let opened = r.open_message(&folder, uid, !peek, size)?;
+            // Veio aos pedaços (spec 28): o anexo baixa a mensagem inteira.
+            if let Some(raw) = opened.raw {
+                *last = Some((folder, uid, Arc::new(raw)));
+            }
+            Ok((opened.view, account.user.clone()))
         })
         .map(|(view, own)| {
             if !peek {
@@ -332,7 +353,7 @@ pub async fn move_to(
     folder: String,
     uids: Vec<u32>,
     target: String,
-) -> Result<(), String> {
+) -> Result<Vec<u32>, String> {
     blocking(move || {
         with_reader(&app, &id, |r, _| {
             let role = match target.as_str() {
@@ -365,8 +386,12 @@ pub async fn delete(
     id: String,
     folder: String,
     uids: Vec<u32>,
-) -> Result<(), String> {
+) -> Result<Vec<u32>, String> {
     blocking(move || with_reader(&app, &id, |r, _| r.delete(&folder, &uids))).await
+}
+
+pub async fn mark_all_read(app: AppHandle, id: String, folder: String) -> Result<(), String> {
+    blocking(move || with_reader(&app, &id, |r, _| r.mark_all_seen(&folder))).await
 }
 
 /// Grava o anexo na pasta de downloads e devolve o caminho.
@@ -379,10 +404,7 @@ pub async fn save_attachment(
 ) -> Result<String, String> {
     blocking(move || {
         let (name, bytes) = with_reader_cached(&app, &id, |r, _, last| {
-            let raw = match last {
-                Some((f, u, raw)) if *f == folder && *u == uid => raw.clone(),
-                _ => Arc::new(r.fetch_raw(&folder, uid, false)?.0),
-            };
+            let raw = full_raw(r, last, &folder, uid)?;
             core::attachment(&raw, index)
                 .ok_or_else(|| ImapError::Rejected(tr("Anexo não encontrado.").into()))
         })?;
@@ -412,10 +434,7 @@ pub async fn save_attachments(
     }
     blocking(move || {
         let files = with_reader_cached(&app, &id, |r, _, last| {
-            let raw = match last {
-                Some((f, u, raw)) if *f == folder && *u == uid => raw.clone(),
-                _ => Arc::new(r.fetch_raw(&folder, uid, false)?.0),
-            };
+            let raw = full_raw(r, last, &folder, uid)?;
             indices
                 .iter()
                 .map(|&i| {
@@ -467,10 +486,7 @@ pub async fn preview_attachment(
 ) -> Result<bool, String> {
     blocking(move || {
         let (name, bytes) = with_reader_cached(&app, &id, |r, _, last| {
-            let raw = match last {
-                Some((f, u, raw)) if *f == folder && *u == uid => raw.clone(),
-                _ => Arc::new(r.fetch_raw(&folder, uid, false)?.0),
-            };
+            let raw = full_raw(r, last, &folder, uid)?;
             core::attachment(&raw, index)
                 .ok_or_else(|| ImapError::Rejected(tr("Anexo não encontrado.").into()))
         })?;

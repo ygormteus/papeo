@@ -44,7 +44,7 @@ Gmail e Outlook não oferecem API de leitura sem auditoria paga.
 ### Leitor
 
 - **R9.** Onde a conta tiver IMAP, o Papeo deve abri-la num leitor próprio
-  (pastas, lista em páginas de 50, busca, mensagem, anexos, responder,
+  (pastas, lista com rolagem infinita, busca, mensagem, anexos, responder,
   responder a todos, encaminhar, arquivar, spam, excluir, estrela). O site
   só abre quando a pessoa pedir.
 - **R10.** O Papeo deve mostrar a mensagem num quadro sem scripts, com HTML

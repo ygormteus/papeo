@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "mail_set_flag",
     "mail_move",
     "mail_delete",
+    "mail_mark_all_read",
     "mail_save_attachment",
     "mail_save_attachments",
     "mail_contacts",

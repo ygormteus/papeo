@@ -495,9 +495,11 @@ pub fn open_chat(app: &AppHandle, id: &str, query: &str, exact: bool) -> Result<
     }
     // Leitor de e-mail: a tela do Papeo procura (pelo assunto).
     if app.state::<AppState>().lock().reader(id) {
+        // Aviso de e-mail novo: o UID abre a mensagem direto (spec 28).
+        let uid = crate::mail::notified_uid(id, &query);
         let _ = app.emit(
             "papeo://mail-reveal",
-            serde_json::json!({ "id": id, "query": query }),
+            serde_json::json!({ "id": id, "query": query, "uid": uid }),
         );
         return Ok(snap);
     }

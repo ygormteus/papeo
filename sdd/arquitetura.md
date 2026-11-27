@@ -264,7 +264,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 98 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 99 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
@@ -398,7 +398,12 @@ repetido e confere o nome no cabeçalho antes de enviar.
   (`site_fallback`). Com o IMAP de pé, o site pode hibernar.
 - **Leitor** (`mailbox.rs`): uma conexão de leitura por conta, separada do
   vigia. É testada com `NOOP` depois de 30 s parada e fechada depois de
-  5 min. Ao abrir, mostra as pastas e as mais novas guardadas em
+  20 min. E-mail acima de 512 KB com partes abre aos pedaços (spec 28):
+  `BODYSTRUCTURE`, cabeçalho de cada parte, texto e imagens do corpo; o
+  anexo baixa a mensagem inteira quando pedido. Filtros (`UNSEEN`,
+  `FLAGGED`, anexo) são buscas no servidor; mover e excluir devolvem os
+  UIDs do `[COPYUID]` para desfazer; o clique no aviso abre pelo UID
+  guardado na memória. Ao abrir, mostra as pastas e as mais novas guardadas em
   `mail-cache/` e troca pelas do servidor quando ele responde (spec 27);
   a lista rola sem fim, pedindo `mail_list` a partir de quantas já estão
   na tela (`skip`), sem repetir UID. A mensagem abre num quadro isolado, sem scripts e com CSP
