@@ -6,6 +6,7 @@
     KIND_META,
     MAIL_PRESETS,
     OUTLOOK_WORK_URL,
+    TEAMS_PERSONAL_URL,
     errorMessage,
     needsUrl,
     presetForAddress,
@@ -40,12 +41,13 @@
     presetId = presetForAddress(address)?.id ?? "";
   }
 
-  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "gmail", "outlook", "email", "custom"];
+  const kinds: ServiceKind[] = ["whatsapp", "telegram", "discord", "slack", "teams", "gmail", "outlook", "email", "custom"];
   let kind = $state<ServiceKind>("whatsapp");
   let name = $state("");
   let url = $state("");
   /** Outlook de trabalho ou escola (Microsoft 365) em vez do pessoal. */
   let outlookWork = $state(false);
+  let teamsPersonal = $state(false);
   let error = $state("");
   let busy = $state(false);
 
@@ -81,7 +83,13 @@
     busy = true;
     error = "";
     try {
-      const site = needsUrl(kind) ? url.trim() : kind === "outlook" && outlookWork ? OUTLOOK_WORK_URL : "";
+      const site = needsUrl(kind)
+        ? url.trim()
+        : kind === "outlook" && outlookWork
+          ? OUTLOOK_WORK_URL
+          : kind === "teams" && teamsPersonal
+            ? TEAMS_PERSONAL_URL
+            : "";
       await onsubmit(kind, name.trim(), site);
     } catch (err) {
       error = errorMessage(err);
@@ -197,6 +205,18 @@
         Para receber avisos de e-mails novos, ligue no Outlook: Configurações → Geral → Notificações →
         Notificações da área de trabalho.
       </p>
+    {:else if kind === "teams"}
+      <fieldset class="account">
+        <legend>Tipo de conta</legend>
+        <label class="choice">
+          <input type="radio" name="teams-account" value={false} bind:group={teamsPersonal} />
+          <span>Trabalho ou escola <span class="muted">(Microsoft 365)</span></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="teams-account" value={true} bind:group={teamsPersonal} />
+          <span>Pessoal <span class="muted">(Teams gratuito)</span></span>
+        </label>
+      </fieldset>
     {:else if kind === "gmail"}
       <p class="note">
         Para receber avisos de e-mails novos, ligue no Gmail: Configurações → Ver todas as configurações →
@@ -301,7 +321,7 @@
 
   .kinds {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     margin: 0;
     padding: 0;

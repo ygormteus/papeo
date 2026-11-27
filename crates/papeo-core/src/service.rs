@@ -20,6 +20,11 @@ pub enum ServiceKind {
     /// o endereço é informado pela pessoa.
     Email,
     Custom,
+    /// Slack na web (spec 19).
+    Slack,
+    /// Microsoft Teams na web: trabalho/escola (padrão) ou pessoal, pelo
+    /// endereço informado ao adicionar.
+    Teams,
 }
 
 impl ServiceKind {
@@ -59,6 +64,8 @@ impl ServiceKind {
             Self::Discord => Some("Discord"),
             Self::Gmail => Some("Gmail"),
             Self::Outlook => Some("Outlook"),
+            Self::Slack => Some("Slack"),
+            Self::Teams => Some("Teams"),
             Self::Email | Self::Custom => None,
         }
     }
@@ -70,6 +77,8 @@ impl ServiceKind {
             Self::Discord => Some("https://discord.com/app"),
             Self::Gmail => Some("https://mail.google.com/mail/u/0/"),
             Self::Outlook => Some("https://outlook.live.com/mail/"),
+            Self::Slack => Some("https://app.slack.com/client"),
+            Self::Teams => Some("https://teams.microsoft.com/v2/"),
             Self::Email | Self::Custom => None,
         }
     }
@@ -427,6 +436,37 @@ mod tests {
             r#""outlook""#
         );
         assert!(!ServiceKind::Gmail.supports_chat() && !ServiceKind::Whatsapp.is_email());
+        // Slack e Teams (spec 19): chamadas liberadas, sem conversa nem e-mail.
+        let slack = Service::new(ServiceKind::Slack, None, None).unwrap();
+        assert_eq!(
+            (slack.name.as_str(), slack.url.as_str()),
+            ("Slack", "https://app.slack.com/client")
+        );
+        let teams = Service::new(ServiceKind::Teams, None, None).unwrap();
+        assert_eq!(
+            (teams.name.as_str(), teams.url.as_str()),
+            ("Teams", "https://teams.microsoft.com/v2/")
+        );
+        let personal = Service::new(
+            ServiceKind::Teams,
+            None,
+            Some("https://teams.live.com/v2/".into()),
+        )
+        .unwrap();
+        assert_eq!(personal.url, "https://teams.live.com/v2/");
+        for kind in [ServiceKind::Slack, ServiceKind::Teams] {
+            let s = Service::new(kind, None, None).unwrap();
+            assert_eq!(s.media_policy(), MediaPolicy::Allow);
+            assert!(!kind.supports_chat() && !kind.is_email() && !kind.supports_mail_watch());
+        }
+        assert_eq!(
+            serde_json::to_string(&ServiceKind::Slack).unwrap(),
+            r#""slack""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServiceKind::Teams).unwrap(),
+            r#""teams""#
+        );
         let kind: ServiceKind = serde_json::from_str(r#""email""#).unwrap();
         assert_eq!(kind, ServiceKind::Email);
         assert_eq!(

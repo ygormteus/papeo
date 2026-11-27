@@ -92,9 +92,39 @@ pub fn same_site(service_url: &str, page_url: &str) -> bool {
         return false;
     }
     match (service.host_str(), page.host_str()) {
-        (Some(a), Some(b)) => site_of(a) == site_of(b),
+        (Some(a), Some(b)) => site_of(a) == site_of(b) || same_alias(a, b),
         _ => false,
     }
+}
+
+/// Endereços exatos para onde a Microsoft leva o mesmo Teams/Outlook de
+/// trabalho (spec 19): contam como o mesmo site, e nada além deles.
+const MICROSOFT_ALIASES: [&[&str]; 2] = [
+    &["teams.microsoft.com", "teams.cloud.microsoft"],
+    &[
+        "outlook.office.com",
+        "outlook.office365.com",
+        "outlook.cloud.microsoft",
+    ],
+];
+
+fn same_alias(a: &str, b: &str) -> bool {
+    let (a, b) = (a.to_ascii_lowercase(), b.to_ascii_lowercase());
+    MICROSOFT_ALIASES
+        .iter()
+        .any(|set| set.contains(&a.as_str()) && set.contains(&b.as_str()))
+}
+
+/// Página de login da Microsoft: vale só para dizer "desconectado" de uma
+/// conta Teams ou Outlook (nunca para avisos ou microfone).
+pub fn is_microsoft_login(page_url: &str) -> bool {
+    url::Url::parse(page_url).is_ok_and(|u| {
+        u.scheme() == "https"
+            && matches!(
+                u.host_str(),
+                Some("login.microsoftonline.com" | "login.live.com")
+            )
+    })
 }
 
 /// `session` no formato gerado pelo app (32 hex minúsculos): seguro como
@@ -138,6 +168,33 @@ mod tests {
             "http://192.168.0.5:8065/x"
         ));
         assert!(!same_site("http://192.168.0.5/", "http://192.168.0.6/"));
+        // Teams/Outlook de trabalho trocam de domínio da Microsoft.
+        let teams = "https://teams.microsoft.com/v2/";
+        assert!(same_site(teams, "https://teams.cloud.microsoft/"));
+        assert!(same_site(
+            "https://outlook.office.com/mail/",
+            "https://outlook.cloud.microsoft/mail/"
+        ));
+        assert!(!same_site(teams, "https://teams.live.com/v2/"));
+        assert!(!same_site(teams, "https://cloud.microsoft.evil.io/"));
+        // Só os endereços exatos: outro produto da Microsoft não entra.
+        assert!(!same_site(teams, "https://forms.cloud.microsoft/"));
+        assert!(!same_site(
+            "https://outlook.office.com/mail/",
+            "https://sway.cloud.microsoft/"
+        ));
+        assert!(!same_site(teams, "https://outlook.cloud.microsoft/"));
+        assert!(is_microsoft_login(
+            "https://login.microsoftonline.com/common/oauth2"
+        ));
+        assert!(!is_microsoft_login("http://login.live.com/"));
+        assert!(!is_microsoft_login(
+            "https://login.microsoftonline.com.evil.io/"
+        ));
+        assert!(!same_site(
+            "https://outlook.live.com/mail/",
+            "https://outlook.office.com/mail/"
+        ));
     }
 
     #[test]

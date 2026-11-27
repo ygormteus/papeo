@@ -116,8 +116,18 @@
     if (location.hostname === "accounts.google.com") {
       return /^\/(v\d\/)?(signin|ServiceLogin|AccountChooser)/i.test(location.pathname || "");
     }
-    // Outlook desconectado cai no login da Microsoft.
+    // Outlook e Teams desconectados caem no login da Microsoft.
     if (MICROSOFT_LOGIN.includes(location.hostname)) return true;
+    // Slack desconectado: páginas de entrar do slack.com (e do espaço).
+    const host = location.hostname;
+    if (host === "slack.com" || host.endsWith(".slack.com")) {
+      const path = location.pathname || "/";
+      if (/^\/(signin|sign_in|sign_in_with_password|workspace-signin|get-started|ssb\/signin|checkcookie)(\/|$)/i.test(path)) {
+        return true;
+      }
+      // Raiz do espaço de trabalho mostrando o formulário de entrar.
+      return path === "/" && Boolean(document.querySelector('form[action*="signin" i], input[type="password"]'));
+    }
     const selector = LOGGED_OUT_SELECTORS[site()];
     return Boolean(selector && document.querySelector(selector));
   };

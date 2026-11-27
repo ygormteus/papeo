@@ -23,6 +23,8 @@ const DEFAULT_URL: Record<string, string> = {
   discord: "https://discord.com/app",
   gmail: "https://mail.google.com/mail/u/0/",
   outlook: "https://outlook.live.com/mail/",
+  slack: "https://app.slack.com/client",
+  teams: "https://teams.microsoft.com/v2/",
 };
 const DEFAULT_NAME: Record<string, string> = {
   whatsapp: "WhatsApp",
@@ -30,6 +32,8 @@ const DEFAULT_NAME: Record<string, string> = {
   discord: "Discord",
   gmail: "Gmail",
   outlook: "Outlook",
+  slack: "Slack",
+  teams: "Teams",
 };
 const MB = 1024 ** 2;
 

@@ -234,6 +234,24 @@ function load({ hostname, pathname = "/", dom = {}, all = {}, globals = {} }) {
     const login = load({ hostname }).status();
     check(login.loggedOut && login.chat === "", `microsoft: login em ${hostname}`);
   }
+
+  // Slack (spec 19): páginas de entrar contam como desconectado.
+  for (const [hostname, pathname, out] of [
+    ["slack.com", "/signin", true],
+    ["empresa.slack.com", "/ssb/signin", true],
+    ["app.slack.com", "/checkcookie", true],
+    ["app.slack.com", "/client/T1/C2", false],
+    ["slack.com", "/signinx", false],
+    ["slack.com", "/workspace-signin", true],
+    ["empresa.slack.com", "/sign_in_with_password", true],
+    ["slack.com", "/get-started", true],
+  ]) {
+    check(load({ hostname, pathname }).status().loggedOut === out, `slack: ${hostname}${pathname}`);
+  }
+  // Raiz com o formulário de entrar conta; raiz sem formulário, não.
+  const pwd = { 'form[action*="signin" i], input[type="password"]': {} };
+  check(load({ hostname: "empresa.slack.com", dom: pwd }).status().loggedOut, "slack: raiz com formulário");
+  check(!load({ hostname: "slack.com" }).status().loggedOut, "slack: raiz sem formulário");
 }
 
 // Outros sites continuam sem contador da página (vale o título).

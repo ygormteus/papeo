@@ -204,11 +204,17 @@ pub async fn service_status(
             .service(&id)
             .is_ok_and(|s| papeo_core::same_site(&s.url, &page));
         let kind = inner.service(&id).map(|s| s.kind).ok();
+        // Teams/Outlook de trabalho desconectados caem no login da Microsoft
+        // (outro domínio): vale só para "desconectado" (spec 19, R4).
+        let microsoft_login = matches!(
+            kind,
+            Some(papeo_core::ServiceKind::Teams | papeo_core::ServiceKind::Outlook)
+        ) && papeo_core::is_microsoft_login(&page);
         let Some(health) = inner.health.get_mut(&id) else {
             return Ok(());
         };
         health.last_beat = Some(Instant::now());
-        health.logged_out = own_site && logged_out;
+        health.logged_out = (own_site || microsoft_login) && logged_out;
         // Diagnóstico: só a página do próprio site, conectada.
         let mut probes_changed = false;
         // Só os seis pontos conhecidos interessam: relatório maior é lixo.

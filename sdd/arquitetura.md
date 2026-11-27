@@ -190,7 +190,7 @@ parâmetros `?demo`, `?modos`, `?alertas`, `?semhello`, `?update`,
 
 `Service` (`service.rs`): `id` (`svc-` + 12 hex, vira rótulo de webview),
 `kind` (`whatsapp`, `telegram`, `discord`, `gmail`, `outlook`, `email`,
-`custom`), `name` (até 40), `url`, `session` (32 hex, vira nome de pasta),
+`custom`, `slack`, `teams`), `name` (até 40), `url`, `session` (32 hex, vira nome de pasta),
 `hibernate_after_minutes`, `notifications`, `muted_until`, `color`,
 `emoji`, `media` (perguntar/permitir/bloquear), `zoom` (0,5–2,0),
 `user_agent`, `context` (trabalho, pessoal ou os dois) e `mail`
@@ -455,7 +455,12 @@ oculta).
 Riscos aceitos: qualquer página aberta dentro da webview de uma conta pode
 notificar em nome dela (só esse comando, com o limite de frequência).
 Notificações push disparadas pelo service worker não passam pelo shim.
-`same_site` usa uma lista curta de sufixos, não a Public Suffix List.
+`same_site` usa uma lista curta de sufixos, não a Public Suffix List, e
+aceita só endereços exatos como apelidos da Microsoft
+(`teams.microsoft.com` ↔ `teams.cloud.microsoft`; `outlook.office.com`,
+`outlook.office365.com` ↔ `outlook.cloud.microsoft`). Para Teams e
+Outlook, a página de login da Microsoft (`login.microsoftonline.com`,
+`login.live.com`) também marca "desconectado", e só isso.
 
 ## 11. Plataformas
 

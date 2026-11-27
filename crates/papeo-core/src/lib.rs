@@ -21,8 +21,8 @@ pub use organizer::{
 };
 pub use pin::{check_pin, pin_wait_secs, LockPin, PIN_MAX, PIN_MIN};
 pub use privacy::{
-    is_session_id, new_session, notification_text, recent_text, same_site, session_from_bytes,
-    NotificationPreview,
+    is_microsoft_login, is_session_id, new_session, notification_text, recent_text, same_site,
+    session_from_bytes, NotificationPreview,
 };
 pub use service::{
     clamp_zoom, normalize_color, normalize_emoji, normalize_name, unique_name, MediaPolicy,
