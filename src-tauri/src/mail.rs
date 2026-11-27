@@ -287,6 +287,7 @@ pub fn kick(app: &AppHandle) {
 pub fn forget(app: &AppHandle, id: &str) {
     secrets::delete(app, id);
     crate::address_book::forget(app, id);
+    crate::mail_cache::forget(app, id);
 }
 
 /// Grava a situação, se este vigia ainda é o dono do registro. Publica se

@@ -3,8 +3,6 @@
     Archive,
     ArrowLeft,
     Ban,
-    ChevronLeft,
-    ChevronRight,
     CircleAlert,
     Download,
     FileText,
@@ -39,6 +37,7 @@
     api,
     errorMessage,
     type MailAddr,
+    type MailCache,
     type MailFolder,
     type MailMessage,
     type MailRole,
@@ -110,7 +109,9 @@
   let folder = $state("INBOX");
   let messages = $state<MailSummary[]>([]);
   let total = $state(0);
-  let page = $state(0);
+  /** Buscando a próxima leva da rolagem infinita (spec 27). */
+  let more = $state(false);
+  let moreError = $state("");
   let query = $state("");
   let searched = $state("");
   let loading = $state(false);
@@ -132,7 +133,6 @@
   const noPassword = $derived(status === "noPassword");
   // Conta nova ainda sem o IMAP: só a tela de configuração.
   const unset = $derived(!service.mail);
-  const pages = $derived(Math.max(1, Math.ceil(total / PAGE)));
   const hasArchive = $derived(folders.some((f) => f.role === "archive" || f.role === "all"));
   const hasJunk = $derived(folders.some((f) => f.role === "junk"));
 
@@ -152,16 +152,34 @@
     }
   }
 
+  // Mais novas de cada pasta já vista (do disco ao abrir, spec 27, e de
+  // cada resposta do servidor): trocar de pasta mostra na hora e atualiza.
+  let recent = new Map<string, MailCache["lists"][number]>();
+
+  /** Mostra o guardado de `path`, se houver, enquanto o servidor responde. */
+  function showRecent(path: string) {
+    const kept = recent.get(path);
+    messages = kept ? kept.messages : [];
+    total = kept ? kept.total : 0;
+  }
+
   /** `true` se esta resposta ainda é a atual (não trocaram de pasta). */
   async function loadList(quiet = false): Promise<boolean> {
     const seq = ++listSeq;
     if (!quiet) loading = true;
     error = "";
+    moreError = "";
     try {
-      const result = await api.mailList(service.id, folder, page, searched);
+      const result = await api.mailList(service.id, folder, 0, searched);
       if (seq !== listSeq) return false;
-      messages = result.messages;
+      const fresh = result.messages;
+      // Atualização sozinha com mais levas na tela: troca só as mais novas e
+      // mantém as antigas já carregadas (a lista vem por UID decrescente).
+      const oldest = fresh.length ? fresh[fresh.length - 1].uid : Infinity;
+      const tail = quiet && fresh.length >= PAGE ? messages.filter((m) => m.uid < oldest) : [];
+      messages = [...fresh, ...tail];
       total = result.total;
+      if (!searched) recent.set(folder, { path: folder, total: result.total, messages: fresh });
       return true;
     } catch (err) {
       if (seq === listSeq && !quiet) error = errorMessage(err);
@@ -171,7 +189,41 @@
     return false;
   }
 
-  // Conta trocada: começa de novo.
+  /** Próxima leva ao rolar até perto do fim (spec 27). */
+  async function loadMore() {
+    if (more || loading || error || messages.length >= total) return;
+    const seq = listSeq;
+    more = true;
+    moreError = "";
+    try {
+      const result = await api.mailList(service.id, folder, messages.length, searched);
+      if (seq !== listSeq) return;
+      // Mensagem nova no meio empurra as outras: a repetida não entra.
+      const have = new Set(messages.map((m) => m.uid));
+      const added = result.messages.filter((m) => !have.has(m.uid));
+      messages = [...messages, ...added];
+      // Nada novo: o total mudou no servidor; para de pedir.
+      total = added.length ? result.total : messages.length;
+    } catch (err) {
+      if (seq === listSeq) moreError = errorMessage(err);
+    } finally {
+      if (seq === listSeq) more = false;
+    }
+  }
+
+  /** Avisa quando o fim da lista chega perto da área visível. */
+  function nearEnd(node: HTMLElement) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMore();
+      },
+      { root: node.closest(".items"), rootMargin: "0px 0px 600px 0px" },
+    );
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
+
+  // Conta trocada: começa de novo, do guardado no disco se houver.
   let loadedFor = "";
   $effect(() => {
     const id = service.id;
@@ -179,10 +231,23 @@
     loadedFor = id;
     folders = [];
     folder = "INBOX";
-    page = 0;
+    messages = [];
+    total = 0;
+    recent = new Map();
     query = searched = "";
     closeMessage();
-    void loadFolders().then(() => loadList());
+    void (async () => {
+      const stored = await api.mailCached(id).catch(() => null);
+      if (loadedFor !== id) return;
+      if (stored?.folders.length && !folders.length) {
+        folders = stored.folders;
+        folder = stored.folders.find((f) => f.role === "inbox")?.path ?? stored.folders[0].path;
+      }
+      for (const l of stored?.lists ?? []) recent.set(l.path, l);
+      if (!messages.length && !searched) showRecent(folder);
+      await loadFolders();
+      if (loadedFor === id) await loadList();
+    })();
   });
 
   // Envios em espera (spec 16): e-mails devolvidos voltam ao editor. Ao abrir
@@ -256,7 +321,7 @@
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const unread = service.unread;
-    if (lastUnread !== null && unread !== lastUnread && page === 0 && !searched) {
+    if (lastUnread !== null && unread !== lastUnread && !searched) {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => loadList(true), 800);
     }
@@ -271,7 +336,6 @@
     revealed = reveal.n;
     const inbox = folders.find((f) => f.role === "inbox")?.path ?? "INBOX";
     folder = inbox;
-    page = 0;
     query = searched = reveal.query;
     composing = null;
     void loadList().then((current) => {
@@ -282,28 +346,22 @@
   function chooseFolder(path: string) {
     if (path === folder && !searched) return void loadList();
     folder = path;
-    page = 0;
     query = searched = "";
     closeMessage();
+    showRecent(path);
     void loadList();
   }
 
   function search(e: SubmitEvent) {
     e.preventDefault();
     searched = query.trim();
-    page = 0;
     closeMessage();
     void loadList();
   }
 
   function clearSearch() {
     query = searched = "";
-    page = 0;
-    void loadList();
-  }
-
-  function goPage(next: number) {
-    page = Math.min(Math.max(0, next), pages - 1);
+    showRecent(folder);
     void loadList();
   }
 
@@ -826,14 +884,22 @@
             </button>
           </li>
         {/each}
+        {#if messages.length && messages.length < total && !error}
+          {#if moreError}
+            <li class="more error" role="alert">
+              {moreError}
+              <button class="btn" onclick={() => loadMore()}>{t("Tentar de novo")}</button>
+            </li>
+          {:else}
+            <!-- Nova a cada leva: o observador avisa de novo se o fim continuar à vista. -->
+            {#key `${messages.length}-${loading}`}
+              <li class="more" use:nearEnd aria-hidden={!more}>
+                {#if more}<LoaderCircle size={15} class="spin" /> {t("Carregando mais…")}{/if}
+              </li>
+            {/key}
+          {/if}
+        {/if}
       </ul>
-      {#if total > PAGE}
-        <div class="pager">
-          <button class="icon-btn ghost" disabled={page === 0 || loading} onclick={() => goPage(page - 1)} aria-label={t("Mais novas")}><ChevronLeft size={16} /></button>
-          <span>{t("{de}–{ate} de {total}", { de: page * PAGE + 1, ate: Math.min(total, (page + 1) * PAGE), total })}</span>
-          <button class="icon-btn ghost" disabled={page >= pages - 1 || loading} onclick={() => goPage(page + 1)} aria-label={t("Mais antigas")}><ChevronRight size={16} /></button>
-        </div>
-      {/if}
     </section>
 
     <section class="view" aria-label={t("Mensagem")}>
@@ -1285,15 +1351,19 @@
   .error {
     color: var(--danger);
   }
-  .pager {
+  .more {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 6px;
-    border-top: 1px solid var(--border);
+    min-height: 40px;
+    padding: 8px;
     font-size: 12.5px;
     color: var(--text-muted);
+  }
+  .more:not(.error) {
+    flex-direction: row;
   }
   .view {
     display: flex;

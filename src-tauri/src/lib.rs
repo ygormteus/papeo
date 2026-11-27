@@ -10,6 +10,7 @@ mod idle;
 mod lang;
 mod lock;
 mod mail;
+mod mail_cache;
 mod mailbox;
 mod memory;
 #[cfg(target_os = "macos")]
@@ -532,6 +533,7 @@ pub fn run() {
                     app.path().app_local_data_dir()?.join("mail-contacts.json"),
                 );
                 outbox::init(handle, &app.path().app_local_data_dir()?);
+                mail_cache::init(handle, app.path().app_local_data_dir()?.join("mail-cache"));
                 notifications::init(handle);
                 tray::install(handle)?;
                 #[cfg(target_os = "macos")]
@@ -556,6 +558,7 @@ pub fn run() {
             commands::mail_microsoft_cancel,
             commands::mail_folders,
             commands::mail_list,
+            commands::mail_cached,
             commands::mail_open,
             commands::mail_set_flag,
             commands::mail_move,

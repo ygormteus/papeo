@@ -20,6 +20,7 @@
     "allow-mail-microsoft-cancel",
     "allow-mail-folders",
     "allow-mail-list",
+    "allow-mail-cached",
     "allow-mail-open",
     "allow-mail-set-flag",
     "allow-mail-move",

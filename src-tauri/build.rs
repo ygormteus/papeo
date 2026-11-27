@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "mail_microsoft_cancel",
     "mail_folders",
     "mail_list",
+    "mail_cached",
     "mail_open",
     "mail_set_flag",
     "mail_move",

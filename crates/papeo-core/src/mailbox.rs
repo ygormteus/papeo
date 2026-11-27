@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use mail_parser::{AddressList, MessageParser};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::i18n::{tr, trf};
 use crate::mail::{clip, push_string, Imap, ImapError, ImapResult, Part, Response, Transport};
@@ -210,11 +210,21 @@ fn fetch_key(key: &str) -> String {
     upper
 }
 
+/// Números de sequência (de, até) das até `PAGE_SIZE` mensagens depois das
+/// `skip` mais novas de uma pasta com `exists`; `None` se já passou do fim.
+fn seq_range(exists: u32, skip: u32) -> Option<(u32, u32)> {
+    if skip >= exists {
+        return None;
+    }
+    let high = exists - skip;
+    Some((high.saturating_sub(PAGE_SIZE - 1).max(1), high))
+}
+
 // ---------------------------------------------------------------------------
 // Pastas
 
 /// Papel de uma pasta especial.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Inbox,
@@ -243,7 +253,7 @@ impl Role {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Folder {
     /// Nome no servidor (mUTF-7), usado nos comandos.
@@ -402,15 +412,15 @@ pub fn decode_mutf7(raw: &str) -> String {
 // ---------------------------------------------------------------------------
 // Lista de mensagens
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Addr {
     pub name: String,
     pub email: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Summary {
     pub uid: u32,
     pub from: Addr,
@@ -426,8 +436,8 @@ pub struct Summary {
     pub has_attachments: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Page {
     pub messages: Vec<Summary>,
     /// Total na pasta (ou encontrados na busca).
@@ -1043,21 +1053,24 @@ impl<S: Transport> Reader<S> {
 
     /// Página `page` (0 = mais novas) da pasta, ou da busca por `query`.
     pub fn list(&mut self, path: &str, page: u32, query: &str) -> ImapResult<Page> {
+        self.list_from(path, page.saturating_mul(PAGE_SIZE), query)
+    }
+
+    /// Até `PAGE_SIZE` mensagens depois das `skip` mais novas (rolagem
+    /// infinita: `skip` é quantas já estão na tela).
+    pub fn list_from(&mut self, path: &str, skip: u32, query: &str) -> ImapResult<Page> {
         let exists = self.select(path)?;
         let query = query.trim();
         if query.is_empty() {
             if exists == 0 {
                 return Ok(Page::default());
             }
-            let skip = page.saturating_mul(PAGE_SIZE);
-            if skip >= exists {
+            let Some((low, high)) = seq_range(exists, skip) else {
                 return Ok(Page {
                     messages: Vec::new(),
                     total: exists,
                 });
-            }
-            let high = exists - skip;
-            let low = high.saturating_sub(PAGE_SIZE - 1).max(1);
+            };
             let mut messages = self.fetch_summaries(&format!("{low}:{high}"), false)?;
             messages.sort_by_key(|m| std::cmp::Reverse(m.uid));
             return Ok(Page {
@@ -1068,7 +1081,7 @@ impl<S: Transport> Reader<S> {
         let mut uids = self.search(query)?;
         uids.sort_unstable_by(|a, b| b.cmp(a));
         let total = uids.len() as u32;
-        let start = (page.saturating_mul(PAGE_SIZE) as usize).min(uids.len());
+        let start = (skip as usize).min(uids.len());
         let chunk: Vec<u32> = uids
             .into_iter()
             .skip(start)
@@ -1377,6 +1390,17 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn lists_from_offset() {
+        assert_eq!(seq_range(120, 0), Some((71, 120)));
+        // Uma excluída na tela: a próxima leva começa onde a anterior parou.
+        assert_eq!(seq_range(119, 49), Some((21, 70)));
+        assert_eq!(seq_range(120, 100), Some((1, 20)));
+        assert_eq!(seq_range(120, 120), None);
+        assert_eq!(seq_range(0, 0), None);
+        assert_eq!(seq_range(3, 0), Some((1, 3)));
+    }
 
     fn response(line: &str, literals: &[&[u8]]) -> Response {
         Response {

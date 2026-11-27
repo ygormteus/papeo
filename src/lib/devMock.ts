@@ -418,9 +418,11 @@ export function installDevMock() {
         const all = mailbox.messages(String(args.folder)).filter(
           (m) => !q || `${m.subject} ${m.from.name} ${m.preview}`.toLowerCase().includes(q),
         );
-        const page = Number(args.page ?? 0);
-        return { messages: all.slice(page * 50, page * 50 + 50), total: all.length };
+        const skip = Number(args.skip ?? 0);
+        return { messages: all.slice(skip, skip + 50), total: all.length };
       }
+      case "mail_cached":
+        return { folders: [], lists: [] };
       case "mail_open":
         return mailbox.open(String(args.folder), Number(args.uid));
       case "mail_set_flag":

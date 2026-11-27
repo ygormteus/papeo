@@ -1267,11 +1267,21 @@ pub async fn mail_list(
     app: AppHandle,
     id: String,
     folder: String,
-    page: u32,
+    skip: u32,
     query: String,
 ) -> CmdResult<papeo_core::mailbox::Page> {
     ensure_unlocked(&app)?;
-    crate::mailbox::list(app, id, folder, page, query).await
+    crate::mailbox::list(app, id, folder, skip, query).await
+}
+
+/// Lista guardada da última vez (spec 27), para mostrar antes do servidor.
+#[tauri::command]
+pub async fn mail_cached(
+    app: AppHandle,
+    id: String,
+) -> CmdResult<papeo_core::mail_cache::MailCache> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::cached(app, id).await
 }
 
 #[tauri::command]

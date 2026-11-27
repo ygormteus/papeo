@@ -12,6 +12,7 @@ use crate::state::AppState;
 use papeo_core::address_book::Seen;
 use papeo_core::i18n::{tr, trf};
 use papeo_core::mail::{ImapError, MailAccount, MailAuth};
+use papeo_core::mail_cache::MailCache;
 use papeo_core::mailbox::{self as core, Folder, MessageView, Page, Reader, Role};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -213,20 +214,41 @@ async fn blocking<T: Send + 'static>(
 }
 
 pub async fn folders(app: AppHandle, id: String, refresh: bool) -> Result<Vec<Folder>, String> {
-    blocking(move || with_reader(&app, &id, |r, _| r.folders(refresh))).await
+    blocking(move || {
+        let (folders, account) = with_reader(&app, &id, |r, account| {
+            Ok((r.folders(refresh)?, account.clone()))
+        })?;
+        crate::mail_cache::put_folders(&app, &id, &account, &folders);
+        Ok(folders)
+    })
+    .await
 }
 
+/// Pastas e mais novas guardadas da última vez (spec 27), sem rede.
+pub async fn cached(app: AppHandle, id: String) -> Result<MailCache, String> {
+    blocking(move || {
+        let (account, _) = account_of(&app, &id)?;
+        Ok(crate::mail_cache::get(&app, &id, &account))
+    })
+    .await
+}
+
+/// Até 50 mensagens depois das `skip` mais novas da pasta ou da busca.
 pub async fn list(
     app: AppHandle,
     id: String,
     folder: String,
-    page: u32,
+    skip: u32,
     query: String,
 ) -> Result<Page, String> {
     blocking(move || {
-        let (page, own) = with_reader(&app, &id, |r, account| {
-            Ok((r.list(&folder, page, &query)?, account.user.clone()))
+        let (page, account) = with_reader(&app, &id, |r, account| {
+            Ok((r.list_from(&folder, skip, &query)?, account.clone()))
         })?;
+        if skip == 0 && query.trim().is_empty() {
+            crate::mail_cache::put_list(&app, &id, &account, &folder, &page);
+        }
+        let own = account.user;
         // Endereços conhecidos (spec 25): de quem escreveu e, nos enviados
         // pela própria conta, para quem.
         let mine = |a: &core::Addr| a.email.eq_ignore_ascii_case(own.trim());

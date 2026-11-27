@@ -251,6 +251,7 @@ Todos ficam na pasta de dados do app (`app_config_dir`/`app_data_dir`).
 | Backup (`*.json` exportado) | `store.rs` | `kind: "papeo-backup"`, validação estrita, inclui o organizador visível, nunca o PIN nem as atualizações |
 | `app_cache_dir/anexos/` | `attachment.rs` | Temporários da visualização de anexos (sites e e-mail), apagados ao fechar e ao abrir |
 | `mail-contacts.json` | `address_book.rs` | Em `app_local_data_dir`. Endereços que cada conta do leitor usou (nome, endereço, contagens, última vez), por `id` do serviço. Ilegível: começa vazio. Sai junto com o IMAP da conta (`mail::forget`). Fora do backup e da sincronização |
+| `mail-cache/<id>.json` | `mail_cache.rs` | Em `app_local_data_dir`, modo 0600 (spec 27). `version` 1 e `account` (`usuário@servidor:porta`): de outra versão, de outra conta ou ilegível é ignorado e regravado. Pastas e as 50 mais novas (sem busca) de até 8 pastas usadas há pouco, para o leitor abrir na hora. Sai com `mail::forget`. Fora do backup e da sincronização |
 | `outbox/<id>.json` | `outbox.rs` | Em `app_local_data_dir`. E-mail em espera para desfazer (texto e anexos), modo 0600. Apagado quando o envio dá certo ou quando o e-mail volta ao editor (`mail_unsent_taken`); desfeito ou com falha fica até lá. Sobra de conta removida, sem o leitor ou com mais de 30 dias é apagada ao abrir. Nunca é enviado sozinho depois de reabrir. Fora do backup |
 
 **Regra de compatibilidade:** todo campo novo precisa de `serde(default)` e
@@ -263,7 +264,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 97 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 98 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
@@ -397,7 +398,10 @@ repetido e confere o nome no cabeçalho antes de enviar.
   (`site_fallback`). Com o IMAP de pé, o site pode hibernar.
 - **Leitor** (`mailbox.rs`): uma conexão de leitura por conta, separada do
   vigia. É testada com `NOOP` depois de 30 s parada e fechada depois de
-  5 min. A mensagem abre num quadro isolado, sem scripts e com CSP
+  5 min. Ao abrir, mostra as pastas e as mais novas guardadas em
+  `mail-cache/` e troca pelas do servidor quando ele responde (spec 27);
+  a lista rola sem fim, pedindo `mail_list` a partir de quantas já estão
+  na tela (`skip`), sem repetir UID. A mensagem abre num quadro isolado, sem scripts e com CSP
   própria. Imagens de fora ficam bloqueadas até "Mostrar imagens".
 - **Envio:** SMTP derivado do servidor IMAP (tabela de provedores, senão
   `imap.` → `smtp.` na 465). Grava cópia em Enviados quando o provedor não
