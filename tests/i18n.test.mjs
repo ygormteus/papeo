@@ -72,7 +72,7 @@ for (const [pt, { en, file }] of uiCatalog) {
 const rsFiles = [...walk(join(root, "src-tauri/src"), [".rs"]), ...walk(join(root, "crates/papeo-core/src"), [".rs"])].filter(
   (f) => !posix(f).includes("/i18n/"),
 );
-const rsUsed = used(rsFiles, /\b(?:trf?|tk|tr_in\([^,()]+,)\(?\s*"(?<dq>(?:[^"\\]|\\.)*)"/g);
+const rsUsed = used(rsFiles, /\b(?:(?:trf?|tk)\(|tr_in\([^,()]+,)\s*"(?<dq>(?:[^"\\]|\\.)*)"/g);
 const rsCatalog = new Map();
 const enRs = ["en_app.rs", "en_core.rs"]
   .map((n) => readFileSync(join(root, "crates/papeo-core/src/i18n", n), "utf8"))

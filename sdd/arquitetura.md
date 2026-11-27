@@ -155,6 +155,7 @@ voz do WhatsApp).
 | `pin.rs` | PIN com Argon2id e espera crescente |
 | `privacy.rs` | Texto das notificações conforme a prévia, `same_site`, ids de sessão |
 | `i18n/` | Idioma das mensagens do Rust (spec 20): `Language`, `Lang`, `tr`/`trf`/`tk`; catálogo inglês em `en_app.rs` e `en_core.rs` (frase em português como chave) |
+| `signature.rs` | Assinatura formatada do leitor (spec 22): limpeza do HTML (ammonia), versão HTML da mensagem, imagens `cid:` |
 | `util.rs` | `parse_unread`, `safe_file_name`, `unique_path`, `attachment_view`, `clip` |
 
 O núcleo não tem TLS: recebe um transporte `Read + Write` e o app entra
@@ -206,7 +207,9 @@ parâmetros `?demo`, `?modos`, `?alertas`, `?semhello`, `?update`,
 `emoji`, `media` (perguntar/permitir/bloquear), `zoom` (0,5–2,0),
 `user_agent`, `context` (trabalho, pessoal ou os dois) e `mail`
 (`MailAccount`, opcional, com a `signature` do leitor, até 2000
-caracteres).
+caracteres, e a `signature_html` formatada, até 600 KB com as imagens,
+spec 22; a formatada não vai no `Snapshot`: `ServiceView.signature_rich`
+e o comando `mail_signature`).
 
 Capacidades por tipo: resposta rápida e conversas recentes só em WhatsApp e
 Telegram (`supports_chat`). Vigia IMAP em Gmail, "Outro e-mail" e Outlook,
@@ -257,7 +260,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 94 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 95 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 

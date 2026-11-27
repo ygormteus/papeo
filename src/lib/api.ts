@@ -73,6 +73,8 @@ export interface ServiceView {
   mailSmtp?: string;
   /** Pontos de apoio do site que a página relatou (diagnóstico, spec 14). */
   probes?: ProbeView[];
+  /** Tem assinatura formatada (spec 22); o HTML vem por `mailSignature`. */
+  signatureRich?: boolean;
 }
 
 /** Ponto de apoio procurado na página do site (spec 14). */
@@ -576,8 +578,12 @@ export const api = {
   mailUnsent: (id: string) => invoke<MailUnsent[]>("mail_unsent", { id }),
   /** O e-mail guardado voltou ao editor: apaga o arquivo. */
   mailUnsentTaken: (holdId: string) => invoke<void>("mail_unsent_taken", { holdId }),
-  setMailSignature: (id: string, signature: string) =>
-    invoke<Snapshot>("set_mail_signature", { id, signature }),
+  /** Assinatura: texto e, se houver, a formatada (spec 22); `html` nulo
+   * guarda só o texto. */
+  setMailSignature: (id: string, signature: string, html: string | null = null) =>
+    invoke<Snapshot>("set_mail_signature", { id, signature, html }),
+  /** Assinatura para o editor (a formatada não vem no estado). */
+  mailSignature: (id: string) => invoke<{ text: string; html: string }>("mail_signature", { id }),
   /** Conta com o leitor: mostra o site (`true`) ou volta ao leitor. */
   mailShowSite: (id: string, site: boolean) => invoke<Snapshot>("mail_show_site", { id, site }),
   setNotifications: (id: string, enabled: boolean) =>

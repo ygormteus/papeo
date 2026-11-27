@@ -2,6 +2,7 @@
   import { CircleAlert, CircleCheck, KeyRound, LoaderCircle, LogIn, WifiOff } from "@lucide/svelte";
   import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
+  import SignatureDialog from "./SignatureDialog.svelte";
   import Switch from "./Switch.svelte";
   import {
     GMAIL_IMAP,
@@ -49,8 +50,8 @@
   let sleepSite = $state(start?.sleepSite ?? true);
   let starttls = $state(start?.starttls ?? false);
   let wholeInbox = $state(start?.wholeInbox ?? false);
-  // svelte-ignore state_referenced_locally
-  let signature = $state(start?.signature ?? "");
+  /** Editor da assinatura aberto (specs 16 e 22). */
+  let signing = $state(false);
   // Provedor conhecido escolhido na lista (só preenche servidor e porta).
   // svelte-ignore state_referenced_locally
   let presetId = $state(MAIL_PRESETS.find((p) => p.host === (start?.host ?? initial?.host))?.id ?? "");
@@ -111,13 +112,11 @@
       starttls !== (service.mail?.starttls ?? false) ||
       wholeInbox !== (service.mail?.wholeInbox ?? false),
   );
-  // A assinatura só existe com a conta configurada e é gravada à parte (não
-  // reconecta o IMAP).
-  const signatureDirty = $derived(configured && signature.trim() !== (service.mail?.signature ?? ""));
-  const dirty = $derived(accountDirty || signatureDirty);
+  // A assinatura é gravada à parte, no editor dela (não reconecta o IMAP).
+  const dirty = $derived(accountDirty);
   const canSave = $derived(
     microsoft
-      ? !busy && configured && (sleepSite !== service.mail?.sleepSite || signatureDirty)
+      ? !busy && configured && sleepSite !== service.mail?.sleepSite
       : !busy && dirty && !!host.trim() && !!user.trim() && (!needsPassword || password !== ""),
   );
 
@@ -147,7 +146,6 @@
         if (sleepSite !== service.mail?.sleepSite) {
           await onsave({ host: service.mail!.host, port: service.mail!.port, user: service.mail!.user, sleepSite });
         }
-        await saveSignature();
         saved = true;
       } catch (err) {
         error = errorMessage(err);
@@ -165,7 +163,6 @@
     error = "";
     try {
       if (!accountDirty) {
-        await saveSignature();
         saved = true;
         return;
       }
@@ -179,19 +176,12 @@
         wholeInbox: gmail && wholeInbox,
       });
       password = "";
-      await saveSignature();
       saved = true;
     } catch (err) {
       error = errorMessage(err);
     } finally {
       busy = false;
     }
-  }
-
-  async function saveSignature() {
-    if (!signatureDirty) return;
-    await api.setMailSignature(service.id, signature);
-    signature = signature.trim();
   }
 
   async function turnOff() {
@@ -423,11 +413,20 @@
 
     {#if configured}
       <section aria-label={t("Assinatura")}>
-        <label class="signature">
+        <div class="signature">
           <span class="toggle-label">{t("Assinatura")}</span>
-          <textarea class="input" bind:value={signature} rows="3" maxlength="2000" placeholder={t("Ana Souza\nLoja Exemplo · (11) 0000-0000")}></textarea>
-          <span class="note">{t("Entra nas mensagens escritas no leitor do Papeo, acima do texto citado. Dá para apagar antes de enviar.")}</span>
-        </label>
+          <p class="note">
+            {#if service.mail?.signature}
+              {service.signatureRich ? t("Com formatação.") : t("Só texto.")}
+              <span class="sig-first">{service.mail.signature.split("\n")[0]}</span>
+            {:else}
+              {t("Entra nas mensagens escritas no leitor do Papeo, acima do texto citado. Dá para apagar antes de enviar.")}
+            {/if}
+          </p>
+          <button type="button" class="btn" onclick={() => (signing = true)}>
+            {service.mail?.signature ? t("Editar assinatura") : t("Criar assinatura")}
+          </button>
+        </div>
       </section>
     {/if}
 
@@ -455,6 +454,8 @@
   </form>
 </Modal>
 
+
+{#if signing}<SignatureDialog {service} onclose={() => (signing = false)} />{/if}
 <style>
   form {
     display: flex;
@@ -669,10 +670,16 @@
     gap: 6px;
   }
 
-  .signature textarea {
-    resize: vertical;
-    min-height: 64px;
-    font: inherit;
+  .signature .btn {
+    align-self: flex-start;
+  }
+
+  .sig-first {
+    display: block;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .toggle-label {

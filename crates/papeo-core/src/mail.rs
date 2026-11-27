@@ -54,6 +54,11 @@ pub struct MailAccount {
     /// Assinatura em texto que o leitor põe nas mensagens (spec 16).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub signature: String,
+    /// Assinatura formatada (HTML limpo, spec 22); vazia = só texto.
+    /// Compartilhada (`Arc`): o estado é copiado a cada publicação e a
+    /// formatada pode ter centenas de KB.
+    #[serde(default, skip_serializing_if = "str::is_empty")]
+    pub signature_html: std::sync::Arc<str>,
 }
 
 /// Teto da assinatura, em caracteres.
@@ -142,6 +147,14 @@ impl MailAccount {
             self.whole_inbox = false;
         }
         self.signature = normalize_signature(&self.signature);
+        // Sem a versão em texto não há onde pôr a formatada (spec 22, R4).
+        self.signature_html = if self.signature.is_empty() {
+            Default::default()
+        } else {
+            crate::signature::sanitize_signature_html(&self.signature_html)
+                .unwrap_or_default()
+                .into()
+        };
         Ok(self)
     }
 
@@ -1257,6 +1270,7 @@ mod tests {
             whole_inbox: false,
             auth: MailAuth::Password,
             signature: String::new(),
+            signature_html: Default::default(),
         }
         .sanitized()
         .unwrap();
@@ -1475,6 +1489,7 @@ mod tests {
             whole_inbox: false,
             auth: MailAuth::Password,
             signature: String::new(),
+            signature_html: Default::default(),
         };
         let s = account("imap.gmail.com", "a@gmail.com").smtp();
         assert_eq!(

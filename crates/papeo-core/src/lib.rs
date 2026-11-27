@@ -11,6 +11,7 @@ mod privacy;
 pub mod probes;
 mod service;
 mod settings;
+pub mod signature;
 pub mod silence;
 mod store;
 pub mod sync;

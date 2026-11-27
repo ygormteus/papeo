@@ -715,6 +715,10 @@ pub struct ServiceView {
     /// Avisos por IMAP (só contas que os usam).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mail_status: Option<MailStatus>,
+    /// Tem assinatura formatada (spec 22); o HTML dela fica fora do estado
+    /// publicado (`mail_signature`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub signature_rich: bool,
     /// Abre no leitor de e-mail do Papeo (o site só quando pedido).
     pub reader: bool,
     /// Servidor de envio (SMTP) da conta, `host:porta`, para mostrar.
@@ -812,8 +816,15 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         .iter()
         .map(|s| {
             let loaded = app.get_webview(&s.id).is_some();
+            // A assinatura formatada (imagens) fica fora do estado publicado.
+            let mut service = s.clone();
+            let signature_rich = match service.mail.as_mut() {
+                Some(m) => !std::mem::take(&mut m.signature_html).is_empty(),
+                None => false,
+            };
             ServiceView {
-                service: s.clone(),
+                service,
+                signature_rich,
                 loaded,
                 // Com o IMAP conectado, vale o número do servidor (o site
                 // pode estar hibernado).

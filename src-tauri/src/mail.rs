@@ -706,6 +706,7 @@ pub(crate) fn open(
             whole_inbox: false,
             auth: MailAuth::Password,
             signature: String::new(),
+            signature_html: Default::default(),
         };
         imap.login(&saved.user, &account.login_secret(&saved.secret))?;
     }

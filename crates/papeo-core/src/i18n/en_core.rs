@@ -3,6 +3,8 @@
 #[rustfmt::skip]
 pub(super) fn get(pt: &str) -> Option<&'static str> {
     Some(match pt {
+            "Uma imagem da assinatura passa de 200 KB. Use uma imagem menor." => "An image in the signature is over 200 KB. Use a smaller image.",
+            "A assinatura passa de 600 KB. Use imagens menores." => "The signature is over 600 KB. Use smaller images.",
             "Nova mensagem" => "New message",
             "Tarefa não encontrada." => "Task not found.",
             "Conta inválida." => "Invalid account.",

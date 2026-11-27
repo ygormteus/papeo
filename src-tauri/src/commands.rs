@@ -242,6 +242,10 @@ pub async fn set_mail_account(
             .as_ref()
             .map(|m| m.signature.clone())
             .unwrap_or_default(),
+        signature_html: previous
+            .as_ref()
+            .map(|m| m.signature_html.clone())
+            .unwrap_or_default(),
     }
     .sanitized()?;
     let secret = input.password.filter(|p| !p.is_empty());
@@ -364,6 +368,10 @@ pub async fn mail_microsoft_login(
         signature: previous
             .as_ref()
             .map(|m| m.signature.clone())
+            .unwrap_or_default(),
+        signature_html: previous
+            .as_ref()
+            .map(|m| m.signature_html.clone())
             .unwrap_or_default(),
     }
     .sanitized()?;
@@ -1420,18 +1428,53 @@ pub async fn set_mail_signature(
     state: State<'_, AppState>,
     id: String,
     signature: String,
+    html: Option<String>,
 ) -> CmdResult {
     ensure_unlocked(&app)?;
+    let text = papeo_core::mail::normalize_signature(&signature);
+    // Formatada (spec 22): limpa antes de guardar; sem ela, só texto.
+    let html = match html {
+        Some(html) if !text.is_empty() => papeo_core::signature::sanitize_signature_html(&html)?,
+        _ => String::new(),
+    };
     state.update(|inner| {
         let mail = inner
             .service_mut(&id)?
             .mail
             .as_mut()
             .ok_or(tr("Esta conta não tem o e-mail por IMAP configurado."))?;
-        mail.signature = papeo_core::mail::normalize_signature(&signature);
+        mail.signature = text;
+        mail.signature_html = html.into();
         Ok(())
     })?;
     Ok(publish(&app))
+}
+
+/// Assinatura de uma conta para o editor (spec 22): a formatada não vai no
+/// estado publicado.
+#[derive(serde::Serialize)]
+pub struct MailSignature {
+    text: String,
+    html: String,
+}
+
+#[tauri::command]
+pub async fn mail_signature(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<MailSignature> {
+    ensure_unlocked(&app)?;
+    let inner = state.lock();
+    let mail = inner
+        .service(&id)?
+        .mail
+        .as_ref()
+        .ok_or(tr("Esta conta não tem o e-mail por IMAP configurado."))?;
+    Ok(MailSignature {
+        text: mail.signature.clone(),
+        html: mail.signature_html.to_string(),
+    })
 }
 
 /// Conta com o leitor: mostra o site (`true`) ou volta ao leitor.

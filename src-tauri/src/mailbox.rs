@@ -117,6 +117,7 @@ fn account_of(app: &AppHandle, id: &str) -> Result<(MailAccount, Saved), String>
 fn same_server(a: &MailAccount, b: &MailAccount) -> bool {
     let strip = |m: &MailAccount| MailAccount {
         signature: String::new(),
+        signature_html: Default::default(),
         ..m.clone()
     };
     strip(a) == strip(b)
@@ -597,12 +598,39 @@ fn build_as(
         let keep = chain.len().saturating_sub(20);
         builder = builder.references(chain[keep..].join(" "));
     }
-    let text = SinglePart::plain(draft.body.replace("\r\n", "\n"));
+    let body = draft.body.replace("\r\n", "\n");
+    let text = SinglePart::plain(body.clone());
+    // Assinatura formatada no corpo sem mudanças (spec 22): texto + HTML,
+    // com as imagens dentro do e-mail.
+    let rich =
+        papeo_core::signature::html_message(&body, &account.signature, &account.signature_html)
+            .map(|html| {
+                let (html, images) =
+                    papeo_core::signature::inline_images(&html, &papeo_core::new_item_id());
+                let mut related = MultiPart::related().singlepart(SinglePart::html(html));
+                for image in images {
+                    let mime = ContentType::parse(&image.mime).unwrap_or_else(|_| {
+                        ContentType::parse("application/octet-stream").expect("tipo fixo")
+                    });
+                    related = related
+                        .singlepart(Attachment::new_inline(image.cid).body(image.bytes, mime));
+                }
+                MultiPart::alternative()
+                    .singlepart(text.clone())
+                    .multipart(related)
+            });
     if draft.attachments.is_empty() {
-        return builder.singlepart(text).map_err(|e| e.to_string());
+        return match rich {
+            Some(alternative) => builder.multipart(alternative),
+            None => builder.singlepart(text),
+        }
+        .map_err(|e| e.to_string());
     }
     let mut total = 0usize;
-    let mut multipart = MultiPart::mixed().singlepart(text);
+    let mut multipart = match rich {
+        Some(alternative) => MultiPart::mixed().multipart(alternative),
+        None => MultiPart::mixed().singlepart(text),
+    };
     for file in &draft.attachments {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(file.data.as_bytes())
@@ -874,6 +902,7 @@ mod tests {
             whole_inbox: false,
             auth: MailAuth::Password,
             signature: String::new(),
+            signature_html: Default::default(),
         }
     }
 
@@ -892,6 +921,40 @@ mod tests {
             draft_token: None,
             replaces: None,
         }
+    }
+
+    #[test]
+    fn rich_signature_goes_as_html_with_inline_images() {
+        const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        let mut acc = account();
+        acc.signature = "Ana Souza".into();
+        acc.signature_html = format!(r#"<b>Ana</b><img src="data:image/png;base64,{PNG}">"#).into();
+        let mut d = draft();
+        d.body = "Olá\n\n-- \nAna Souza\n\n> citado".into();
+        let raw = String::from_utf8(build(&acc, &d).unwrap().formatted()).unwrap();
+        assert!(raw.contains("multipart/alternative"), "{raw}");
+        assert!(raw.contains("multipart/related"), "{raw}");
+        assert!(raw.contains("Content-Type: text/html"), "{raw}");
+        assert!(raw.contains("Content-Disposition: inline"), "{raw}");
+        assert!(raw.contains("Content-ID: <assinatura1."), "{raw}");
+        assert!(!raw.contains("data:image"), "{raw}");
+        // Assinatura apagada no editor: só texto.
+        d.body = "Olá".into();
+        let raw = String::from_utf8(build(&acc, &d).unwrap().formatted()).unwrap();
+        assert!(!raw.contains("multipart"), "{raw}");
+        assert!(!raw.contains("text/html"), "{raw}");
+        // Com anexo: misto, com a alternativa dentro.
+        d.body = "Olá\n-- \nAna Souza".into();
+        d.attachments = vec![DraftAttachment {
+            name: "a.txt".into(),
+            mime: "text/plain".into(),
+            data: "b2k=".into(),
+        }];
+        let raw = String::from_utf8(build(&acc, &d).unwrap().formatted()).unwrap();
+        assert!(
+            raw.contains("multipart/mixed") && raw.contains("multipart/alternative"),
+            "{raw}"
+        );
     }
 
     #[test]

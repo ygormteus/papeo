@@ -305,6 +305,8 @@ export function installDevMock() {
       }
     : null;
   const held = new Map<string, ReturnType<typeof setTimeout>>();
+  // Assinaturas formatadas (spec 22): fora do estado, como no backend.
+  const signatureHtml = new Map<string, string>();
   const drafts = new Map<string, import("./api").MailDraft>();
   let unsentTaken = false;
 
@@ -513,8 +515,18 @@ export function installDevMock() {
       case "set_mail_signature": {
         const s = find();
         if (!s.mail) throw "Esta conta não tem o e-mail por IMAP configurado.";
-        s.mail = { ...s.mail, signature: String(args.signature).trim().slice(0, 2000) || undefined };
+        const text = String(args.signature).trim().slice(0, 2000);
+        s.mail = { ...s.mail, signature: text || undefined };
+        const html = text && typeof args.html === "string" ? args.html : "";
+        if (html) signatureHtml.set(s.id, html);
+        else signatureHtml.delete(s.id);
+        s.signatureRich = Boolean(html);
         return snap();
+      }
+      case "mail_signature": {
+        const s = find();
+        if (!s.mail) throw "Esta conta não tem o e-mail por IMAP configurado.";
+        return { text: s.mail.signature ?? "", html: signatureHtml.get(s.id) ?? "" };
       }
       case "mail_show_site": {
         const s = find();

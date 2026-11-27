@@ -75,6 +75,20 @@
   } = $props();
 
   const MAX_TOTAL = 25 * 1024 * 1024;
+  /** A assinatura formatada só sai se a de texto estiver intacta (spec 22). */
+  const richIntact = $derived.by(() => {
+    const sig = service.mail?.signature;
+    if (!sig) return false;
+    const text = body.replace(/\r\n/g, "\n");
+    const marker = `-- \n${sig}`;
+    let at = text.indexOf(marker);
+    while (at !== -1) {
+      const end = at + marker.length;
+      if ((at === 0 || text[at - 1] === "\n") && (end === text.length || text[end] === "\n")) return true;
+      at = text.indexOf(marker, at + 1);
+    }
+    return false;
+  });
 
   // svelte-ignore state_referenced_locally
   let to = $state(start.to ?? "");
@@ -363,6 +377,11 @@
     <label class="row"><span>{t("Assunto")}</span><input bind:value={subject} /></label>
   </div>
   <textarea bind:this={bodyField} bind:value={body} aria-label={t("Texto do e-mail")}></textarea>
+  {#if service.signatureRich && service.mail?.signature}
+    <p class="rich-note">
+      {#if richIntact}{t("A assinatura sai com a formatação (logo, cores e links).")}{:else}{t("A assinatura foi mudada ou apagada: o e-mail sai só em texto.")}{/if}
+    </p>
+  {/if}
   {#if files.length}
     <ul class="files">
       {#each files as file, i (i)}
@@ -398,6 +417,12 @@
 </form>
 
 <style>
+  .rich-note {
+    margin: 0;
+    padding: 4px 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
   .composer {
     display: flex;
     flex-direction: column;
