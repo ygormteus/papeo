@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-discard-draft"
+description = "Enables the mail_discard_draft command without any pre-configured scope."
+commands.allow = ["mail_discard_draft"]
+
+[[permission]]
+identifier = "deny-mail-discard-draft"
+description = "Denies the mail_discard_draft command without any pre-configured scope."
+commands.deny = ["mail_discard_draft"]

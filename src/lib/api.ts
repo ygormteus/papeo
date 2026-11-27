@@ -537,6 +537,12 @@ export const api = {
     invoke<string>("mail_save_attachment", { id, folder, uid, index }),
   mailRevealFile: (path: string) => invoke<void>("mail_reveal_file", { path }),
   mailSend: (id: string, draft: MailDraft) => invoke<void>("mail_send", { id, draft }),
+  /** Salva o rascunho na pasta Rascunhos do servidor; devolve o token dele. */
+  mailSaveDraft: (id: string, draft: MailDraft) => invoke<string>("mail_save_draft", { id, draft }),
+  mailDiscardDraft: (id: string, token: string | null, replaces: MailDraft["replaces"]) =>
+    invoke<void>("mail_discard_draft", { id, token, replaces: replaces ?? null }),
+  mailOpenDraft: (id: string, folder: string, uid: number) =>
+    invoke<MailOpenedDraft>("mail_open_draft", { id, folder, uid }),
   /** Confere e agenda o envio para o fim da espera (spec 16). */
   mailSendLater: (id: string, draft: MailDraft) => invoke<MailHold>("mail_send_later", { id, draft }),
   /** Desfaz o envio em espera; `null` se ele já saiu. */
@@ -804,6 +810,23 @@ export interface MailDraft {
   replyUid?: number | null;
   /** Conteúdo em base64. */
   attachments: { name: string; mime: string; data: string }[];
+  /** Rascunho no servidor (spec 18). */
+  draftToken?: string | null;
+  replaces?: { folder: string; uid: number } | null;
+}
+
+/** Rascunho da pasta Rascunhos aberto para continuar no editor. */
+export interface MailOpenedDraft {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  inReplyTo: string | null;
+  references: string[];
+  attachments: { name: string; mime: string; data: string }[];
+  draftToken: string | null;
+  replaces: { folder: string; uid: number } | null;
 }
 
 export interface MailHold {

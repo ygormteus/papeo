@@ -98,14 +98,14 @@ fn now() -> u64 {
         .unwrap_or(0)
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     let mut buf = [0u8; 12];
     getrandom::fill(&mut buf).expect("gerador aleatório do sistema");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Id da fila: só o formato gerado aqui (vira nome de arquivo).
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     id.len() == 24
         && id
             .bytes()

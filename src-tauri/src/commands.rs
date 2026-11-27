@@ -1300,6 +1300,42 @@ pub async fn mail_send(app: AppHandle, id: String, draft: crate::mailbox::Draft)
     crate::mailbox::send(app, id, draft).await
 }
 
+/// Salva o rascunho na pasta Rascunhos do servidor (spec 18).
+#[tauri::command]
+pub async fn mail_save_draft(
+    app: AppHandle,
+    id: String,
+    draft: crate::mailbox::Draft,
+) -> CmdResult<String> {
+    // Sem conferir o bloqueio: o editor salva o que já estava escrito quando
+    // o app bloqueia (a tela some); não abre nem mostra nada.
+    crate::mailbox::save_draft(app, id, draft).await
+}
+
+/// Descarta o rascunho (apaga as versões salvas no servidor).
+#[tauri::command]
+pub async fn mail_discard_draft(
+    app: AppHandle,
+    id: String,
+    token: Option<String>,
+    replaces: Option<crate::mailbox::DraftRef>,
+) -> CmdResult<()> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::discard_draft(app, id, token, replaces).await
+}
+
+/// Abre uma mensagem da pasta Rascunhos no editor.
+#[tauri::command]
+pub async fn mail_open_draft(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+) -> CmdResult<crate::mailbox::OpenedDraft> {
+    ensure_unlocked(&app)?;
+    crate::mailbox::open_draft(app, id, folder, uid).await
+}
+
 /// Envio com espera para desfazer (spec 16): confere, guarda e agenda.
 #[tauri::command]
 pub async fn mail_send_later(

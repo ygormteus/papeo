@@ -690,6 +690,170 @@ pub fn message_view(uid: u32, raw: &[u8]) -> MessageView {
     view
 }
 
+/// Rascunho aberto para continuar no editor (spec 18).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DraftView {
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub text: String,
+    pub message_id: String,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
+    /// (nome, tipo, bytes).
+    pub attachments: Vec<(String, String, Vec<u8>)>,
+}
+
+/// Cabeçalhos do Papeo com endereços ainda incompletos de um rascunho
+/// (valor: base64 das linhas, para não depender de codificação de
+/// cabeçalho).
+pub const UNPARSED_TO: &str = "X-Papeo-Unparsed-To";
+pub const UNPARSED_CC: &str = "X-Papeo-Unparsed-Cc";
+pub const UNPARSED_BCC: &str = "X-Papeo-Unparsed-Bcc";
+
+pub fn encode_unparsed(list: &[String]) -> String {
+    use base64::Engine;
+    let text: String = list
+        .iter()
+        .map(|a| a.replace(['\r', '\n'], " "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    // Pedaços de 76 com espaço entre eles: a linha pode ser dobrada dentro
+    // do limite de 998 caracteres do cabeçalho.
+    encoded
+        .as_bytes()
+        .chunks(76)
+        .map(|c| String::from_utf8_lossy(c).into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Lê um cabeçalho do Papeo do bloco de cabeçalhos bruto (com dobras).
+fn unparsed(raw: &[u8], name: &str) -> Vec<String> {
+    use base64::Engine;
+    let text = String::from_utf8_lossy(raw);
+    let head = text.split("\r\n\r\n").next().unwrap_or("");
+    let head = head.split("\n\n").next().unwrap_or("");
+    let mut value: Option<String> = None;
+    for line in head.lines() {
+        let line = line.trim_end_matches('\r');
+        if let Some(v) = value.as_mut() {
+            if line.starts_with([' ', '\t']) {
+                v.push_str(line.trim());
+                continue;
+            }
+            break;
+        }
+        if let Some((key, rest)) = line.split_once(':') {
+            if key.trim().eq_ignore_ascii_case(name) {
+                value = Some(rest.trim().to_owned());
+            }
+        }
+    }
+    let Some(bytes) = value.and_then(|v| {
+        let compact: String = v.split_whitespace().collect();
+        base64::engine::general_purpose::STANDARD
+            .decode(compact)
+            .ok()
+    }) else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&bytes)
+        .split('\n')
+        .map(|a| crate::clip(a.trim(), 300))
+        .filter(|a| !a.is_empty())
+        .take(100)
+        .collect()
+}
+
+/// Teto da soma dos anexos de um rascunho aberto (igual ao do envio).
+pub const DRAFT_ATTACHMENTS_MAX: usize = 25 * 1024 * 1024;
+
+/// Endereço como o editor escreve: `Nome <email>` (nome entre aspas se
+/// tiver caracteres especiais).
+fn editable(a: &Addr) -> String {
+    if a.name.is_empty() {
+        return a.email.clone();
+    }
+    let name = if a.name.contains([',', ';', '<', '>', '@', '"']) {
+        format!("\"{}\"", a.name.replace(['"', '\\'], ""))
+    } else {
+        a.name.clone()
+    };
+    if a.email.is_empty() {
+        name
+    } else {
+        format!("{name} <{}>", a.email)
+    }
+}
+
+/// Lê um rascunho inteiro para o editor. `None` se os anexos passam do teto.
+pub fn draft_view(raw: &[u8]) -> Option<DraftView> {
+    let Some(message) = MessageParser::default().parse(raw) else {
+        return Some(DraftView {
+            text: String::from_utf8_lossy(raw).into_owned(),
+            ..Default::default()
+        });
+    };
+    let list = |l: Option<&AddressList<'_>>| addresses(l).iter().map(editable).collect();
+    let ids = |v: Option<Vec<String>>| -> Vec<String> {
+        v.unwrap_or_default()
+            .into_iter()
+            .map(|r| r.trim().to_owned())
+            .filter(|r| !r.is_empty() && r.len() < 1000)
+            .take(50)
+            .collect()
+    };
+    let mut view = DraftView {
+        to: list(message.to().as_ref()),
+        cc: list(message.cc().as_ref()),
+        bcc: list(message.bcc().as_ref()),
+        subject: crate::clip(message.subject().unwrap_or("").trim(), 1000),
+        text: message
+            .body_text(0)
+            .map(Cow::into_owned)
+            .unwrap_or_default(),
+        message_id: message.message_id().unwrap_or("").trim().to_owned(),
+        in_reply_to: ids(message
+            .in_reply_to()
+            .map(|l| l.iter().map(|r| r.to_string()).collect()))
+        .into_iter()
+        .next(),
+        references: ids(message
+            .references()
+            .map(|l| l.iter().map(|r| r.to_string()).collect())),
+        attachments: Vec::new(),
+    };
+    view.to.extend(unparsed(raw, UNPARSED_TO));
+    view.cc.extend(unparsed(raw, UNPARSED_CC));
+    view.bcc.extend(unparsed(raw, UNPARSED_BCC));
+    let mut total = 0usize;
+    for part in message.attachments() {
+        let mime = part
+            .content_type()
+            .map(|ct| match ct.subtype() {
+                Some(sub) => format!("{}/{}", ct.ctype(), sub),
+                None => ct.ctype().to_owned(),
+            })
+            .unwrap_or_else(|| "application/octet-stream".into())
+            .to_ascii_lowercase();
+        let body = part.decoded().into_owned();
+        total += body.len();
+        if total > DRAFT_ATTACHMENTS_MAX {
+            return None;
+        }
+        let name = part
+            .attachment_name()
+            .map(|n| crate::clip(n.trim(), 200))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "anexo".to_owned());
+        view.attachments.push((name, mime, body));
+    }
+    Some(view)
+}
+
 /// Bytes e nome do anexo `index` (posição em [`MessageView::attachments`]).
 pub fn attachment(raw: &[u8], index: u32) -> Option<(String, Vec<u8>)> {
     let message = MessageParser::default().parse(raw)?;
@@ -1097,6 +1261,75 @@ impl<S: Transport> Reader<S> {
         }
     }
 
+    /// UIDs da pasta com este `Message-ID` (rascunhos do Papeo).
+    fn with_message_id(&mut self, path: &str, message_id: &str) -> ImapResult<Vec<u32>> {
+        if !searchable_id(message_id) {
+            return Err(ImapError::Protocol(
+                "identificador do rascunho inválido".into(),
+            ));
+        }
+        self.ensure(path)?;
+        let mut parts = vec![Part::Text("UID SEARCH HEADER Message-ID".into())];
+        push_string(&mut parts, message_id);
+        self.search_criteria(parts)
+    }
+
+    /// Grava o rascunho e só então apaga as versões anteriores dele (mesmo
+    /// `Message-ID`).
+    pub fn save_draft(&mut self, path: &str, message: &[u8], message_id: &str) -> ImapResult<()> {
+        check_path(path)?;
+        let old = self.with_message_id(path, message_id)?;
+        let mut parts = vec![Part::Text("APPEND".into())];
+        push_string(&mut parts, path);
+        parts.push(Part::Text("(\\Seen \\Draft)".into()));
+        parts.push(Part::Literal(message.to_vec()));
+        self.imap.command(parts)?;
+        if !old.is_empty() {
+            self.ensure(path)?;
+            self.expunge(&uid_set(&old))?;
+        }
+        Ok(())
+    }
+
+    /// Apaga de vez todas as versões de um rascunho do Papeo.
+    pub fn discard_drafts(&mut self, path: &str, message_id: &str) -> ImapResult<()> {
+        check_path(path)?;
+        let old = self.with_message_id(path, message_id)?;
+        if old.is_empty() {
+            return Ok(());
+        }
+        self.expunge(&uid_set(&old))
+    }
+
+    /// Apaga de vez mensagens (rascunho de outro programa substituído).
+    pub fn discard(&mut self, path: &str, uids: &[u32]) -> ImapResult<()> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+        check_path(path)?;
+        self.ensure(path)?;
+        self.expunge(&uid_set(uids))
+    }
+
+    /// Apaga de vez o rascunho de outro programa substituído pelo editor,
+    /// só se o UID ainda for dele: mesmo `Message-ID` (ou, sem um, marcado
+    /// como rascunho). Senão, não mexe.
+    pub fn discard_checked(&mut self, path: &str, uid: u32, message_id: &str) -> ImapResult<()> {
+        check_path(path)?;
+        self.ensure(path)?;
+        let mut parts = vec![Part::Text(format!("UID SEARCH UID {uid}"))];
+        if searchable_id(message_id) {
+            parts.push(Part::Text("HEADER Message-ID".into()));
+            push_string(&mut parts, message_id);
+        } else {
+            parts.push(Part::Text("DRAFT".into()));
+        }
+        if !self.search_criteria(parts)?.contains(&uid) {
+            return Ok(());
+        }
+        self.expunge(&uid.to_string())
+    }
+
     /// Guarda uma mensagem pronta numa pasta (ex.: Enviados), já lida.
     pub fn append(&mut self, path: &str, message: &[u8]) -> ImapResult<()> {
         check_path(path)?;
@@ -1107,6 +1340,16 @@ impl<S: Transport> Reader<S> {
         self.imap.command(parts)?;
         Ok(())
     }
+}
+
+/// Identificador que pode ir numa busca de cabeçalho (sem aspas, espaços
+/// nem controles).
+fn searchable_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 200
+        && id
+            .bytes()
+            .all(|b| (0x21..0x7f).contains(&b) && b != b'"' && b != b'\\')
 }
 
 fn uid_set(uids: &[u32]) -> String {
@@ -1600,6 +1843,132 @@ mod tests {
         reader.move_to("INBOX", &[2], "Arquivo").unwrap();
         reader.append("Enviados", b"Hello").unwrap();
         assert!(reader.move_to("INBOX", &[1], "a\r\nb").is_err());
+        drop(reader);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn draft_is_saved_before_old_versions_go() {
+        let (stream, server) = fake_server(|r, w| {
+            let (tag, _) = read(r);
+            w.write_all(format!("* CAPABILITY IMAP4rev1 UIDPLUS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "SELECT \"Rascunhos\"");
+            w.write_all(format!("* 1 EXISTS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(
+                cmd,
+                "UID SEARCH HEADER Message-ID \"<papeo-draft-1@papeo.draft>\""
+            );
+            w.write_all(format!("* SEARCH 7\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            // A versão nova entra antes de a antiga sair.
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "APPEND \"Rascunhos\" (\\Seen \\Draft) {2}");
+            w.write_all(b"+ ok\r\n").unwrap();
+            let mut bytes = [0u8; 2];
+            std::io::Read::read_exact(r, &mut bytes).unwrap();
+            assert_eq!(&bytes, b"v2");
+            let mut end = String::new();
+            r.read_line(&mut end).unwrap();
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID STORE 7 +FLAGS.SILENT (\\Deleted)");
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID EXPUNGE 7");
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+            // Descartar sem versões salvas: só procura.
+            let (tag, cmd) = read(r);
+            assert_eq!(
+                cmd,
+                "UID SEARCH HEADER Message-ID \"<papeo-draft-2@papeo.draft>\""
+            );
+            w.write_all(format!("* SEARCH\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+        });
+        let imap = Imap::connect(stream).unwrap();
+        let mut reader = Reader::new(imap, false).unwrap();
+        reader
+            .save_draft("Rascunhos", b"v2", "<papeo-draft-1@papeo.draft>")
+            .unwrap();
+        reader
+            .discard_drafts("Rascunhos", "<papeo-draft-2@papeo.draft>")
+            .unwrap();
+        // Identificador com aspas ou espaço não vai para o servidor.
+        assert!(reader.discard_drafts("Rascunhos", "a\" b").is_err());
+        drop(reader);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn draft_view_reads_what_the_editor_needs() {
+        let raw = "From: eu@x.com\r\nTo: \"Silva, Ana\" <ana@x.com>, bia@x.com\r\nBcc: Chefe <c@x.com>\r\nSubject: Re: oi\r\nMessage-ID: <papeo-draft-9@papeo.draft>\r\nIn-Reply-To: <orig@x.com>\r\nReferences: <a@x.com> <orig@x.com>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nTexto\r\n--b\r\nContent-Type: application/pdf; name=a.pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0=\r\n--b--\r\n";
+        let v = draft_view(raw.as_bytes()).unwrap();
+        assert_eq!(
+            v.to,
+            [
+                "\"Silva Ana\" <ana@x.com>".replace("Silva Ana", "Silva, Ana"),
+                "bia@x.com".into()
+            ]
+        );
+        assert_eq!(v.bcc, ["Chefe <c@x.com>"]);
+        assert_eq!(v.subject, "Re: oi");
+        assert_eq!(v.text.trim(), "Texto");
+        assert_eq!(v.message_id, "papeo-draft-9@papeo.draft");
+        assert_eq!(v.in_reply_to.as_deref(), Some("orig@x.com"));
+        assert_eq!(v.references, ["a@x.com", "orig@x.com"]);
+        assert_eq!(v.attachments.len(), 1);
+        assert_eq!(v.attachments[0].0, "a.pdf");
+        assert_eq!(v.attachments[0].2, b"%PDF-");
+        // Endereço incompleto guardado pelo Papeo volta ao campo dele.
+        let enc = encode_unparsed(&["ana@".into(), "Zé <".into()]);
+        let raw = format!("From: eu@x.com\r\n{UNPARSED_BCC}: {enc}\r\nSubject: x\r\n\r\noi\r\n");
+        let v = draft_view(raw.as_bytes()).unwrap();
+        assert_eq!(v.bcc, ["ana@", "Zé <"]);
+        assert!(v.to.is_empty());
+        // Valor longo: quebrado em pedaços (e dobrado em linhas) volta igual.
+        let many: Vec<String> = (0..40).map(|i| format!("pessoa{i}@")).collect();
+        let enc = encode_unparsed(&many);
+        assert!(enc.split(' ').all(|c| c.len() <= 76));
+        let folded = enc.replace(' ', "\r\n ");
+        let raw = format!("From: eu@x.com\r\n{UNPARSED_TO}: {folded}\r\n\r\noi\r\n");
+        assert_eq!(draft_view(raw.as_bytes()).unwrap().to, many);
+    }
+
+    #[test]
+    fn foreign_draft_is_only_discarded_if_still_there() {
+        let (stream, server) = fake_server(|r, w| {
+            let (tag, _) = read(r);
+            w.write_all(format!("* CAPABILITY IMAP4rev1 UIDPLUS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "SELECT \"Drafts\"");
+            w.write_all(format!("* 3 EXISTS\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            // O UID 4 virou outra mensagem: não apaga.
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID SEARCH UID 4 HEADER Message-ID \"abc@x.com\"");
+            w.write_all(format!("* SEARCH\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            // Sem Message-ID: só se ainda estiver marcado como rascunho.
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID SEARCH UID 5 DRAFT");
+            w.write_all(format!("* SEARCH 5\r\n{tag} OK\r\n").as_bytes())
+                .unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID STORE 5 +FLAGS.SILENT (\\Deleted)");
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+            let (tag, cmd) = read(r);
+            assert_eq!(cmd, "UID EXPUNGE 5");
+            w.write_all(format!("{tag} OK\r\n").as_bytes()).unwrap();
+        });
+        let imap = Imap::connect(stream).unwrap();
+        let mut reader = Reader::new(imap, false).unwrap();
+        reader.discard_checked("Drafts", 4, "abc@x.com").unwrap();
+        reader.discard_checked("Drafts", 5, "").unwrap();
         drop(reader);
         server.join().unwrap();
     }

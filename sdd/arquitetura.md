@@ -244,7 +244,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 90 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 93 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
@@ -386,6 +386,14 @@ repetido e confere o nome no cabeçalho antes de enviar.
   conferido, guardado em `outbox/` e enviado no fim da espera por um thread
   próprio; quem tira a entrada da fila primeiro (o thread ou "Desfazer")
   vence. Sobras de uma sessão anterior voltam ao editor da conta.
+- **Rascunhos (spec 18):** o editor salva na pasta Rascunhos do servidor
+  10 s depois da última mudança, ao fechar e ao sair da tela. Cada
+  rascunho tem um token que vira o `Message-ID`
+  `<papeo-draft-<token>@papeo.draft>`; salvar grava a versão nova
+  (`APPEND` com `\Draft`) e só então expurga as anteriores (`UID SEARCH
+  HEADER Message-ID`). Enviar apaga o rascunho; abrir uma mensagem da pasta
+  Rascunhos leva ao editor (rascunho de outro programa é substituído pelo
+  UID).
 
 ### 8.5.1 Resumo do silêncio (spec 17)
 

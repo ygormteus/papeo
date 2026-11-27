@@ -14,6 +14,13 @@
     /** Aviso no topo do editor; `noticeError` o mostra como erro. */
     notice?: string;
     noticeError?: boolean;
+    /** Rascunho no servidor (spec 18): token das versões salvas e, para um
+     * rascunho de outro programa, a mensagem que ele substitui. */
+    draftToken?: string | null;
+    replaces?: { folder: string; uid: number } | null;
+    /** Veio de fora do servidor (desfeito, falha, sobra): conta como não
+     * salvo, para fechar guardar nos Rascunhos. */
+    unsaved?: boolean;
   }
 
   /** Tamanho aproximado do conteúdo em base64. */
@@ -43,7 +50,7 @@
 </script>
 
 <script lang="ts">
-  import { LoaderCircle, Paperclip, Send, X } from "@lucide/svelte";
+  import { LoaderCircle, Paperclip, Send, Trash2, X } from "@lucide/svelte";
   import { api, errorMessage, type MailDraft, type ServiceView } from "./api";
   import { queueSend } from "./outbox.svelte";
 
@@ -53,6 +60,7 @@
     undoSecs,
     onclose,
     onsent,
+    ondraftsaved,
   }: {
     service: ServiceView;
     start: ComposeStart;
@@ -61,6 +69,8 @@
     onclose: () => void;
     /** `queued`: entrou na espera (ainda não saiu). */
     onsent: (queued: boolean) => void;
+    /** Rascunho salvo no servidor (para atualizar a pasta Rascunhos). */
+    ondraftsaved?: () => void;
   } = $props();
 
   const MAX_TOTAL = 25 * 1024 * 1024;
@@ -92,6 +102,150 @@
 
   const total = $derived(files.reduce((n, f) => n + f.size, 0));
   const empty = $derived(!to.trim() && !cc.trim() && !bcc.trim());
+
+  // ---- Rascunho no servidor (spec 18)
+
+  /** Atraso do salvamento automático depois da última mudança. */
+  const AUTOSAVE_MS = 10_000;
+  /** Erro do backend para conta sem pasta Rascunhos (`mailbox::NO_DRAFTS`). */
+  const NO_DRAFTS = "Esta conta não tem pasta Rascunhos no servidor.";
+  /** Token nascido aqui: um salvamento que falha no meio não cria cópias
+   * com tokens diferentes. */
+  function newToken() {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  // svelte-ignore state_referenced_locally
+  let token = $state<string>(start.draftToken ?? newToken());
+  // Conta fixa do editor (o leitor troca de conta desmontando o editor).
+  // svelte-ignore state_referenced_locally
+  const accountId = service.id;
+  // svelte-ignore state_referenced_locally
+  let replaces = $state(start.replaces ?? null);
+  /** Estado do editor como foi salvo (ou como abriu): igual = nada a salvar. */
+  const contentKey = () => JSON.stringify([to, cc, bcc, subject, body, files.map((f) => [f.name, f.size])]);
+  // svelte-ignore state_referenced_locally
+  let savedKey = $state(start.unsaved ? "" : contentKey());
+  let savedAt = $state<Date | null>(null);
+  let draftError = $state("");
+  /** Já existe no servidor (aberto de lá ou salvo aqui): descartar apaga. */
+  // svelte-ignore state_referenced_locally
+  let onServer = !!start.draftToken || !!start.replaces;
+  /** Conta sem pasta Rascunhos: para de salvar sozinho (R8). */
+  let noDrafts = $state(false);
+  /** Salvamento em curso (o envio e o fechamento esperam por ele). */
+  let saving: Promise<boolean> | null = null;
+  /** Enviado ou descartado: nada mais a salvar. */
+  let finished = false;
+  const dirty = $derived(contentKey() !== savedKey);
+  const hasContent = $derived(
+    !!(to.trim() || cc.trim() || bcc.trim() || subject.trim() || body.trim() || files.length),
+  );
+
+  function draftOf(): MailDraft {
+    return {
+      to: splitAddresses(to),
+      cc: splitAddresses(cc),
+      bcc: splitAddresses(bcc),
+      subject,
+      body,
+      inReplyTo: start.inReplyTo ?? null,
+      references: start.references ?? [],
+      replyFolder: start.replyFolder ?? null,
+      replyUid: start.replyUid ?? null,
+      attachments: files.map(({ name, mime, data }) => ({ name, mime, data })),
+      draftToken: token,
+      replaces,
+    };
+  }
+
+  /** Salva no servidor; `false` com erro (fica em `draftError`). */
+  function saveDraft(): Promise<boolean> {
+    if (finished) return Promise.resolve(true);
+    if (saving) return saving.then(() => (dirty && !finished && !sending && !closing ? saveDraft() : true));
+    const key = contentKey();
+    const draft = draftOf();
+    saving = (async () => {
+      try {
+        token = await api.mailSaveDraft(accountId, draft);
+        replaces = null;
+        onServer = true;
+        savedKey = key;
+        savedAt = new Date();
+        draftError = "";
+        ondraftsaved?.();
+        return true;
+      } catch (err) {
+        const message = errorMessage(err);
+        if (message === NO_DRAFTS) noDrafts = true;
+        draftError = `Rascunho não salvo: ${message}`;
+        return false;
+      } finally {
+        saving = null;
+      }
+    })();
+    return saving;
+  }
+
+  // Salva sozinho 10 s depois da última mudança. Depois de um erro, só
+  // tenta de novo quando o texto mudar outra vez.
+  $effect(() => {
+    if (!dirty || !hasContent || sending || noDrafts) return;
+    contentKey();
+    const timer = setTimeout(() => {
+      if (!finished && !draftError && !closing) void saveDraft();
+    }, AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+  });
+  $effect(() => {
+    contentKey();
+    draftError = "";
+  });
+
+  // Saiu da tela sem fechar (outra mensagem, outra conta): salva o que
+  // faltava sem esperar.
+  // Na fila dos outros salvamentos (a versão mais nova fica por último) e
+  // nunca durante um envio (ele apaga o rascunho).
+  $effect(() => () => {
+    if (finished || sending || noDrafts || contentKey() === savedKey || !hasContent) return;
+    const draft = draftOf();
+    void (saving ?? Promise.resolve(true))
+      .then(() => api.mailSaveDraft(accountId, draft))
+      .catch(() => {});
+  });
+
+  /** Fechar: salva antes (se mudou); com erro, o editor fica aberto. */
+  async function close() {
+    if (sending || closing) return;
+    if (dirty && hasContent) {
+      closing = true;
+      const ok = await saveDraft();
+      closing = false;
+      if (!ok) return;
+    }
+    finished = true;
+    onclose();
+  }
+  let closing = $state(false);
+
+  /** Descartar: fecha e apaga o rascunho salvo. */
+  async function discard() {
+    if (sending || closing) return;
+    closing = true;
+    // Nenhum salvamento depois deste ponto (recriaria o rascunho).
+    finished = true;
+    await saving?.catch(() => {});
+    try {
+      if (onServer || replaces) await api.mailDiscardDraft(accountId, token, replaces);
+      ondraftsaved?.();
+      onclose();
+    } catch (err) {
+      finished = false;
+      draftError = `Não deu para apagar o rascunho: ${errorMessage(err)}`;
+    } finally {
+      closing = false;
+    }
+  }
 
   $effect(() => {
     // Resposta: começa no texto; mensagem nova, no destinatário.
@@ -142,24 +296,18 @@
     if (sending || empty) return;
     sending = true;
     error = "";
-    const draft: MailDraft = {
-      to: splitAddresses(to),
-      cc: splitAddresses(cc),
-      bcc: splitAddresses(bcc),
-      subject,
-      body,
-      inReplyTo: start.inReplyTo ?? null,
-      references: start.references ?? [],
-      replyFolder: start.replyFolder ?? null,
-      replyUid: start.replyUid ?? null,
-      attachments: files.map(({ name, mime, data }) => ({ name, mime, data })),
-    };
+    // Um salvamento em curso termina antes: o envio apaga o rascunho, e um
+    // salvamento atrasado o recriaria.
+    await saving?.catch(() => {});
+    const draft = draftOf();
     try {
       if (undoSecs > 0) {
         await queueSend(service.id, draft);
+        finished = true;
         onsent(true);
       } else {
         await api.mailSend(service.id, draft);
+        finished = true;
         onsent(false);
       }
     } catch (err) {
@@ -172,7 +320,7 @@
   function keydown(e: KeyboardEvent) {
     if (e.key === "Escape" && !sending) {
       e.stopPropagation();
-      onclose();
+      void close();
     }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -186,8 +334,15 @@
   <header>
     <h2>{start.inReplyTo ? "Responder" : "Nova mensagem"}</h2>
     <span class="from">De {service.mail?.user}</span>
-    <button type="button" class="icon-btn ghost" onclick={onclose} aria-label="Descartar" title="Descartar (Esc)" disabled={sending}>
-      <X size={18} />
+    <button
+      type="button"
+      class="icon-btn ghost"
+      onclick={close}
+      aria-label="Fechar"
+      title="Fechar e guardar nos Rascunhos (Esc)"
+      disabled={sending || closing}
+    >
+      {#if closing}<LoaderCircle size={18} class="spin" />{:else}<X size={18} />{/if}
     </button>
   </header>
   {#if notice}<p class="notice" role="status">{notice}</p>{/if}
@@ -221,6 +376,7 @@
     </ul>
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if draftError}<p class="error" role="alert">{draftError}</p>{/if}
   <footer>
     <button type="submit" class="btn btn-primary" disabled={sending || empty}>
       {#if sending}<LoaderCircle size={15} class="spin" /> Enviando…{:else}<Send size={15} /> Enviar{/if}
@@ -229,7 +385,13 @@
       <Paperclip size={15} /> Anexar
     </button>
     <input bind:this={picker} type="file" multiple hidden onchange={(e) => addFiles(e.currentTarget.files)} />
-    <span class="hint">{navigator.platform.startsWith("Mac") ? "⌘" : "Ctrl"} Enter envia</span>
+    <button type="button" class="btn ghost-danger" onclick={discard} disabled={sending || closing}>
+      <Trash2 size={15} /> Descartar
+    </button>
+    <span class="hint">
+      {#if savedAt && !dirty}Rascunho salvo às {savedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ·
+      {/if}{navigator.platform.startsWith("Mac") ? "⌘" : "Ctrl"} Enter envia
+    </span>
   </footer>
 </form>
 
@@ -328,6 +490,9 @@
     padding: 8px 16px;
     color: var(--danger);
     font-size: 13px;
+  }
+  .ghost-danger {
+    color: var(--danger);
   }
   .notice {
     margin: 0;

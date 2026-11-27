@@ -178,6 +178,9 @@
       replyFolder: d.replyFolder ?? null,
       replyUid: d.replyUid ?? null,
       attachments: d.attachments,
+      draftToken: d.draftToken ?? null,
+      replaces: d.replaces ?? null,
+      unsaved: true,
       notice: r.notice,
       noticeError: r.error,
     };
@@ -314,7 +317,38 @@
     }
   }
 
+  /** Rascunho da pasta Rascunhos: abre no editor para continuar (spec 18). */
+  async function openDraft(uid: number) {
+    const seq = ++openSeq;
+    selected = uid;
+    openError = "";
+    message = null;
+    composing = null;
+    opening = true;
+    try {
+      const d = await api.mailOpenDraft(service.id, folder, uid);
+      if (seq !== openSeq) return;
+      composing = {
+        to: d.to.join(", "),
+        cc: d.cc.join(", "),
+        bcc: d.bcc.join(", "),
+        subject: d.subject,
+        body: d.body,
+        inReplyTo: d.inReplyTo,
+        references: d.references,
+        attachments: d.attachments,
+        draftToken: d.draftToken,
+        replaces: d.replaces,
+      };
+    } catch (err) {
+      if (seq === openSeq) openError = errorMessage(err);
+    } finally {
+      if (seq === openSeq) opening = false;
+    }
+  }
+
   async function openMessage(uid: number) {
+    if (current?.role === "drafts") return openDraft(uid);
     const seq = ++openSeq;
     composing = null;
     selected = uid;
@@ -708,7 +742,16 @@
 
     <section class="view" aria-label="Mensagem">
       {#if composing}
-        <MailComposer {service} start={composing} {undoSecs} onclose={() => (composing = null)} onsent={sent} />
+        <MailComposer
+          {service}
+          start={composing}
+          {undoSecs}
+          onclose={() => (composing = null)}
+          onsent={sent}
+          ondraftsaved={() => {
+            if (current?.role === "drafts") void loadList(true);
+          }}
+        />
       {:else if opening}
         {@const s = messages.find((x) => x.uid === selected)}
         {#if s}

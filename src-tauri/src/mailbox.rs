@@ -403,6 +403,57 @@ pub struct Draft {
     pub reply_uid: Option<u32>,
     #[serde(default)]
     pub attachments: Vec<DraftAttachment>,
+    /// Rascunho no servidor (spec 18): vira o `Message-ID` das versões
+    /// salvas. Só o formato gerado pelo Papeo.
+    #[serde(default)]
+    pub draft_token: Option<String>,
+    /// Rascunho de outro programa aberto no editor: sai ao salvar ou enviar.
+    #[serde(default)]
+    pub replaces: Option<DraftRef>,
+}
+
+/// Mensagem de uma pasta (rascunho de outro programa).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftRef {
+    pub folder: String,
+    pub uid: u32,
+    /// `Message-ID` do rascunho: confere que o UID ainda é ele antes de
+    /// apagar (vazio: o rascunho não tinha, só o `\\Draft` é conferido).
+    #[serde(default)]
+    pub message_id: String,
+}
+
+/// `Message-ID` das versões salvas de um rascunho do Papeo.
+fn draft_message_id(token: &str) -> Option<String> {
+    crate::outbox::valid_id(token).then(|| format!("<papeo-draft-{token}@papeo.draft>"))
+}
+
+/// Token de um rascunho salvo pelo Papeo, pelo `Message-ID` (sem `<>`).
+fn token_of(message_id: &str) -> Option<String> {
+    let token = message_id
+        .trim()
+        .trim_start_matches('<')
+        .trim_end_matches('>')
+        .strip_prefix("papeo-draft-")?
+        .strip_suffix("@papeo.draft")?;
+    crate::outbox::valid_id(token).then(|| token.to_owned())
+}
+
+/// Rascunho aberto no editor.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedDraft {
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub body: String,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
+    pub attachments: Vec<DraftAttachment>,
+    pub draft_token: Option<String>,
+    pub replaces: Option<DraftRef>,
 }
 
 /// Confere o e-mail como o envio conferiria (endereços, tamanhos, anexos),
@@ -420,6 +471,16 @@ pub fn validate(app: &AppHandle, id: &str, draft: &Draft) -> Result<(), String> 
 
 /// Monta a mensagem (sem enviar).
 fn build(account: &MailAccount, draft: &Draft) -> Result<lettre::Message, String> {
+    build_as(account, draft, None)
+}
+
+/// Monta a mensagem; com `draft_id`, como rascunho: aceita ficar sem
+/// destinatário, guarda o Cco e usa esse `Message-ID`.
+fn build_as(
+    account: &MailAccount,
+    draft: &Draft,
+    draft_id: Option<&str>,
+) -> Result<lettre::Message, String> {
     use base64::Engine;
     use lettre::message::header::ContentType;
     use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart};
@@ -427,18 +488,30 @@ fn build(account: &MailAccount, draft: &Draft) -> Result<lettre::Message, String
         .user
         .parse()
         .map_err(|_| "O usuário da conta não é um endereço de e-mail.".to_owned())?;
-    let parse = |list: &[String]| -> Result<Vec<Mailbox>, String> {
-        list.iter()
-            .map(|a| a.trim())
-            .filter(|a| !a.is_empty())
-            .map(|a| {
-                a.parse::<Mailbox>()
-                    .map_err(|_| format!("Endereço inválido: {}", papeo_core::clip(a, 80)))
-            })
-            .collect()
+    // Rascunho: endereço ainda incompleto ("ana@") não impede salvar; vai
+    // num cabeçalho próprio do Papeo e volta ao editor ao reabrir.
+    let mut unparsed: Vec<(&'static str, Vec<String>)> = Vec::new();
+    let mut parse = |list: &[String], header: &'static str| -> Result<Vec<Mailbox>, String> {
+        let mut ok = Vec::new();
+        let mut bad = Vec::new();
+        for a in list.iter().map(|a| a.trim()).filter(|a| !a.is_empty()) {
+            match a.parse::<Mailbox>() {
+                Ok(m) => ok.push(m),
+                Err(_) if draft_id.is_some() => bad.push(papeo_core::clip(a, 300)),
+                Err(_) => {
+                    return Err(format!("Endereço inválido: {}", papeo_core::clip(a, 80)));
+                }
+            }
+        }
+        if !bad.is_empty() {
+            unparsed.push((header, bad));
+        }
+        Ok(ok)
     };
-    let (to, cc, bcc) = (parse(&draft.to)?, parse(&draft.cc)?, parse(&draft.bcc)?);
-    if to.is_empty() && cc.is_empty() && bcc.is_empty() {
+    let to = parse(&draft.to, core::UNPARSED_TO)?;
+    let cc = parse(&draft.cc, core::UNPARSED_CC)?;
+    let bcc = parse(&draft.bcc, core::UNPARSED_BCC)?;
+    if draft_id.is_none() && to.is_empty() && cc.is_empty() && bcc.is_empty() {
         return Err("Informe para quem enviar.".into());
     }
     if to.len() + cc.len() + bcc.len() > RECIPIENTS_MAX {
@@ -449,8 +522,19 @@ fn build(account: &MailAccount, draft: &Draft) -> Result<lettre::Message, String
     }
     let subject: String = draft.subject.chars().filter(|c| !c.is_control()).collect();
     let mut builder = lettre::Message::builder()
-        .from(from)
+        .from(from.clone())
         .subject(papeo_core::clip(subject.trim(), 500));
+    if let Some(id) = draft_id {
+        // Rascunho não é enviado: o envelope (exigido pelo lettre) aponta
+        // para o próprio remetente e o Cco fica no cabeçalho.
+        let envelope =
+            lettre::address::Envelope::new(Some(from.email.clone()), vec![from.email.clone()])
+                .map_err(|e| e.to_string())?;
+        builder = builder
+            .message_id(Some(id.to_owned()))
+            .keep_bcc()
+            .envelope(envelope);
+    }
     for m in to {
         builder = builder.to(m);
     }
@@ -459,6 +543,13 @@ fn build(account: &MailAccount, draft: &Draft) -> Result<lettre::Message, String
     }
     for m in bcc {
         builder = builder.bcc(m);
+    }
+    for (name, list) in unparsed {
+        use lettre::message::header::{HeaderName, HeaderValue};
+        builder = builder.raw_header(HeaderValue::new(
+            HeaderName::new_from_ascii_str(name),
+            core::encode_unparsed(&list),
+        ));
     }
     let msg_id = |id: &str| -> Option<String> {
         let id = id.trim().trim_start_matches('<').trim_end_matches('>');
@@ -549,7 +640,140 @@ pub async fn send(app: AppHandle, id: String, draft: Draft) -> Result<(), String
             }
             Ok(())
         });
+        // O rascunho deste e-mail sai do servidor (melhor esforço).
+        let _ = with_reader(&app, &id, |r, _| {
+            drop_draft(r, draft.draft_token.as_deref(), draft.replaces.as_ref())
+        });
         Ok(())
+    })
+    .await
+}
+
+/// Apaga as versões salvas do rascunho e o de outro programa substituído.
+fn drop_draft(
+    r: &mut Reader<Tls>,
+    token: Option<&str>,
+    replaces: Option<&DraftRef>,
+) -> Result<(), ImapError> {
+    if let Some(id) = token.and_then(draft_message_id) {
+        if let Some(folder) = r.role_path(Role::Drafts)? {
+            r.discard_drafts(&folder, &id)?;
+        }
+    }
+    if let Some(old) = replaces {
+        if let Some(folder) = r.role_path(Role::Drafts)? {
+            replace_foreign(r, &folder, old)?;
+        }
+    }
+    Ok(())
+}
+
+/// Sem a pasta: o editor para de salvar sozinho (spec 18, R8).
+pub const NO_DRAFTS: &str = "Esta conta não tem pasta Rascunhos no servidor.";
+
+/// Apaga o rascunho de outro programa que o editor substituiu: só na pasta
+/// Rascunhos e só se o UID ainda for daquele rascunho (`Message-ID`).
+fn replace_foreign(r: &mut Reader<Tls>, drafts: &str, old: &DraftRef) -> Result<(), ImapError> {
+    if old.folder != drafts {
+        return Ok(());
+    }
+    r.discard_checked(drafts, old.uid, &old.message_id)
+}
+
+/// Conta de e-mail configurada (sem a senha).
+fn account_only(app: &AppHandle, id: &str) -> Result<MailAccount, String> {
+    app.state::<AppState>()
+        .lock()
+        .service(id)?
+        .mail
+        .clone()
+        .ok_or_else(|| "Esta conta não tem o e-mail por IMAP configurado.".to_owned())
+}
+
+/// Salva o rascunho na pasta Rascunhos (spec 18). Devolve o token dele.
+pub async fn save_draft(app: AppHandle, id: String, draft: Draft) -> Result<String, String> {
+    blocking(move || {
+        let account = account_only(&app, &id)?;
+        let token = draft
+            .draft_token
+            .clone()
+            .filter(|t| crate::outbox::valid_id(t))
+            .unwrap_or_else(crate::outbox::new_id);
+        let message_id = draft_message_id(&token).ok_or("Rascunho inválido.")?;
+        let raw = build_as(&account, &draft, Some(&message_id))?.formatted();
+        // Uma ida só à conexão da conta: dois salvamentos não se cruzam
+        // (a ordem é a de chegada).
+        let saved = with_reader(&app, &id, |r, _| {
+            let Some(folder) = r.role_path(Role::Drafts)? else {
+                return Ok(false);
+            };
+            r.save_draft(&folder, &raw, &message_id)?;
+            if let Some(old) = &draft.replaces {
+                replace_foreign(r, &folder, old)?;
+            }
+            Ok(true)
+        })?;
+        if !saved {
+            return Err(NO_DRAFTS.into());
+        }
+        Ok(token)
+    })
+    .await
+}
+
+/// Descarta o rascunho: apaga do servidor as versões salvas.
+pub async fn discard_draft(
+    app: AppHandle,
+    id: String,
+    token: Option<String>,
+    replaces: Option<DraftRef>,
+) -> Result<(), String> {
+    blocking(move || {
+        with_reader(&app, &id, |r, _| {
+            drop_draft(r, token.as_deref(), replaces.as_ref())
+        })
+    })
+    .await
+}
+
+/// Abre uma mensagem da pasta Rascunhos no editor.
+pub async fn open_draft(
+    app: AppHandle,
+    id: String,
+    folder: String,
+    uid: u32,
+) -> Result<OpenedDraft, String> {
+    use base64::Engine;
+    blocking(move || {
+        let raw = with_reader(&app, &id, |r, _| {
+            r.fetch_raw(&folder, uid, false).map(|(raw, _, _)| raw)
+        })?;
+        let view = core::draft_view(&raw).ok_or("Os anexos deste rascunho passam de 25 MB.")?;
+        let token = token_of(&view.message_id);
+        Ok(OpenedDraft {
+            to: view.to,
+            cc: view.cc,
+            bcc: view.bcc,
+            subject: view.subject,
+            body: view.text.replace("\r\n", "\n"),
+            in_reply_to: view.in_reply_to,
+            references: view.references,
+            attachments: view
+                .attachments
+                .into_iter()
+                .map(|(name, mime, bytes)| DraftAttachment {
+                    name,
+                    mime,
+                    data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                })
+                .collect(),
+            replaces: token.is_none().then(|| DraftRef {
+                folder: folder.clone(),
+                uid,
+                message_id: view.message_id.clone(),
+            }),
+            draft_token: token,
+        })
     })
     .await
 }
@@ -632,7 +856,40 @@ mod tests {
             reply_folder: None,
             reply_uid: None,
             attachments: vec![],
+            draft_token: None,
+            replaces: None,
         }
+    }
+
+    #[test]
+    fn draft_keeps_bcc_and_may_have_no_recipient() {
+        let token = crate::outbox::new_id();
+        let id = draft_message_id(&token).unwrap();
+        let mut d = draft();
+        d.to.clear();
+        let raw =
+            String::from_utf8(build_as(&account(), &d, Some(&id)).unwrap().formatted()).unwrap();
+        assert!(raw.contains("Bcc: oculto@z.com"), "{raw}");
+        assert!(raw.contains(&format!("Message-ID: {id}")), "{raw}");
+        d.bcc.clear();
+        assert!(build_as(&account(), &d, Some(&id)).is_ok());
+        // Endereço incompleto: salva no rascunho, mas não envia.
+        d.to = vec!["ana@".into(), "bia@y.com".into()];
+        let raw =
+            String::from_utf8(build_as(&account(), &d, Some(&id)).unwrap().formatted()).unwrap();
+        assert!(raw.contains(papeo_core::mailbox::UNPARSED_TO), "{raw}");
+        assert!(raw.contains("To: bia@y.com"), "{raw}");
+        assert_eq!(
+            papeo_core::mailbox::draft_view(raw.as_bytes()).unwrap().to,
+            ["bia@y.com", "ana@"]
+        );
+        assert!(build(&account(), &d).is_err());
+        // O Papeo reconhece o próprio rascunho pelo `Message-ID`.
+        assert_eq!(token_of(id.trim_matches(['<', '>'])), Some(token.clone()));
+        assert_eq!(token_of(&id), Some(token));
+        assert_eq!(token_of("papeo-draft-../x@papeo.draft"), None);
+        assert_eq!(token_of("abc@gmail.com"), None);
+        assert!(draft_message_id("../x").is_none());
     }
 
     #[test]

@@ -425,6 +425,27 @@ export function installDevMock() {
         if (!draft.to.length && !draft.cc.length && !draft.bcc.length) throw "Informe para quem enviar.";
         return undefined;
       }
+      case "mail_save_draft": {
+        // `?semrascunhos`: conta sem a pasta Rascunhos.
+        if (new URLSearchParams(location.search).has("semrascunhos")) throw "Esta conta não tem pasta Rascunhos no servidor.";
+        const draft = args.draft as import("./api").MailDraft;
+        return draft.draftToken ?? Math.random().toString(16).slice(2).padEnd(24, "0").slice(0, 24);
+      }
+      case "mail_discard_draft":
+        return undefined;
+      case "mail_open_draft":
+        return {
+          to: ["ana@exemplo.com"],
+          cc: [],
+          bcc: ["chefe@exemplo.com"],
+          subject: "Proposta (rascunho)",
+          body: "Oi, Ana!\n\nSegue a proposta",
+          inReplyTo: null,
+          references: [],
+          attachments: [],
+          draftToken: null,
+          replaces: { folder: String(args.folder), uid: Number(args.uid) },
+        };
       case "mail_send_later": {
         // Simula a espera; assunto com "falha" volta com erro.
         const draft = args.draft as import("./api").MailDraft;
