@@ -53,14 +53,32 @@ pub fn handle(webview: &Webview, event: DownloadEvent<'_>) -> bool {
             }
             let dir = downloads_dir(&app);
             let state = app.state::<AppState>();
-            let mut inner = state.lock();
-            let pending: Vec<_> = inner
+            let pending: Vec<_> = state
+                .lock()
                 .downloads
                 .iter()
                 .filter(|d| d.state == DownloadState::Downloading)
                 .map(|d| d.path.clone())
                 .collect();
+            // Consulta o disco sem o lock (spec 15). Outro download do site
+            // não entra no meio (este callback roda na thread principal), mas
+            // salvar um anexo pode: se ele pegou o mesmo nome nesse meio-tempo,
+            // escolhe de novo (raro; aí sim com o lock).
             let path = papeo_core::unique_path(&dir, &file_name, &pending);
+            let mut inner = state.lock();
+            let taken: Vec<_> = inner
+                .downloads
+                .iter()
+                .filter(|d| d.state == DownloadState::Downloading)
+                .map(|d| d.path.clone())
+                .collect();
+            // Também se um anexo salvo nesse meio-tempo já terminou e criou o
+            // arquivo (um `stat` só, com o lock).
+            let path = if taken.contains(&path) || path.exists() {
+                papeo_core::unique_path(&dir, &file_name, &taken)
+            } else {
+                path
+            };
             *destination = path.clone();
             inner.push_download(DownloadEntry {
                 id: 0,

@@ -18,7 +18,8 @@ Como escrever e o ciclo de cada uma: [`../README.md`](../README.md). Modelo:
 | 11 | [Backup e persistência](11-backup-e-persistencia.md) | entregue, retroativa |
 | 12 | [Memória, hibernação e volta do repouso](12-memoria-hibernacao-repouso.md) | entregue, retroativa |
 | 13 | [Mensagens de voz](13-mensagens-de-voz.md) | entregue, retroativa |
-| 14 | [Diagnóstico dos sites](14-diagnostico-dos-sites.md) | **proposta** |
+| 14 | [Diagnóstico dos sites](14-diagnostico-dos-sites.md) | em andamento (falta o teste no app) |
+| 15 | [Fluidez (segunda leva de desempenho)](15-fluidez.md) | em andamento (falta o uso no app) |
 
 Nas tabelas de verificação, "não verificado" é dívida conhecida: o
 requisito existe no código, mas ninguém o viu funcionar naquela

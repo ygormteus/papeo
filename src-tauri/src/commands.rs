@@ -810,7 +810,10 @@ pub async fn clear_downloads(app: AppHandle, state: State<'_, AppState>) -> CmdR
 
 #[tauri::command]
 pub async fn get_memory(app: AppHandle) -> crate::memory::MemoryReport {
-    crate::memory::report(&app)
+    // Espera a thread principal: fora dos trabalhadores do runtime.
+    tauri::async_runtime::spawn_blocking(move || crate::memory::report(&app))
+        .await
+        .unwrap_or_default()
 }
 
 /// `path` vem do diálogo nativo "Salvar como".
@@ -829,7 +832,21 @@ pub async fn export_config(
         }
         (inner.config.clone(), inner.organizer.clone())
     };
-    papeo_core::export_backup(&PathBuf::from(path), &config, &organizer)
+    tauri::async_runtime::spawn_blocking(move || {
+        papeo_core::export_backup(&PathBuf::from(path), &config, &organizer)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Lê e confere o backup fora dos trabalhadores do runtime (arquivo de até
+/// alguns MB, talvez num disco lento ou na rede).
+async fn read_backup(path: String) -> CmdResult<papeo_core::Backup> {
+    tauri::async_runtime::spawn_blocking(move || {
+        papeo_core::read_backup(&PathBuf::from(path), crate::organizer::now_ms())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize)]
@@ -844,7 +861,7 @@ pub struct BackupPreview {
 #[tauri::command]
 pub async fn preview_backup(app: AppHandle, path: String) -> CmdResult<BackupPreview> {
     ensure_unlocked(&app)?;
-    let backup = papeo_core::read_backup(&PathBuf::from(path), crate::organizer::now_ms())?;
+    let backup = read_backup(path).await?;
     Ok(BackupPreview {
         services: backup.config.services.into_iter().map(|s| s.name).collect(),
         tasks: backup.organizer.as_ref().map(|o| o.open_count()),
@@ -857,7 +874,7 @@ pub async fn preview_backup(app: AppHandle, path: String) -> CmdResult<BackupPre
 #[tauri::command]
 pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: String) -> CmdResult {
     ensure_unlocked(&app)?;
-    let backup = papeo_core::read_backup(&PathBuf::from(path), crate::organizer::now_ms())?;
+    let backup = read_backup(path).await?;
     let config = backup.config;
     // Tarefas primeiro (grava e troca na memória sob o mesmo lock, antes de
     // fechar as contas e mexer na configuração): se falhar, nada mudou.
@@ -866,6 +883,10 @@ pub async fn import_config(app: AppHandle, state: State<'_, AppState>, path: Str
     // versão anterior já preparada não sobrescreve a restaurada.
     if let Some(organizer) = backup.organizer {
         let mut inner = state.lock();
+        // Bloqueado enquanto lia o arquivo: não restaura.
+        if inner.locked {
+            return Err("Desbloqueie o Papeo primeiro.".into());
+        }
         if let Some(err) = &inner.organizer_error {
             return Err(err.clone());
         }

@@ -510,23 +510,45 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
             .last_sync
             .is_some_and(|at| at.saturating_mul(1000) < stale_before);
 
-    // Junta com o estado atual (sob o lock, sem rede).
+    // Junta com o estado atual fora do lock (spec 15): copia sob o lock,
+    // junta sem ele e só aplica se as tarefas não mudaram no meio; senão
+    // junta de novo com o estado novo.
     let base = lock(&rt.stored).base.clone();
-    let merged = {
-        let state = app.state::<AppState>();
-        let mut inner = state.lock();
-        if let Some(err) = &inner.organizer_error {
-            return Err(err.clone());
-        }
-        let mut acc = inner.organizer.clone();
+    let state = app.state::<AppState>();
+    let mut attempt = 0;
+    let (merged, changed, staged) = loop {
+        attempt += 1;
+        let (current, mut remotes) = {
+            let inner = state.lock();
+            if let Some(err) = &inner.organizer_error {
+                return Err(err.clone());
+            }
+            let mut linked = remotes.clone();
+            for remote in &mut linked {
+                relink(&inner, remote);
+            }
+            (inner.organizer.clone(), linked)
+        };
+        let mut acc = current.clone();
         if long_offline {
             core::forget_purged(&mut acc, &base, &remotes);
         }
-        for mut remote in remotes {
-            relink(&inner, &mut remote);
+        for remote in remotes.drain(..) {
             acc = core::merge(&base, &acc, &remote, now_ms);
         }
         core::dedupe_contacts(&mut acc, now_ms);
+        let mut inner = state.lock();
+        if inner.organizer != current {
+            // Alguém editou uma tarefa enquanto juntava.
+            if attempt < 3 {
+                continue;
+            }
+            // Edições seguidas: deixa para a próxima rodada, sem erro na tela
+            // (nada foi aplicado nem enviado; a base continua a anterior).
+            drop(inner);
+            mark_dirty(app);
+            return Ok(());
+        }
         let changed = acc != inner.organizer;
         let staged = if changed {
             inner.organizer = acc.clone();
@@ -534,9 +556,8 @@ async fn run_inner(app: &AppHandle) -> Result<(), String> {
         } else {
             None
         };
-        (acc, changed, staged)
+        break (acc, changed, staged);
     };
-    let (merged, changed, staged) = merged;
     if let Some(staged) = staged {
         app.state::<AppState>().write(staged)?;
     }

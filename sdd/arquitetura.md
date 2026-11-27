@@ -477,7 +477,7 @@ Resumo; os detalhes e o histórico ficam nas especificações.
 | 3 | Valor de enum desconhecido invalida o `services.json` inteiro | Voltar de versão perde a lista (fica em `.corrompido`) | Documentado; **possível:** variante `Unknown` com preservação |
 | 4 | `spawn_maintenance` concentra muitas responsabilidades | Difícil de testar e de mudar | **Proposta:** dividir em tarefas com intervalos próprios |
 | 5 | Arquivos grandes: `commands.rs`, `App.svelte`, `Settings.svelte`, `MailReader.svelte`, `mail.rs`/`mailbox.rs` do núcleo | Conflitos e revisão difícil | **Proposta:** dividir por assunto |
-| 6 | Segunda leva de desempenho pendente | Travadas curtas com muitas contas | Junção da sincronização e nome de download fora do lock; medição de memória num despacho; IO bloqueante fora dos comandos `async` |
+| 6 | Trabalho lento segurando lock, thread principal ou runtime | Travadas curtas com muitas contas | [Spec 15](specs/15-fluidez.md): medição de memória em lote, nome de download e junção da sincronização fora do lock, backup em `spawn_blocking`. Restam gravações pequenas do estado nos comandos `async` |
 | 7 | `devMock.ts` pode divergir do backend | Interface testada contra um backend que não existe | Teste de ACL cobre os nomes; **possível:** conferir as formas do `Snapshot` |
 | 8 | `organizer.json` inválido: se renomear falhar, o vazio grava por cima | Perda das tarefas num disco problemático | **Possível:** mesmo cuidado do `load_guarded` |
 | 9 | Parâmetros do Argon2 vêm do `meta.json` na nuvem (com limites mínimos baixos) | Quem conseguisse escrever no `appDataFolder` enfraqueceria a derivação | **Possível:** piso igual ao padrão |

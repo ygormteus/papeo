@@ -13,7 +13,7 @@ use crate::state::AppState;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::{AppHandle, Manager};
 
@@ -26,15 +26,34 @@ pub struct MemoryReport {
     pub app: u64,
 }
 
-/// Pid do processo da webview, obtido na thread principal.
-fn webview_pid(webview: &tauri::Webview) -> Option<u32> {
+/// Pid do processo de cada webview, lido na thread principal: todos os
+/// pedidos saem juntos e a espera tem um prazo só (não 2 s por conta).
+fn webview_pids(webviews: Vec<(String, tauri::Webview)>) -> Vec<(String, u32)> {
     let (tx, rx) = mpsc::channel();
-    webview
-        .with_webview(move |platform| {
-            let _ = tx.send(platform_pid(&platform));
-        })
-        .ok()?;
-    rx.recv_timeout(Duration::from_secs(2)).ok().flatten()
+    let mut asked = 0;
+    for (id, webview) in webviews {
+        let tx = tx.clone();
+        if webview
+            .with_webview(move |platform| {
+                let _ = tx.send((id, platform_pid(&platform)));
+            })
+            .is_ok()
+        {
+            asked += 1;
+        }
+    }
+    drop(tx);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut pids = Vec::with_capacity(asked);
+    for _ in 0..asked {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok((id, Some(pid))) => pids.push((id, pid)),
+            Ok((_, None)) => {}
+            Err(_) => break,
+        }
+    }
+    pids
 }
 
 #[cfg(target_os = "macos")]
@@ -115,13 +134,11 @@ pub fn report(app: &AppHandle) -> MemoryReport {
         .iter()
         .map(|s| s.id.clone())
         .collect();
-    let pids: Vec<(String, u32)> = ids
+    let webviews = ids
         .into_iter()
-        .filter_map(|id| {
-            let webview = app.get_webview(&id)?;
-            Some((id, webview_pid(&webview)?))
-        })
+        .filter_map(|id| Some((id.clone(), app.get_webview(&id)?)))
         .collect();
+    let pids = webview_pids(webviews);
 
     #[cfg(target_os = "macos")]
     {
