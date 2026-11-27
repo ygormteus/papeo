@@ -57,6 +57,12 @@ WhatsApp e e-mail) precisa alternar na barra lateral a cada mensagem.
 - **Foco por clique no site:** o shim avisa `service_status` com
   `focus: true` quando a página ganha foco; com divisão, a conta vira a em
   foco (sem publicar se já era).
+- **Arrastar:** por eventos de ponteiro (`Sidebar.svelte`, ponteiro preso ao
+  item depois de 5 px), não pelo arraste do HTML: no macOS o arraste nativo
+  prende a thread principal até soltar, então a webview do site (nativa, por
+  cima da interface) só sumia depois do soltar e as áreas não recebiam o
+  cursor (0.18.0). O lado vem de `elementFromPoint` sobre `[data-drop-side]`;
+  a mesma lógica reordena quando o ponteiro está sobre a barra lateral.
 - **Interface:** `App.svelte` desenha as metades com o mesmo cálculo do
   backend (leitores dentro delas) e o divisor; `MailReader` recebe
   `focused` para os atalhos; `Sidebar` marca a conta da outra metade;
@@ -77,4 +83,5 @@ WhatsApp e e-mail) precisa alternar na barra lateral a cada mensagem.
 |---|---|---|---|
 | R2 | teste `split_panes_divide_the_area` | não verificado (app) | — |
 | R1, R3–R6 | não verificado no app (0.17.0: o menu só aparecia em conta diferente da aberta; 0.17.1 acrescenta arrastar e o botão da barra) | — | — |
+| R1 (arrastar) | navegador comum (mock, Playwright): áreas aparecem, o lado sob o cursor acende, soltar divide; reordenar, clique e Esc seguem funcionando | não verificado (app) | — |
 | Concorrência, R7 | revisão crítica independente: sem deadlock nem estado inconsistente; corrigidos o aviso de foco tratado como sinal de vida (agora só muda o foco), a metade de trás em branco ao tirar o IMAP, o leitor recarregando ao dividir/fechar, "apagar dados" na metade em foco e o arraste com moldura | — | — |

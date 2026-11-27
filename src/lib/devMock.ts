@@ -54,11 +54,24 @@ export function installDevMock() {
       mk("svc-c", "whatsapp", "Trabalho", DEFAULT_URL.whatsapp, true, 12),
       mk("svc-b", "telegram", "Telegram", DEFAULT_URL.telegram, false, 0),
       mk("svc-d", "gmail", "Gmail", DEFAULT_URL.gmail, true, 7),
-      mk("svc-e", "email", "E-mail da loja", "https://webmail.exemplo.com.br/", true, 2),
+      Object.assign(mk("svc-e", "email", "E-mail da loja", "https://webmail.exemplo.com.br/", true, 2), { idleMinutes: 2 }),
     );
     Object.assign(services[0], { emoji: "🏠", color: "#16a34a", idleMinutes: 24 });
     Object.assign(services[3], { chat: "Proposta de orçamento — novembro", idleMinutes: 5 });
     Object.assign(services[1], { emoji: "💼", color: "#2563eb", idleMinutes: 3 });
+    // E-mail no leitor do Papeo (IMAP) e Talk pela API (specs 09 e 29).
+    Object.assign(services[3], {
+      chat: null,
+      mail: { host: "imap.gmail.com", port: 993, user: "voce@exemplo.com", sleepSite: true },
+      mailStatus: { state: "ok" },
+    });
+    services.push(
+      Object.assign(mk("svc-f", "nextcloud", "Talk da empresa", "https://nuvem.exemplo.com.br/apps/spreed", true, 2), {
+        talk: { server: "https://nuvem.exemplo.com.br", user: "voce", uid: "voce" },
+        mailStatus: { state: "ok" },
+        context: undefined,
+      }),
+    );
     // `?modos`: contas marcadas como trabalho/pessoal.
     if (new URLSearchParams(location.search).has("modos")) {
       services[0].context = "personal";
@@ -104,8 +117,12 @@ export function installDevMock() {
   let update: Snapshot["update"] = params.has("update")
     ? { state: "available", version: nextVersion, notes: notes020 }
     : { state: "idle" };
-  let active: string | null = null;
-  let split: { left: string; right: string; ratio: number } | null = null;
+  // `?abrir=svc-d`: começa com a conta aberta; `?dividida`: e-mail e Talk lado a lado.
+  let active: string | null = params.get("abrir");
+  let split: { left: string; right: string; ratio: number } | null = params.has("dividida")
+    ? { left: "svc-d", right: "svc-f", ratio: 0.55 }
+    : null;
+  if (split) active = split.left;
   const minutesAgo = (m: number) => Math.round(Date.now() / 1000 - m * 60);
   const msg = (body: string, ago: number, mine = false) => ({ body, at: minutesAgo(ago), mine });
   const chat = (serviceId: string, title: string, messages: Snapshot["recent"][number]["messages"]) => {
@@ -252,7 +269,7 @@ export function installDevMock() {
     const list = structuredClone(services).map((s) => ({
       ...s,
       inMode: inMode(s, mode),
-      reader: (!!s.mail || mailSetup.has(s.id)) && !siteView.has(s.id),
+      reader: (!!s.mail || !!s.talk || mailSetup.has(s.id)) && !siteView.has(s.id),
     }));
     const hidden = new Set(list.filter((s) => !s.inMode).map((s) => s.id));
     return {
@@ -724,7 +741,10 @@ export function installDevMock() {
       case "get_memory":
         return {
           services: Object.fromEntries(
-            services.filter((s) => s.loaded).map((s, i) => [s.id, (i === 0 ? 1150 : 920) * MB]),
+            // Leitor (IMAP, Talk) não tem site carregado: só a interface do Papeo.
+            services
+              .filter((s) => s.loaded && !s.mail && !s.talk)
+              .map((s, i) => [s.id, (i === 0 ? 1150 : i === 1 ? 920 : 310) * MB]),
           ),
           app: 48 * MB,
         };

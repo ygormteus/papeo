@@ -221,12 +221,16 @@
     if (snap.active && (snap.split || draggingId !== snap.active)) return ["left", "right"];
     return ["here"];
   });
-  function dropAccount(e: DragEvent, side: "left" | "right" | "here") {
-    e.preventDefault();
-    const id = draggingId ?? e.dataTransfer?.getData("text/plain") ?? "";
-    draggingId = null;
+  /** Lado sob o cursor durante o arraste (pelo ponto: a barra lateral prende o ponteiro). */
+  function sideAt(x: number, y: number) {
+    const zone = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-drop-side]");
+    return (zone?.dataset.dropSide as "left" | "right" | "here" | undefined) ?? null;
+  }
+  function dropAccount(id: string, x: number, y: number) {
+    const side = sideAt(x, y);
     dropSide = null;
     const service = snap.services.find((s) => s.id === id);
+    if (!side) return;
     if (!service) return;
     if (side === "here") run(api.activate(id));
     else openBeside(service, side === "left");
@@ -773,6 +777,8 @@
       draggingId = id;
       if (!id) dropSide = null;
     }}
+    ondragpoint={(x, y) => (dropSide = sideAt(x, y))}
+    ondropaccount={dropAccount}
     onupdate={() => run(api.installUpdate())}
     onnotes={() => showNotes("available")}
     ontasks={openTasks}
@@ -822,18 +828,8 @@
               class="dropzone"
               class:over={dropSide === side}
               role="region"
+              data-drop-side={side}
               aria-label={side === "left" ? t("Abrir à esquerda") : side === "right" ? t("Abrir à direita") : t("Abrir aqui")}
-              ondragenter={(e) => {
-                e.preventDefault();
-                dropSide = side;
-              }}
-              ondragover={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                dropSide = side;
-              }}
-              ondragleave={() => dropSide === side && (dropSide = null)}
-              ondrop={(e) => dropAccount(e, side)}
             >
               <span>
                 <Columns2 size={20} />

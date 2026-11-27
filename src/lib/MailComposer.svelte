@@ -585,15 +585,19 @@
   }
   footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 10px 16px;
     border-top: 1px solid var(--border);
   }
+  /* Sem espaço ao lado dos botões (painel estreito, tela dividida), a dica
+     desce para a linha de baixo em vez de sair cortada pela borda. */
   .hint {
     margin-left: auto;
     color: var(--text-faint);
     font-size: 12px;
+    white-space: nowrap;
   }
   .composer :global(.spin) {
     animation: spin 1s linear infinite;

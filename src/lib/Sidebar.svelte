@@ -39,6 +39,8 @@
     onmenu,
     onmove,
     ondragaccount,
+    ondragpoint,
+    ondropaccount,
     onupdate,
     onnotes,
     ontasks,
@@ -55,7 +57,11 @@
     onmove: (id: string, to: number) => void;
     /** Arraste de uma conta começou (`id`) ou terminou (`null`): a tela
      * mostra onde soltar para abrir em tela dividida. */
+    /** Arraste de uma conta: começo/fim (`null`) e o ponto do cursor. */
     ondragaccount?: (id: string | null) => void;
+    ondragpoint?: (x: number, y: number) => void;
+    /** Soltou fora da barra lateral: `true` se a interface usou o soltar. */
+    ondropaccount?: (id: string, x: number, y: number) => void;
     onupdate: () => void;
     onnotes: () => void;
     ontasks: () => void;
@@ -82,38 +88,69 @@
     snap.update.state === "available" || snap.update.state === "installing",
   );
 
-  // Arrastar para reordenar (drag and drop do HTML; o Tauri não intercepta na `ui`).
+  // Arrastar uma conta: na barra lateral reordena; no conteúdo divide a tela.
+  // Por eventos de ponteiro, não pelo arraste do HTML: no macOS, o arraste
+  // nativo prende a thread principal até soltar, e a webview do site (nativa,
+  // por cima da interface) só sumiria depois do soltar. Com o ponteiro preso
+  // ao item, o movimento continua chegando à interface sobre o site.
+  const DRAG_START_PX = 5;
   let dragId = $state<string | null>(null);
   let overIndex = $state<number | null>(null);
+  let ghost = $state<{ service: ServiceView; x: number; y: number } | null>(null);
+  let press: { service: ServiceView; x: number; y: number; pointer: number } | null = null;
+  let justDragged = false;
 
-  function dragStart(e: DragEvent, service: ServiceView) {
-    dragId = service.id;
-    e.dataTransfer?.setData("text/plain", service.id);
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-    ondragaccount?.(service.id);
+  function pressStart(e: PointerEvent, service: ServiceView) {
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    press = { service, x: e.clientX, y: e.clientY, pointer: e.pointerId };
   }
 
-  function dragOver(e: DragEvent, index: number) {
-    if (!dragId) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    overIndex = index;
+  function pressMove(e: PointerEvent) {
+    if (!press || e.pointerId !== press.pointer) return;
+    if (!dragId) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < DRAG_START_PX) return;
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      dragId = press.service.id;
+      ondragaccount?.(dragId);
+    }
+    ghost = { service: press.service, x: e.clientX, y: e.clientY };
+    const item = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drag-index]");
+    overIndex = item ? Number(item.dataset.dragIndex) : null;
+    ondragpoint?.(e.clientX, e.clientY);
   }
 
-  function drop(e: DragEvent, index: number) {
-    e.preventDefault();
+  function pressEnd(e: PointerEvent) {
+    if (!press || e.pointerId !== press.pointer) return;
     const id = dragId;
-    const from = snap.services.findIndex((s) => s.id === id);
-    // A lista mostrada pode ser só a do modo: converte para a posição real.
-    const to = shown[index] ? snap.services.findIndex((s) => s.id === shown[index].id) : -1;
+    const index = overIndex;
+    press = null;
+    if (!id) return;
+    justDragged = true;
+    setTimeout(() => (justDragged = false), 0);
+    const inSidebar = !!document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest(".sidebar");
+    if (index !== null) {
+      const from = snap.services.findIndex((s) => s.id === id);
+      // A lista mostrada pode ser só a do modo: converte para a posição real.
+      const to = shown[index] ? snap.services.findIndex((s) => s.id === shown[index].id) : -1;
+      if (from !== -1 && to !== -1 && from !== to) onmove(id, to);
+    } else if (!inSidebar) {
+      ondropaccount?.(id, e.clientX, e.clientY);
+    }
     dragEnd();
-    if (id && from !== -1 && to !== -1 && from !== to) onmove(id, to);
   }
 
   function dragEnd() {
+    press = null;
     dragId = null;
     overIndex = null;
+    ghost = null;
     ondragaccount?.(null);
+  }
+
+  function dragKey(e: KeyboardEvent) {
+    if (dragId && e.key === "Escape") dragEnd();
   }
 
   // Contador que acabou de subir (mensagem ou e-mail novo): destaque curto.
@@ -281,13 +318,13 @@
         class:asleep={asleep(service)}
         class:dragging={dragId === service.id}
         class:drop-target={overIndex === i && dragId !== service.id}
-        draggable="true"
-        ondragstart={(e) => dragStart(e, service)}
-        ondragover={(e) => dragOver(e, i)}
-        ondrop={(e) => drop(e, i)}
-        ondragend={dragEnd}
+        data-drag-index={i}
+        onpointerdown={(e) => pressStart(e, service)}
+        onpointermove={pressMove}
+        onpointerup={pressEnd}
+        onpointercancel={() => dragId && dragEnd()}
         aria-current={snap.active === service.id ? "page" : undefined}
-        onclick={() => onselect(service.id)}
+        onclick={() => !justDragged && onselect(service.id)}
         oncontextmenu={(e) => contextMenu(e, service)}
         onkeydown={(e) => menuKey(e, service)}
         title={`${service.name}${(numberOf.get(service.id) ?? 99) <= 9 ? ` (${modKey}${numberOf.get(service.id)})` : ""}${stateNote(service)}`}
@@ -390,6 +427,16 @@
     </div>
   {/if}
 </aside>
+
+<svelte:window onkeydown={dragKey} />
+
+{#if ghost && overIndex === null}
+  <!-- Conta sendo arrastada para o conteúdo (tela dividida). -->
+  <div class="drag-ghost" style:left="{ghost.x + 12}px" style:top="{ghost.y + 8}px" aria-hidden="true">
+    <ServiceAvatar service={ghost.service} size={18} />
+    <span>{ghost.service.name}</span>
+  </div>
+{/if}
 
 <style>
   .sidebar {
@@ -710,6 +757,30 @@
 
   .item.dragging {
     opacity: 0.45;
+    cursor: grabbing;
+  }
+
+  .drag-ghost {
+    position: fixed;
+    z-index: 100;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 220px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: var(--shadow-pop);
+    pointer-events: none;
+  }
+
+  .drag-ghost span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .item.drop-target {
