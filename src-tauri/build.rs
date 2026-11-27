@@ -21,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "mail_delete",
     "mail_save_attachment",
     "mail_save_attachments",
+    "mail_contacts",
     "mail_preview_attachment",
     "mail_signature",
     "mail_send",

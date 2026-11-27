@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mail-contacts"
+description = "Enables the mail_contacts command without any pre-configured scope."
+commands.allow = ["mail_contacts"]
+
+[[permission]]
+identifier = "deny-mail-contacts"
+description = "Denies the mail_contacts command without any pre-configured scope."
+commands.deny = ["mail_contacts"]

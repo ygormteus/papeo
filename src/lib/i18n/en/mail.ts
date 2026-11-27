@@ -204,6 +204,20 @@ const en: Record<string, string> = {
   "Endereço copiado: {endereco}": "Address copied: {endereco}",
   "{n} anexos": "{n} attachments",
   "Baixar todos": "Download all",
+  "Rascunhos": "Drafts",
+  "Enviados": "Sent",
+  "Arquivo": "Archive",
+  "Todos os e-mails": "All mail",
+  "Com estrela": "Starred",
+  "Lixeira": "Trash",
+  "Importante": "Important",
+  "Caixa de Saída": "Outbox",
+  "Notas": "Notes",
+  "Agendados": "Scheduled",
+  "Adiados": "Snoozed",
+  "Conversas": "Chats",
+  "Histórico de conversas": "Conversation history",
+  "Endereços conhecidos": "Known addresses",
 };
 
 export default en;

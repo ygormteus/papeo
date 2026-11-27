@@ -30,7 +30,7 @@
     Trash2,
     X,
   } from "@lucide/svelte";
-  import { locale, t } from "./i18n.svelte";
+  import { locale, t, tk } from "./i18n.svelte";
   import MailComposer, { type ComposeStart } from "./MailComposer.svelte";
   import SignatureDialog from "./SignatureDialog.svelte";
   import AddressList from "./AddressList.svelte";
@@ -77,6 +77,34 @@
     junk: ShieldAlert,
     trash: Trash2,
   };
+
+  /** Pastas especiais com o nome no idioma do Papeo, não o do servidor
+   * ("Sent Mail", "Drafts"…). */
+  const ROLE_NAME: Record<MailRole, string> = {
+    inbox: tk("Caixa de Entrada"),
+    drafts: tk("Rascunhos"),
+    sent: tk("Enviados"),
+    archive: tk("Arquivo"),
+    all: tk("Todos os e-mails"),
+    flagged: tk("Com estrela"),
+    junk: tk("Spam"),
+    trash: tk("Lixeira"),
+  };
+  /** Outras pastas comuns que o servidor não marca. */
+  const KNOWN_NAME: Record<string, string> = {
+    important: tk("Importante"),
+    outbox: tk("Caixa de Saída"),
+    notes: tk("Notas"),
+    scheduled: tk("Agendados"),
+    snoozed: tk("Adiados"),
+    chats: tk("Conversas"),
+    "conversation history": tk("Histórico de conversas"),
+  };
+  function folderName(f: MailFolder): string {
+    if (f.role) return t(ROLE_NAME[f.role]);
+    const known = KNOWN_NAME[f.name.trim().toLowerCase()];
+    return known ? t(known) : f.name;
+  }
 
   let folders = $state<MailFolder[]>([]);
   let folder = $state("INBOX");
@@ -725,10 +753,10 @@
               class:on={f.path === folder}
               style:padding-left="{10 + Math.min(f.depth, 4) * 12}px"
               onclick={() => chooseFolder(f.path)}
-              title={f.name}
+              title={folderName(f)}
             >
               <Icon size={15} />
-              <span>{f.name}</span>
+              <span>{folderName(f)}</span>
               {#if f.role === "inbox" && service.unread}<span class="count">{service.unread}</span>{/if}
             </button>
           </li>
@@ -748,7 +776,7 @@
     <section class="list" aria-label={t("Mensagens")}>
       <div class="narrow-bar">
         <select value={folder} onchange={(e) => chooseFolder(e.currentTarget.value)} aria-label={t("Pasta")}>
-          {#each folders as f (f.path)}<option value={f.path}>{"  ".repeat(Math.min(f.depth, 4))}{f.name}</option>{/each}
+          {#each folders as f (f.path)}<option value={f.path}>{"  ".repeat(Math.min(f.depth, 4))}{folderName(f)}</option>{/each}
         </select>
         <button class="icon-btn" onclick={() => compose()} aria-label={t("Escrever")} title={t("Escrever")}><PenLine size={15} /></button>
         <button class="icon-btn" onclick={() => (signing = true)} aria-label={t("Assinatura")} title={t("Assinatura")}><Signature size={15} /></button>
@@ -756,7 +784,7 @@
       </div>
       <form class="search" onsubmit={search} role="search">
         <Search size={15} />
-        <input bind:value={query} placeholder={t("Buscar em {nome}", { nome: current?.name ?? t("e-mails") })} aria-label={t("Buscar e-mails")} />
+        <input bind:value={query} placeholder={t("Buscar em {nome}", { nome: current ? folderName(current) : t("e-mails") })} aria-label={t("Buscar e-mails")} />
         {#if searched}
           <button type="button" class="icon-btn ghost" onclick={clearSearch} aria-label={t("Limpar a busca")}><X size={14} /></button>
         {/if}

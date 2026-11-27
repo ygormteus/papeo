@@ -1,6 +1,7 @@
 // Autoteste: bandeja, manutenção e sincronização ficam de fora (sem uso).
 #![cfg_attr(feature = "selftest", allow(dead_code, unused_imports))]
 
+mod address_book;
 mod attachment;
 mod commands;
 mod downloads;
@@ -526,6 +527,10 @@ pub fn run() {
                 secrets::init(handle, &app.path().app_local_data_dir()?);
                 mail::init(handle);
                 mailbox::init(handle);
+                address_book::init(
+                    handle,
+                    app.path().app_local_data_dir()?.join("mail-contacts.json"),
+                );
                 outbox::init(handle, &app.path().app_local_data_dir()?);
                 notifications::init(handle);
                 tray::install(handle)?;
@@ -557,6 +562,7 @@ pub fn run() {
             commands::mail_delete,
             commands::mail_save_attachment,
             commands::mail_save_attachments,
+            commands::mail_contacts,
             commands::mail_preview_attachment,
             commands::mail_signature,
             commands::mail_send,

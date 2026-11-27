@@ -1361,6 +1361,21 @@ pub async fn mail_save_attachments(
     crate::mailbox::save_attachments(app, id, folder, uid, indices, subject).await
 }
 
+/// Endereços conhecidos da conta que combinam com `query` (spec 25).
+#[tauri::command]
+pub async fn mail_contacts(
+    app: AppHandle,
+    id: String,
+    query: String,
+) -> CmdResult<Vec<papeo_core::mailbox::Addr>> {
+    ensure_unlocked(&app)?;
+    let (found, backfill) = crate::address_book::search(&app, &id, &query);
+    if backfill {
+        crate::mailbox::backfill_contacts(app, id);
+    }
+    Ok(found)
+}
+
 #[tauri::command]
 pub async fn mail_send(app: AppHandle, id: String, draft: crate::mailbox::Draft) -> CmdResult<()> {
     ensure_unlocked(&app)?;

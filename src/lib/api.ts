@@ -567,6 +567,8 @@ export const api = {
    * visualização (salve em Downloads). */
   mailPreviewAttachment: (id: string, folder: string, uid: number, index: number) =>
     invoke<boolean>("mail_preview_attachment", { id, folder, uid, index }),
+  /** Endereços que a conta já usou e combinam com `query` (spec 25). */
+  mailContacts: (id: string, query: string) => invoke<MailAddr[]>("mail_contacts", { id, query }),
   mailRevealFile: (path: string) => invoke<void>("mail_reveal_file", { path }),
   mailSend: (id: string, draft: MailDraft) => invoke<void>("mail_send", { id, draft }),
   /** Salva o rascunho na pasta Rascunhos do servidor; devolve o token dele. */

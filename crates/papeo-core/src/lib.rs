@@ -2,6 +2,7 @@
 //! puras (não perturbe, nomes de arquivo, não lidas). Não depende do Tauri,
 //! para ser testado em qualquer máquina.
 
+pub mod address_book;
 pub mod i18n;
 pub mod mail;
 pub mod mailbox;

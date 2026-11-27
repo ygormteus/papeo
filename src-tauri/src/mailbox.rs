@@ -9,6 +9,7 @@
 use crate::mail::{self, Access, Control, Tls};
 use crate::secrets::{self, Saved};
 use crate::state::AppState;
+use papeo_core::address_book::Seen;
 use papeo_core::i18n::{tr, trf};
 use papeo_core::mail::{ImapError, MailAccount, MailAuth};
 use papeo_core::mailbox::{self as core, Folder, MessageView, Page, Reader, Role};
@@ -222,7 +223,28 @@ pub async fn list(
     page: u32,
     query: String,
 ) -> Result<Page, String> {
-    blocking(move || with_reader(&app, &id, |r, _| r.list(&folder, page, &query))).await
+    blocking(move || {
+        let (page, own) = with_reader(&app, &id, |r, account| {
+            Ok((r.list(&folder, page, &query)?, account.user.clone()))
+        })?;
+        // Endereços conhecidos (spec 25): de quem escreveu e, nos enviados
+        // pela própria conta, para quem.
+        let mine = |a: &core::Addr| a.email.eq_ignore_ascii_case(own.trim());
+        crate::address_book::note(
+            &app,
+            &id,
+            &own,
+            page.messages.iter().flat_map(|m| {
+                if mine(&m.from) {
+                    m.to.iter().map(|a| (a, Seen::Sent)).collect::<Vec<_>>()
+                } else {
+                    vec![(&m.from, Seen::Received)]
+                }
+            }),
+        );
+        Ok(page)
+    })
+    .await
 }
 
 /// Abre a mensagem e a marca como lida (`peek`: só baixa, para adiantar a
@@ -235,13 +257,30 @@ pub async fn open(
     peek: bool,
 ) -> Result<MessageView, String> {
     blocking(move || {
-        with_reader_cached(&app, &id, |r, _, last| {
+        with_reader_cached(&app, &id, |r, account, last| {
             let (raw, seen, flagged) = r.fetch_raw(&folder, uid, !peek)?;
             let mut view = core::message_view(uid, &raw);
             view.seen = seen || !peek;
             view.flagged = flagged;
             *last = Some((folder, uid, Arc::new(raw)));
-            Ok(view)
+            Ok((view, account.user.clone()))
+        })
+        .map(|(view, own)| {
+            if !peek {
+                let how = if view
+                    .from
+                    .iter()
+                    .any(|a| a.email.eq_ignore_ascii_case(own.trim()))
+                {
+                    Seen::Sent
+                } else {
+                    Seen::Received
+                };
+                let others = view.to.iter().chain(&view.cc).map(|a| (a, how));
+                let from = view.from.iter().map(|a| (a, Seen::Received));
+                crate::address_book::note(&app, &id, &own, from.chain(others));
+            }
+            view
         })
     })
     .await
@@ -741,6 +780,7 @@ pub async fn send(app: AppHandle, id: String, draft: Draft) -> Result<(), String
             account.login_secret(&saved.secret)
         };
         smtp_send(&server, &saved.user, &secret, microsoft, &email)?;
+        note_recipients(&app, &id, &account.user, &draft);
         let raw = email.formatted();
         // Depois de enviado, o resto é melhor esforço: falhar aqui não
         // desfaz o envio.
@@ -762,6 +802,52 @@ pub async fn send(app: AppHandle, id: String, draft: Draft) -> Result<(), String
         Ok(())
     })
     .await
+}
+
+/// Destinatários de um e-mail enviado entram nos endereços conhecidos.
+fn note_recipients(app: &AppHandle, id: &str, own: &str, draft: &Draft) {
+    use lettre::message::Mailbox;
+    let addrs: Vec<core::Addr> = draft
+        .to
+        .iter()
+        .chain(&draft.cc)
+        .chain(&draft.bcc)
+        .filter_map(|a| a.trim().parse::<Mailbox>().ok())
+        .map(|m| core::Addr {
+            name: m.name.unwrap_or_default(),
+            email: m.email.to_string(),
+        })
+        .collect();
+    crate::address_book::note(app, id, own, addrs.iter().map(|a| (a, Seen::Sent)));
+}
+
+/// Lê os destinatários dos últimos enviados (uma vez por conta), para a
+/// pessoa já achar quem ela costuma escrever (spec 25).
+pub fn backfill_contacts(app: AppHandle, id: String) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = with_reader(&app, &id, |r, account| {
+            let mut seen = Vec::new();
+            if let Some(sent) = r.role_path(Role::Sent)? {
+                for page in 0..4 {
+                    let list = r.list(&sent, page, "")?;
+                    let done = list.messages.is_empty();
+                    seen.extend(list.messages.into_iter().flat_map(|m| m.to));
+                    if done {
+                        break;
+                    }
+                }
+            }
+            Ok((seen, account.user.clone()))
+        });
+        let ok = match result {
+            Ok((seen, own)) => {
+                crate::address_book::note(&app, &id, &own, seen.iter().map(|a| (a, Seen::Sent)));
+                true
+            }
+            Err(_) => false,
+        };
+        crate::address_book::backfilled(&app, &id, ok);
+    });
 }
 
 /// Apaga as versões salvas do rascunho e o de outro programa substituído.

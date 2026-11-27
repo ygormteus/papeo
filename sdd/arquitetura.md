@@ -132,6 +132,7 @@ voz do WhatsApp).
 | `mailbox.rs` | Leitor de e-mail (conexão de leitura por conta) e envio por SMTP (lettre) |
 | `silence.rs` | Saída do não perturbe/horário silencioso: resumo e notificação (spec 17) |
 | `lang.rs` | Idioma (spec 20): escolha + idioma do sistema (`sys-locale`), script `__PAPEO_LANG` das janelas auxiliares |
+| `address_book.rs` | Endereços conhecidos do leitor de e-mail (spec 25): lock próprio, `mail-contacts.json` gravado a cada 15 s se mudou |
 | `outbox.rs` | Envios de e-mail em espera para desfazer (spec 16): fila na memória e em `outbox/` |
 | `microsoft.rs`, `drive.rs` | OAuth de app de computador (PKCE, loopback): Microsoft (IMAP/SMTP) e Google (Drive) |
 | `secrets.rs` | Senhas IMAP: arquivo 0600 (macOS) ou Gerenciador de Credenciais (Windows) |
@@ -155,6 +156,7 @@ voz do WhatsApp).
 | `pin.rs` | PIN com Argon2id e espera crescente |
 | `privacy.rs` | Texto das notificações conforme a prévia, `same_site`, ids de sessão |
 | `i18n/` | Idioma das mensagens do Rust (spec 20): `Language`, `Lang`, `tr`/`trf`/`tk`; catálogo inglês em `en_app.rs` e `en_core.rs` (frase em português como chave) |
+| `address_book.rs` | Endereços conhecidos por conta (spec 25): filtro de robôs e da própria conta, busca por começo de nome/endereço, teto de 3.000 |
 | `signature.rs` | Assinatura formatada do leitor (spec 22): limpeza do HTML (ammonia), versão HTML da mensagem, imagens `cid:` |
 | `util.rs` | `parse_unread`, `safe_file_name`, `unique_path`, `attachment_view`, `clip` |
 
@@ -248,6 +250,7 @@ Todos ficam na pasta de dados do app (`app_config_dir`/`app_data_dir`).
 | `webcrypto-master.key` | `webcrypto.rs` | macOS 15+, 16 bytes, 0600 |
 | Backup (`*.json` exportado) | `store.rs` | `kind: "papeo-backup"`, validação estrita, inclui o organizador visível, nunca o PIN nem as atualizações |
 | `app_cache_dir/anexos/` | `attachment.rs` | Temporários da visualização de anexos (sites e e-mail), apagados ao fechar e ao abrir |
+| `mail-contacts.json` | `address_book.rs` | Em `app_local_data_dir`. Endereços que cada conta do leitor usou (nome, endereço, contagens, última vez), por `id` do serviço. Ilegível: começa vazio. Sai junto com o IMAP da conta (`mail::forget`). Fora do backup e da sincronização |
 | `outbox/<id>.json` | `outbox.rs` | Em `app_local_data_dir`. E-mail em espera para desfazer (texto e anexos), modo 0600. Apagado quando o envio dá certo ou quando o e-mail volta ao editor (`mail_unsent_taken`); desfeito ou com falha fica até lá. Sobra de conta removida, sem o leitor ou com mais de 30 dias é apagada ao abrir. Nunca é enviado sozinho depois de reabrir. Fora do backup |
 
 **Regra de compatibilidade:** todo campo novo precisa de `serde(default)` e
@@ -260,7 +263,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 96 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 97 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 

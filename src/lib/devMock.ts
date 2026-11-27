@@ -431,6 +431,16 @@ export function installDevMock() {
         return undefined;
       case "mail_save_attachment":
         return "/Users/voce/Downloads/anexo.pdf";
+      case "mail_contacts": {
+        const q = String(args.query).trim().toLowerCase();
+        const known = [
+          { name: "Ana Souza", email: "ana.souza@exemplo.com" },
+          { name: "Carlos Lima", email: "carlos@empresa.com.br" },
+          { name: "Dani Rocha", email: "dani.rocha@exemplo.com" },
+          { name: "", email: "financeiro@empresa.com.br" },
+        ];
+        return q ? known.filter((a) => a.name.toLowerCase().includes(q) || a.email.includes(q)) : [];
+      }
       case "mail_save_attachments":
         return `/Users/voce/Downloads/${String(args.subject || "Anexos")}`;
       case "mail_preview_attachment":

@@ -26,6 +26,7 @@
     "allow-mail-delete",
     "allow-mail-save-attachment",
     "allow-mail-save-attachments",
+    "allow-mail-contacts",
     "allow-mail-preview-attachment",
     "allow-mail-signature",
     "allow-mail-send",

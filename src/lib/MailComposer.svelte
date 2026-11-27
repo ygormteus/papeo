@@ -50,6 +50,7 @@
 </script>
 
 <script lang="ts">
+  import AddressInput from "./AddressInput.svelte";
   import { LoaderCircle, Paperclip, Send, Trash2, X } from "@lucide/svelte";
   import { locale, t, tk } from "./i18n.svelte";
   import { api, errorMessage, type MailDraft, type ServiceView } from "./api";
@@ -365,14 +366,14 @@
   <div class="fields">
     <label class="row">
       <span>{t("Para")}</span>
-      <input bind:this={toField} bind:value={to} autocomplete="off" spellcheck="false" placeholder={t("nome@exemplo.com")} />
+      <AddressInput bind:field={toField} bind:value={to} {accountId} label={t("Para")} placeholder={t("nome@exemplo.com")} />
       {#if !showCc}
         <button type="button" class="link-btn" onclick={() => (showCc = true)}>{t("Cc/Cco")}</button>
       {/if}
     </label>
     {#if showCc}
-      <label class="row"><span>Cc</span><input bind:value={cc} autocomplete="off" spellcheck="false" /></label>
-      <label class="row"><span>{t("Cco")}</span><input bind:value={bcc} autocomplete="off" spellcheck="false" /></label>
+      <label class="row"><span>Cc</span><AddressInput bind:value={cc} {accountId} label="Cc" /></label>
+      <label class="row"><span>{t("Cco")}</span><AddressInput bind:value={bcc} {accountId} label={t("Cco")} /></label>
     {/if}
     <label class="row"><span>{t("Assunto")}</span><input bind:value={subject} /></label>
   </div>
