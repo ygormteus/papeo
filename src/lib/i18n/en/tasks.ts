@@ -1,6 +1,13 @@
 // Catálogo inglês da interface (tasks) — ver `index.ts`.
 
 const en: Record<string, string> = {
+  "Escolha como abrir a conta: pelo site ou pelo leitor do Papeo.": "Choose how to open the account: in the website or in Papeo's reader.",
+  "O provedor ajuda a achar o webmail e, no leitor do Papeo, o servidor IMAP.": "The provider helps find the webmail and, in Papeo's reader, the IMAP server.",
+  "Abrir como": "Open as",
+  "(como no navegador; entra com o login de sempre)": "(like in the browser; sign in as usual)",
+  "Leitor do Papeo": "Papeo reader",
+  "(IMAP: mais leve; pede servidor e senha, no Gmail uma senha de app)": "(IMAP: lighter; asks for the server and password, an app password on Gmail)",
+  "Dá para trocar depois: botão direito na conta → \"E-mail por IMAP…\" ou \"Abrir no site\" no leitor.": "You can change this later: right-click the account → \"Email over IMAP…\" or \"Open site\" in the reader.",
   "voce@seudominio.com.br": "you@yourdomain.com",
   "app.exemplo.com": "app.example.com",
   "Informe o endereço de e-mail.": "Enter the email address.",

@@ -522,8 +522,9 @@ export const EMPTY_SNAPSHOT: Snapshot = {
 
 export const api = {
   getState: () => invoke<Snapshot>("get_state"),
-  addService: (kind: ServiceKind, name?: string, url?: string) =>
-    invoke<Snapshot>("add_service", { kind, name: name ?? null, url: url ?? null }),
+  /** `reader`: e-mail no leitor do Papeo (IMAP) em vez do site (spec 23). */
+  addService: (kind: ServiceKind, name?: string, url?: string, reader = false) =>
+    invoke<Snapshot>("add_service", { kind, name: name ?? null, url: url ?? null, reader }),
   removeService: (id: string) => invoke<Snapshot>("remove_service", { id }),
   customizeService: (
     id: string,

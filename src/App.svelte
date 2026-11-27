@@ -372,13 +372,14 @@
     kind: ServiceKind,
     name: string,
     url: string,
+    reader: boolean,
     mail?: { host: string; user: string },
   ) {
     // Erros sobem para o diálogo, que os mostra no próprio formulário.
-    snap = fresher(await api.addService(kind, name || undefined, url || undefined), snap);
+    snap = fresher(await api.addService(kind, name || undefined, url || undefined, reader), snap);
     addOpen = false;
-    // E-mail: já pede o IMAP (o leitor do Papeo, sem carregar o site).
-    if (supportsMailWatch(kind) && snap.active) {
+    // E-mail no leitor do Papeo: já pede o IMAP (sem carregar o site).
+    if (reader && supportsMailWatch(kind) && snap.active) {
       mailStart = mail ?? null;
       mailingId = snap.active;
     }
@@ -429,7 +430,9 @@
       {
         label: t("Adicionar outra conta"),
         icon: UserPlus,
-        run: () => run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined)),
+        // Outra conta do mesmo jeito que esta: pelo site ou pelo leitor.
+        run: () =>
+          run(api.addService(service.kind, undefined, keepsUrl(service.kind) ? service.url : undefined, !!service.mail)),
       },
       { label: t("Personalizar…"), icon: Palette, run: () => (customizing = service) },
       ...(supportsMailWatch(service.kind)

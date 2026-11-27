@@ -369,7 +369,7 @@ export function installDevMock() {
         let name = base;
         for (let n = 2; !args.name && services.some((s) => s.name === name); n++) name = `${base} ${n}`;
         services.push(mk(id, kind, name, (args.url as string) || DEFAULT_URL[kind] || "", true, 0));
-        if (kind === "gmail" || kind === "email" || kind === "outlook") mailSetup.add(id);
+        if (args.reader && (kind === "gmail" || kind === "email" || kind === "outlook")) mailSetup.add(id);
         active = id;
         return snap();
       }

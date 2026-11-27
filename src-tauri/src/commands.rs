@@ -38,6 +38,7 @@ pub async fn add_service(
     kind: ServiceKind,
     name: Option<String>,
     url: Option<String>,
+    reader: Option<bool>,
 ) -> CmdResult {
     ensure_unlocked(&app)?;
     let auto_name = name.as_deref().is_none_or(|n| n.trim().is_empty());
@@ -51,8 +52,11 @@ pub async fn add_service(
             // Segunda conta do mesmo mensageiro: "WhatsApp 2", "WhatsApp 3"…
             service.name = papeo_core::unique_name(&service.name, &inner.config.services);
         }
-        // E-mail: começa pela configuração do IMAP (leve), não pelo site.
-        if service.kind.supports_mail_watch() || service.kind == ServiceKind::Outlook {
+        // E-mail aberto no leitor do Papeo: começa pela configuração do IMAP
+        // (spec 23); pelo site, como os outros serviços.
+        if reader == Some(true)
+            && (service.kind.supports_mail_watch() || service.kind == ServiceKind::Outlook)
+        {
             inner.mail_setup.insert(service.id.clone());
         }
         inner.config.services.push(service);

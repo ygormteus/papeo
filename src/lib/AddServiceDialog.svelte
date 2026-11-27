@@ -20,11 +20,13 @@
     onsubmit,
   }: {
     onclose: () => void;
-    /** `mail`: e-mail por IMAP a configurar em seguida (servidor e usuário). */
+    /** `reader`: conta de e-mail aberta no leitor do Papeo (IMAP) em vez do
+     *  site; `mail`: servidor e usuário para configurar em seguida. */
     onsubmit: (
       kind: ServiceKind,
       name: string,
       url: string,
+      reader: boolean,
       mail?: { host: string; user: string },
     ) => Promise<void>;
   } = $props();
@@ -51,9 +53,17 @@
   let teamsPersonal = $state(false);
   let error = $state("");
   let busy = $state(false);
+  /** E-mail: abrir pelo site ou pelo leitor do Papeo (a pessoa escolhe). */
+  let openAs = $state<"site" | "reader" | null>(null);
+  const isMail = $derived(kind === "gmail" || kind === "outlook" || kind === "email");
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (isMail && !openAs) {
+      error = t("Escolha como abrir a conta: pelo site ou pelo leitor do Papeo.");
+      return;
+    }
+    const reader = isMail && openAs === "reader";
     if (kind === "email") {
       if (!addressOk) {
         error = t("Informe o endereço de e-mail.");
@@ -67,7 +77,7 @@
       busy = true;
       error = "";
       try {
-        await onsubmit(kind, name.trim(), site, {
+        await onsubmit(kind, name.trim(), site, reader, {
           host: preset?.host ?? "",
           user: address.trim(),
         });
@@ -91,7 +101,7 @@
           : kind === "teams" && teamsPersonal
             ? TEAMS_PERSONAL_URL
             : "";
-      await onsubmit(kind, name.trim(), site);
+      await onsubmit(kind, name.trim(), site, reader);
     } catch (err) {
       error = errorMessage(err);
       busy = false;
@@ -121,6 +131,10 @@
             name="kind"
             value={k}
             bind:group={kind}
+            onchange={() => {
+              openAs = null;
+              error = "";
+            }}
             class="sr-only"
             autofocus={k === "whatsapp"}
           />
@@ -159,11 +173,15 @@
           {#each MAIL_PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
         </select>
         <p class="note">
-          {preset?.note ? t(preset.note) : t("O Papeo lê e envia pelo IMAP, sem abrir o site. A senha vem no próximo passo.")}
+          {#if openAs === "reader"}
+            {preset?.note ? t(preset.note) : t("O Papeo lê e envia pelo IMAP, sem abrir o site. A senha vem no próximo passo.")}
+          {:else}
+            {t("O provedor ajuda a achar o webmail e, no leitor do Papeo, o servidor IMAP.")}
+          {/if}
         </p>
       </div>
       <div class="field">
-        <label for="svc-url">{t("Webmail")} <span class="muted">{t("(opcional, para abrir no site)")}</span></label>
+        <label for="svc-url">{t("Webmail")} {#if openAs !== "site"}<span class="muted">{t("(opcional, para abrir no site)")}</span>{/if}</label>
         <input
           id="svc-url"
           class="input"
@@ -222,6 +240,25 @@
       </p>
     {/if}
 
+    {#if isMail}
+      <fieldset class="account open-as">
+        <legend>{t("Abrir como")}</legend>
+        <label class="choice">
+          <input type="radio" name="open-as" value="site" bind:group={openAs} />
+          <span>
+            {t("Site")} <span class="muted">{t("(como no navegador; entra com o login de sempre)")}</span>
+          </span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="open-as" value="reader" bind:group={openAs} />
+          <span>
+            {t("Leitor do Papeo")} <span class="muted">{t("(IMAP: mais leve; pede servidor e senha, no Gmail uma senha de app)")}</span>
+          </span>
+        </label>
+        <p class="note">{t("Dá para trocar depois: botão direito na conta → \"E-mail por IMAP…\" ou \"Abrir no site\" no leitor.")}</p>
+      </fieldset>
+    {/if}
+
     <div class="field">
       <label for="svc-name">{t("Nome")} <span class="muted">{t("(opcional)")}</span></label>
       <input
@@ -241,7 +278,7 @@
 
     <div class="actions">
       <button type="button" class="btn" onclick={onclose}>{t("Cancelar")}</button>
-      <button type="submit" class="btn btn-primary" disabled={busy}>{busy ? t("Adicionando…") : t("Adicionar")}</button>
+      <button type="submit" class="btn btn-primary" disabled={busy || (isMail && !openAs)}>{busy ? t("Adicionando…") : t("Adicionar")}</button>
     </div>
   </form>
 </Modal>
