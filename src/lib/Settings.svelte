@@ -566,6 +566,21 @@
 
         <div class="row">
           <div class="text">
+            <span class="label">Resumo ao sair do silêncio</span>
+            <span class="hint">
+              No fim do não perturbe ou do horário silencioso, uma notificação e um cartão no Início mostram quantas
+              mensagens chegaram em cada conta e de quais conversas. Contas silenciadas sozinhas ficam de fora.
+            </span>
+          </div>
+          <Switch
+            checked={settings.silenceSummary}
+            label="Resumo ao sair do silêncio"
+            onchange={(v) => run(api.setPreferences({ silenceSummary: v }))}
+          />
+        </div>
+
+        <div class="row">
+          <div class="text">
             <span class="label">Trocar para a conta da notificação ao voltar</span>
             <span class="hint">
               Ao voltar ao Papeo até 20 s depois de uma notificação, mostra a conta que a enviou. Desligado, você

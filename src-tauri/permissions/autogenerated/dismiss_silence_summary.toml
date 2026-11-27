@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dismiss-silence-summary"
+description = "Enables the dismiss_silence_summary command without any pre-configured scope."
+commands.allow = ["dismiss_silence_summary"]
+
+[[permission]]
+identifier = "deny-dismiss-silence-summary"
+description = "Denies the dismiss_silence_summary command without any pre-configured scope."
+commands.deny = ["dismiss_silence_summary"]

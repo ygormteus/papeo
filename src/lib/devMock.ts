@@ -272,9 +272,27 @@ export function installDevMock() {
         locked || settings.notificationPreview === "hidden"
           ? []
           : structuredClone(recent).filter((c) => !hidden.has(c.serviceId)),
+      silenceSummary:
+        locked || !silence
+          ? null
+          : settings.notificationPreview === "hidden"
+            ? { ...silence, accounts: silence.accounts.map((a) => ({ ...a, chats: [] })) }
+            : structuredClone(silence),
     };
   };
 
+  // `?silencio`: resumo de um não perturbe que acabou de terminar.
+  let silence: import("./api").SilenceSummary | null = new URLSearchParams(location.search).has("silencio")
+    ? {
+        since: Math.floor(Date.now() / 1000) - 3 * 3600,
+        until: Math.floor(Date.now() / 1000) - 120,
+        total: 14,
+        accounts: [
+          { serviceId: services[0].id, count: 9, chats: ["Ana", "Família", "Grupo da obra", "Carlos", "Bia"] },
+          { serviceId: services[1].id, count: 5, chats: ["Suporte"] },
+        ],
+      }
+    : null;
   const held = new Map<string, ReturnType<typeof setTimeout>>();
   const drafts = new Map<string, import("./api").MailDraft>();
   let unsentTaken = false;
@@ -452,6 +470,9 @@ export function installDevMock() {
           ];
         }
         return [];
+      case "dismiss_silence_summary":
+        silence = null;
+        return snap();
       case "mail_unsent_taken":
         return undefined;
       case "set_mail_signature": {

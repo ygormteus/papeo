@@ -130,6 +130,7 @@ voz do WhatsApp).
 | `memory.rs`, `idle.rs` | Memória por conta (footprint no macOS, árvore de processos no Windows); tempo ocioso e tela apagada |
 | `mail.rs` | Vigia IMAP por conta (IDLE, avisos, contador, site hibernado) |
 | `mailbox.rs` | Leitor de e-mail (conexão de leitura por conta) e envio por SMTP (lettre) |
+| `silence.rs` | Saída do não perturbe/horário silencioso: resumo e notificação (spec 17) |
 | `outbox.rs` | Envios de e-mail em espera para desfazer (spec 16): fila na memória e em `outbox/` |
 | `microsoft.rs`, `drive.rs` | OAuth de app de computador (PKCE, loopback): Microsoft (IMAP/SMTP) e Google (Drive) |
 | `secrets.rs` | Senhas IMAP: arquivo 0600 (macOS) ou Gerenciador de Credenciais (Windows) |
@@ -207,7 +208,8 @@ silencioso, pasta de downloads, bandeja e início escondido, prévia das
 notificações, proteção de tela, bloqueio, aparência, atualizações, recarga
 por memória, links, anexos, captura de voz, respostas prontas, modo e
 expediente, hibernar fora do modo, moldura da conta, modo de diagnóstico e
-espera para desfazer o envio de e-mail (`mail_undo_secs`: 0, 5, 10 ou 20).
+espera para desfazer o envio de e-mail (`mail_undo_secs`: 0, 5, 10 ou 20)
+e resumo ao sair do silêncio (`silence_summary`).
 
 ### 5.3 Organizador
 
@@ -242,7 +244,7 @@ aceito e documentado nas notas da versão.
 
 ### 7.1 Comandos e ACL
 
-Os 89 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
+Os 90 comandos estão em `COMMANDS` (`src-tauri/build.rs`) e em
 `generate_handler!` (`lib.rs`). As duas listas são mantidas à mão. Cada
 janela só chama o que sua capability libera:
 
@@ -384,6 +386,17 @@ repetido e confere o nome no cabeçalho antes de enviar.
   conferido, guardado em `outbox/` e enviado no fim da espera por um thread
   próprio; quem tira a entrada da fila primeiro (o thread ou "Desfazer")
   vence. Sobras de uma sessão anterior voltam ao editor da conta.
+
+### 8.5.1 Resumo do silêncio (spec 17)
+
+Com o não perturbe ou o horário silencioso valendo, `notify::deliver`
+conta (em `Inner::silence`, `papeo_core::SilenceLog`) as mensagens que só o
+silêncio segurou: conta notificando, sem silêncio próprio, dentro do modo e
+fora da vista. `silence::check` (laço de manutenção, `set_dnd`,
+`set_quiet_hours`, bandeja) vê a saída do silêncio, guarda o
+`SilenceSummary` (só na memória) e mostra a notificação; o cartão do Início
+lê `Snapshot.silence_summary` (vazio bloqueado; sem conversas com a prévia
+oculta).
 
 ### 8.6 Laço de manutenção (a cada 15 s)
 

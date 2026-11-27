@@ -25,6 +25,7 @@ const COMMANDS: &[&str] = &[
     "mail_send_cancel",
     "mail_unsent",
     "mail_unsent_taken",
+    "dismiss_silence_summary",
     "set_mail_signature",
     "mail_show_site",
     "mail_reveal_file",

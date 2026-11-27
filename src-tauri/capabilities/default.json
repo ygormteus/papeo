@@ -30,6 +30,7 @@
     "allow-mail-send-cancel",
     "allow-mail-unsent",
     "allow-mail-unsent-taken",
+    "allow-dismiss-silence-summary",
     "allow-set-mail-signature",
     "allow-mail-show-site",
     "allow-mail-reveal-file",

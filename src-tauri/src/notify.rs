@@ -85,6 +85,25 @@ pub fn deliver(
             minute,
             papeo_core::Mode::All,
         ) {
+            // Segurada só pelo não perturbe/horário silencioso: entra no
+            // resumo da saída do silêncio (spec 17). Conta à vista não conta.
+            let settings = &inner.config.settings;
+            let only_silence = settings.silence_summary
+                && service.notifications
+                && in_mode
+                && !service.muted_until.is_some_and(|until| now_unix < until)
+                && settings.dnd_active(now_unix, minute);
+            let watching = focused && !inner.locked && inner.active.as_deref() == Some(id.as_str());
+            if only_silence && !watching {
+                let chat = papeo_core::clip(title, 80);
+                // O silêncio começou depois da última conferência (até 15 s):
+                // começa agora, sem que `silence::check` zere esta contagem.
+                if !inner.silence_active {
+                    inner.silence_active = true;
+                    inner.silence.start(now_unix);
+                }
+                inner.silence.record(&id, &chat, now_unix);
+            }
             return Ok(());
         }
         let name = service.name.clone();

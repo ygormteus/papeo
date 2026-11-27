@@ -10,6 +10,7 @@ mod privacy;
 pub mod probes;
 mod service;
 mod settings;
+pub mod silence;
 mod store;
 pub mod sync;
 mod util;
@@ -32,6 +33,7 @@ pub use settings::{
     QuickReply, QuietHours, Settings, UpdatePrefs, VoiceCapture, WorkHours, DND_FOREVER,
     LOCK_MAX_MINUTES, MAIL_UNDO_CHOICES, MAIL_UNDO_DEFAULT,
 };
+pub use silence::{SilenceLog, SilenceSummary, SilencedAccount};
 pub use store::{
     encode_config, export_backup, load, load_guarded, read_backup, save, write_atomic, Backup,
     Config, STORE_VERSION,

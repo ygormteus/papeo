@@ -56,6 +56,9 @@ pub struct Settings {
     /// Espera antes de o leitor de e-mail enviar, para dar tempo de
     /// desfazer (spec 16). 0 = envia na hora.
     pub mail_undo_secs: u8,
+    /// Resumo do que chegou durante o não perturbe ou o horário silencioso
+    /// (spec 17).
+    pub silence_summary: bool,
 }
 
 /// Esperas aceitas para desfazer o envio de e-mail, em segundos.
@@ -365,6 +368,7 @@ impl Default for Settings {
             account_frame: true,
             diagnostics: false,
             mail_undo_secs: MAIL_UNDO_DEFAULT,
+            silence_summary: true,
         }
     }
 }
@@ -551,6 +555,7 @@ mod tests {
         assert!(old.account_frame);
         assert!(!old.diagnostics);
         assert_eq!(old.mail_undo_secs, MAIL_UNDO_DEFAULT);
+        assert!(old.silence_summary);
         let odd: Settings = serde_json::from_str(r#"{"mailUndoSecs":7}"#).unwrap();
         assert_eq!(odd.sanitized().mail_undo_secs, MAIL_UNDO_DEFAULT);
         let off: Settings = serde_json::from_str(r#"{"mailUndoSecs":0}"#).unwrap();

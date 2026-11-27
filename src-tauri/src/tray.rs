@@ -258,6 +258,9 @@ fn set_dnd(app: &AppHandle, until: Option<u64>) {
         Ok(())
     });
     publish(app);
+    // Fora do evento de menu (thread principal): a notificação do resumo.
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move { crate::silence::check(&app) });
 }
 
 fn on_menu(app: &AppHandle, id: &str) {

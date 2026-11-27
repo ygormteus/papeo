@@ -35,6 +35,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   { tab: "geral", label: "E-mail", keywords: "leitor imap enviar" },
   { tab: "geral", label: "Desfazer envio", keywords: "e-mail email cancelar enviar espera arrependimento" },
+  { tab: "notificacoes", label: "Resumo ao sair do silêncio", keywords: "não perturbe perdi mensagens chegaram enquanto" },
   { tab: "notificacoes", label: "Silenciar todas as notificações", keywords: "não perturbe dnd mudo silêncio pausar" },
   { tab: "notificacoes", label: "Horário silencioso todos os dias", keywords: "não perturbe noite dormir agenda" },
   {

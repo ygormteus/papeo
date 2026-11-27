@@ -331,6 +331,23 @@ export interface Settings {
   diagnostics: boolean;
   /** Espera antes de o leitor enviar um e-mail, para desfazer (0, 5, 10 ou 20 s). */
   mailUndoSecs: number;
+  /** Resumo do que chegou durante o não perturbe (spec 17). */
+  silenceSummary: boolean;
+}
+
+/** O que uma conta recebeu durante o silêncio. */
+export interface SilencedAccount {
+  serviceId: string;
+  count: number;
+  /** Conversas, a mais recente primeiro (vazia com a prévia oculta). */
+  chats: string[];
+}
+
+export interface SilenceSummary {
+  since: number;
+  until: number;
+  total: number;
+  accounts: SilencedAccount[];
 }
 
 export interface QuickReply {
@@ -379,6 +396,8 @@ export interface Snapshot {
   /** Conversas com mensagens recentes, mais nova primeiro. Só na memória;
    * vazia com o app bloqueado ou a prévia oculta. */
   recent: RecentChat[];
+  /** Resumo do último silêncio, até fechar o cartão (vazio bloqueado). */
+  silenceSummary: SilenceSummary | null;
   /** Tarefas abertas atrasadas e para hoje (zero com o app bloqueado). */
   tasks: { overdue: number; today: number };
   /** Modo valendo agora. */
@@ -458,6 +477,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
     accountFrame: true,
     diagnostics: false,
     mailUndoSecs: 5,
+    silenceSummary: true,
   },
   dndActive: false,
   autostart: false,
@@ -470,6 +490,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   update: { state: "idle" },
   appVersion: "",
   recent: [],
+  silenceSummary: null,
   tasks: { overdue: 0, today: 0 },
   mode: "all",
   modeManual: false,
@@ -575,9 +596,11 @@ export const api = {
         | "accountFrame"
         | "diagnostics"
         | "mailUndoSecs"
+        | "silenceSummary"
       >
     >,
   ) => invoke<Snapshot>("set_preferences", { prefs }),
+  dismissSilenceSummary: () => invoke<Snapshot>("dismiss_silence_summary"),
   setQuickReplies: (replies: QuickReply[]) => invoke<Snapshot>("set_quick_replies", { replies }),
   setAutostart: (enabled: boolean) => invoke<Snapshot>("set_autostart", { enabled }),
   setDownloadsDir: (path: string | null) => invoke<Snapshot>("set_downloads_dir", { path }),

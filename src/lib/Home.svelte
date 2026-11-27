@@ -6,6 +6,7 @@
     LogIn,
     Mail,
     MessagesSquare,
+    MoonStar,
     RotateCw,
     FolderOpen,
     Palette,
@@ -69,6 +70,13 @@
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
 
   const memory = $derived(home.memory);
+  const silence = $derived(snap.silenceSummary);
+  /** Hora local (com o dia, se não for hoje). */
+  function clockOf(unix: number) {
+    const d = new Date(unix * 1000);
+    const same = d.toDateString() === new Date().toDateString();
+    return d.toLocaleString("pt-BR", same ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  }
 
   const servicesSummary = $derived.by(() => {
     const n = snap.services.length;
@@ -244,6 +252,45 @@
           </button>
         </div>
       {/each}
+    </section>
+  {/if}
+
+  {#if silence}
+    <section class="card block" aria-labelledby="silence-title">
+      <div class="block-head">
+        <h2 id="silence-title"><MoonStar size={18} /> Enquanto você estava em silêncio</h2>
+        <button class="icon-btn ghost" onclick={() => run(api.dismissSilenceSummary())} aria-label="Fechar o resumo" title="Fechar">
+          <X size={16} />
+        </button>
+      </div>
+      <p class="silence-head">
+        {silence.total} {silence.total === 1 ? "mensagem" : "mensagens"} entre {clockOf(silence.since)} e {clockOf(silence.until)}
+      </p>
+      <ul class="silenced">
+        {#each silence.accounts as a (a.serviceId)}
+          {@const s = snap.services.find((x) => x.id === a.serviceId)}
+          {#if s}
+            <li>
+              <ServiceAvatar service={s} size={26} dimmed={!s.loaded} />
+              <span class="silenced-text">
+                <span class="svc-name">{s.name} · {a.count} {a.count === 1 ? "mensagem" : "mensagens"}</span>
+                {#if a.chats.length}
+                  <span class="chats">
+                    {#each a.chats as chat (chat)}
+                      {#if s.kind === "whatsapp" || s.kind === "telegram"}
+                        <button class="chip" onclick={() => onchat(s.id, chat)} title="Abrir {chat}">{chat}</button>
+                      {:else}
+                        <span class="chip plain">{chat}</span>
+                      {/if}
+                    {/each}
+                  </span>
+                {/if}
+              </span>
+              <button class="btn small" onclick={() => onopen(s.id)} aria-label="Abrir {s.name}">Abrir</button>
+            </li>
+          {/if}
+        {/each}
+      </ul>
     </section>
   {/if}
 
@@ -764,6 +811,70 @@
     align-items: center;
     gap: 12px;
     padding: 32px 0 28px;
+    color: var(--text-muted);
+  }
+
+  .silence-head {
+    margin: 0 0 4px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .silenced {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+
+  .silenced li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .silenced li:first-child {
+    border-top: 0;
+  }
+
+  .silenced-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .chats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+  }
+
+  button.chip {
+    cursor: pointer;
+  }
+
+  button.chip:hover {
+    background: var(--bg-hover);
+  }
+
+  .chip.plain {
     color: var(--text-muted);
   }
 

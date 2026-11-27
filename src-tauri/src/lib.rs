@@ -24,6 +24,7 @@ mod secrets;
 #[cfg(feature = "selftest")]
 mod selftest;
 mod sessions;
+mod silence;
 mod state;
 mod sync;
 mod tray;
@@ -274,6 +275,8 @@ fn spawn_maintenance(app: AppHandle) {
                 mail::kick(&app);
             }
             wall = now;
+            // Saída do não perturbe/horário silencioso: resumo (spec 17).
+            silence::check(&app);
             let state = app.state::<AppState>();
             let (due, status, mode) = {
                 let mut inner = state.lock();
@@ -484,6 +487,12 @@ pub fn run() {
                 }
                 inner.autostart = handle.autolaunch().is_enabled().unwrap_or(false);
                 inner.window_focused = !started_hidden;
+                // Já em silêncio ao abrir: a contagem do resumo começa agora.
+                let (now, minute) = (state::now_secs(), state::local_minute_of_day());
+                if inner.config.settings.dnd_active(now, minute) {
+                    inner.silence_active = true;
+                    inner.silence.start(now);
+                }
                 if started_hidden {
                     inner.unfocused_since = Some(std::time::Instant::now());
                 }
@@ -550,6 +559,7 @@ pub fn run() {
             commands::mail_send_cancel,
             commands::mail_unsent,
             commands::mail_unsent_taken,
+            commands::dismiss_silence_summary,
             commands::set_mail_signature,
             commands::mail_show_site,
             commands::mail_reveal_file,

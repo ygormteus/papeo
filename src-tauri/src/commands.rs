@@ -601,6 +601,15 @@ pub async fn set_dnd(
         };
         Ok(())
     })?;
+    crate::silence::check(&app);
+    Ok(publish(&app))
+}
+
+/// Fecha o cartão do resumo do silêncio (spec 17).
+#[tauri::command]
+pub async fn dismiss_silence_summary(app: AppHandle, state: State<'_, AppState>) -> CmdResult {
+    ensure_unlocked(&app)?;
+    state.lock().silence_summary = None;
     Ok(publish(&app))
 }
 
@@ -614,6 +623,7 @@ pub async fn set_quiet_hours(
         inner.config.settings.quiet_hours = quiet_hours.sanitized();
         Ok(())
     })?;
+    crate::silence::check(&app);
     Ok(publish(&app))
 }
 
@@ -664,6 +674,7 @@ pub struct Preferences {
     account_frame: Option<bool>,
     diagnostics: Option<bool>,
     mail_undo_secs: Option<u8>,
+    silence_summary: Option<bool>,
     voice_capture: Option<papeo_core::VoiceCapture>,
 }
 
@@ -708,6 +719,13 @@ pub async fn set_preferences(
         }
         if let Some(v) = prefs.voice_capture {
             s.voice_capture = v;
+        }
+        if let Some(v) = prefs.silence_summary {
+            s.silence_summary = v;
+            // Desligado: o cartão do último resumo sai também.
+            if !v {
+                inner.silence_summary = None;
+            }
         }
         if let Some(v) = prefs.mail_undo_secs {
             s.mail_undo_secs = v;

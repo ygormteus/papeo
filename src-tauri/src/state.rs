@@ -189,6 +189,12 @@ pub struct Inner {
     pub downloads: VecDeque<DownloadEntry>,
     pub next_download_id: u64,
     pub recent: VecDeque<RecentChat>,
+    /// Mensagens seguradas pelo não perturbe/horário silencioso (spec 17).
+    pub silence: papeo_core::SilenceLog,
+    /// Silêncio valendo na última conferência (`silence::check`).
+    pub silence_active: bool,
+    /// Resumo do último silêncio, até a pessoa fechar o cartão.
+    pub silence_summary: Option<papeo_core::SilenceSummary>,
     /// Conversa a abrir assim que a página do serviço der sinal de vida
     /// (o serviço estava dormindo ou ainda carregando).
     pub pending_chat: HashMap<String, (String, bool)>,
@@ -285,6 +291,9 @@ impl Inner {
             downloads: VecDeque::new(),
             next_download_id: 1,
             recent: VecDeque::new(),
+            silence: Default::default(),
+            silence_active: false,
+            silence_summary: None,
             pending_chat: HashMap::new(),
             // Bloqueia sempre ao abrir; sem PIN e sem autenticação do
             // sistema, `lock::check_availability` desfaz isso logo em seguida.
@@ -424,6 +433,11 @@ impl Inner {
     /// Esquece as mensagens de um serviço (removido ou "sair da conta").
     pub fn forget_recent(&mut self, service_id: &str) {
         self.recent.retain(|m| m.service_id != service_id);
+        self.silence.forget(service_id);
+        self.silence_summary = self
+            .silence_summary
+            .take()
+            .and_then(|s| s.without(service_id));
         self.pending_chat.remove(service_id);
         self.current_chat.remove(service_id);
     }
@@ -739,6 +753,9 @@ pub struct Snapshot {
     pub recent: Vec<RecentView>,
     /// Tarefas atrasadas e para hoje (zero com o app bloqueado).
     pub tasks: crate::organizer::TaskCounts,
+    /// Resumo do último silêncio (spec 17); vazio com o app bloqueado, sem
+    /// conversas com a prévia oculta.
+    pub silence_summary: Option<papeo_core::SilenceSummary>,
     /// Modo valendo agora.
     pub mode: Mode,
     /// O modo foi trocado à mão no automático (até o expediente mudar).
@@ -871,11 +888,39 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
         update: inner.update.clone(),
         app_version: app.package_info().version.to_string(),
         recent,
+        silence_summary: silence_view(&inner, mode),
         tasks: crate::organizer::counts(&inner),
         mode,
         mode_manual: inner.mode_manual(),
         rev: REV.load(Ordering::SeqCst),
     }
+}
+
+/// Resumo do silêncio como a interface pode ver (spec 17): nada bloqueado;
+/// sem contas fora do modo atual (como as recentes); sem conversas com a
+/// prévia oculta.
+fn silence_view(inner: &Inner, mode: Mode) -> Option<papeo_core::SilenceSummary> {
+    if inner.locked {
+        return None;
+    }
+    let mut summary = inner.silence_summary.clone()?;
+    let hidden: Vec<String> = summary
+        .accounts
+        .iter()
+        .filter(|a| {
+            inner
+                .service(&a.service_id)
+                .map_or(true, |svc| !mode.allows(svc.context))
+        })
+        .map(|a| a.service_id.clone())
+        .collect();
+    for id in hidden {
+        summary = summary.without(&id)?;
+    }
+    if inner.config.settings.notification_preview == papeo_core::NotificationPreview::Hidden {
+        summary = summary.without_chats();
+    }
+    Some(summary)
 }
 
 /// Envia o estado à interface e atualiza badge e bandeja.
